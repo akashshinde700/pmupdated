@@ -1,0 +1,228 @@
+// src/routes/billRoutes.js
+const express = require('express');
+const {
+  listBills,
+  addBill,
+  getBill,
+  updateBill,
+  updateBillStatus,
+  deleteBill,
+  getClinicSettings,
+  generateReceiptPDF,
+  sendBillWhatsApp
+} = require('../controllers/billController');
+
+// ✅ SAHI IMPORT - Destructuring se authenticateToken le rahe hain
+const { authenticateToken } = require('../middleware/auth');
+
+const { auditLogger } = require('../middleware/auditLogger');
+const joiValidate = require('../middleware/joiValidate');
+const { createBill, updateBill: updateBillSchema, updateBillStatus: updateBillStatusSchema, updateBillPayment: updateBillPaymentSchema } = require('../validation/commonSchemas');
+
+const router = express.Router();
+
+// Get services list (hardcoded for now, can be moved to DB later)
+router.get('/services', authenticateToken, (req, res) => {
+  try {
+    const services = [
+      { name: 'Consultation', price: 500 },
+      { name: 'Follow-up', price: 300 },
+      { name: 'Lab Test', price: 200 },
+      { name: 'X-Ray', price: 800 },
+      { name: 'ECG', price: 400 },
+      { name: 'Ultrasound', price: 1200 },
+      { name: 'Blood Test', price: 300 },
+      { name: 'Vaccination', price: 600 },
+      { name: 'Injection', price: 150 },
+      { name: 'Lab', price: 300 }
+    ];
+    res.json({ success: true, services });
+  } catch (error) {
+    console.error('Failed to fetch services:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch services' });
+  }
+});
+
+// Clinic settings routes (protected)
+router.get('/clinic-settings', authenticateToken, getClinicSettings);
+
+// Summary and unbilled visits routes
+router.get('/summary', authenticateToken, async (req, res) => {
+  try {
+    const { getDb } = require('../config/db');
+    const db = getDb();
+    const [summary] = await db.execute(`
+      SELECT
+        COUNT(*) as total_bills,
+        SUM(total_amount) as total_revenue,
+        SUM(amount_paid) as total_collected,
+        SUM(balance_due) as total_outstanding,
+        SUM(CASE WHEN payment_status = 'paid' THEN 1 ELSE 0 END) as paid_count,
+        SUM(CASE WHEN payment_status = 'pending' THEN 1 ELSE 0 END) as pending_count,
+        SUM(CASE WHEN payment_status = 'partial' THEN 1 ELSE 0 END) as partial_count
+      FROM bills
+    `);
+
+    // Optional: unbilled visits count (only if bills has appointment_id column)
+    let unbilled_visits = 0;
+    try {
+      const [cols] = await db.execute(
+        "SELECT column_name FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'bills' AND column_name = 'appointment_id' LIMIT 1"
+      );
+      const hasAppointmentId = Array.isArray(cols) && cols.length > 0;
+      if (hasAppointmentId) {
+        const [r] = await db.execute(
+          `SELECT COUNT(*) AS cnt
+           FROM appointments a
+           WHERE (a.status = 'completed' OR a.status = 'pending')
+             AND a.id NOT IN (SELECT DISTINCT b.appointment_id FROM bills b WHERE b.appointment_id IS NOT NULL AND b.appointment_id != '')`
+        );
+        unbilled_visits = r[0]?.cnt || 0;
+      }
+    } catch (_e) {
+      unbilled_visits = 0;
+    }
+
+    res.json({
+      ...(summary[0] || {}),
+      unbilled_visits,
+      // Backward-compatible aliases some frontend code expects
+      paid_bills: summary[0]?.paid_count || 0,
+      pending_bills: summary[0]?.pending_count || 0
+    });
+  } catch (error) {
+    console.error('Get bills summary error:', error);
+    res.status(500).json({ error: 'Failed to fetch bills summary' });
+  }
+});
+
+router.get('/unbilled-visits', authenticateToken, async (req, res) => {
+  try {
+    const { getDb } = require('../config/db');
+    const db = getDb();
+    
+    // Get pagination parameters
+    const page = Math.max(parseInt(req.query.page) || 1, 1);
+    const limit = Math.min(parseInt(req.query.limit) || 10, 100);
+    const offset = (page - 1) * limit;
+    
+    // Use db.query instead of db.execute to avoid parameter binding issues
+    const [unbilledAppointments] = await db.query(
+      `SELECT
+        a.id,
+        a.appointment_date,
+        a.appointment_time,
+        a.status,
+        a.patient_id,
+        p.name as patient_name,
+        p.patient_id as patient_uhid,
+        p.phone as patient_phone,
+        'appointment' as source_type
+      FROM appointments a
+      LEFT JOIN patients p ON a.patient_id = p.id
+      WHERE (a.status = 'completed' OR a.status = 'pending')
+      AND a.id NOT IN (
+        SELECT DISTINCT b.appointment_id 
+        FROM bills b 
+        WHERE b.appointment_id IS NOT NULL AND b.appointment_id != ''
+      )
+      ORDER BY a.appointment_date DESC, a.appointment_time DESC
+      LIMIT ${limit} OFFSET ${offset}`
+    );
+    
+    // Get total count
+    const [totalCount] = await db.query(
+      `SELECT COUNT(*) as total
+      FROM appointments a
+      WHERE (a.status = 'completed' OR a.status = 'pending')
+      AND a.id NOT IN (
+        SELECT DISTINCT b.appointment_id 
+        FROM bills b 
+        WHERE b.appointment_id IS NOT NULL AND b.appointment_id != ''
+      )`
+    );
+    
+    const total = totalCount[0].total;
+    const totalPages = Math.ceil(total / limit);
+    
+    // Return simplified response
+    res.json({ 
+      visits: unbilledAppointments,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+        hasNext: page < totalPages,
+        hasPrev: page > 1
+      }
+    });
+  } catch (error) {
+    console.error('Get unbilled visits error:', error);
+    res.status(500).json({ error: 'Failed to fetch unbilled visits' });
+  }
+});
+
+// CRUD routes
+router.get('/', authenticateToken, listBills);
+router.get('/:id/pdf', authenticateToken, generateReceiptPDF);
+router.get('/:id/whatsapp', authenticateToken, sendBillWhatsApp);
+router.get('/:id', authenticateToken, getBill);
+router.post('/', joiValidate(createBill), auditLogger('BILL'), addBill);
+router.put('/:id', authenticateToken, joiValidate(updateBillSchema), auditLogger('BILL'), updateBill);
+router.patch('/:id/status', authenticateToken, joiValidate(updateBillStatusSchema), auditLogger('BILL'), updateBillStatus);
+router.patch('/:id/payment', authenticateToken, joiValidate(updateBillPaymentSchema), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { amount, paid_amount } = req.body;
+    
+    // First get current bill details
+    const { getDb } = require('../config/db');
+    const db = getDb();
+    const [bills] = await db.execute(
+      'SELECT total_amount, amount_paid FROM bills WHERE id = ?',
+      [id]
+    );
+    
+    if (bills.length === 0) {
+      return res.status(404).json({ error: 'Bill not found' });
+    }
+    
+    const bill = bills[0];
+    const currentPaid = parseFloat(bill.amount_paid || 0);
+    const totalAmount = parseFloat(bill.total_amount);
+    // Support both:
+    // - { amount } as incremental payment
+    // - { paid_amount } as absolute paid total (frontend sends this)
+    const hasAbsolute = paid_amount !== undefined && paid_amount !== null;
+    const newPaidAmount = hasAbsolute ? parseFloat(paid_amount) : (currentPaid + parseFloat(amount));
+    const remainingAmount = totalAmount - newPaidAmount;
+    
+    // Determine new payment status
+    let newStatus = 'pending';
+    if (newPaidAmount >= totalAmount) {
+      newStatus = 'paid';
+    } else if (newPaidAmount > 0) {
+      newStatus = 'partial';
+    }
+    
+    // Update bill
+    await db.execute(
+      'UPDATE bills SET amount_paid = ?, payment_status = ?, balance_due = ? WHERE id = ?',
+      [newPaidAmount, newStatus, remainingAmount, id]
+    );
+    
+    res.json({ 
+      success: true, 
+      paid_amount: newPaidAmount,
+      remaining_amount: remainingAmount,
+      payment_status: newStatus
+    });
+  } catch (error) {
+    console.error('Update payment error:', error);
+    res.status(500).json({ error: 'Failed to update payment' });
+  }
+});
+router.delete('/:id', authenticateToken, auditLogger('BILL'), deleteBill);
+
+module.exports = router;
