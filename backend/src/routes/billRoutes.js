@@ -9,12 +9,12 @@ const {
   deleteBill,
   getClinicSettings,
   generateReceiptPDF,
-  sendBillWhatsApp
+  sendBillWhatsApp,
+  getUnbilledVisits,
+  deleteUnbilledVisit
 } = require('../controllers/billController');
 
-// ✅ SAHI IMPORT - Destructuring se authenticateToken le rahe hain
-const { authenticateToken } = require('../middleware/auth');
-
+// ✅ SAHI IMPORT - Destructuring se authentication le rahe hain app.use se
 const { auditLogger } = require('../middleware/auditLogger');
 const joiValidate = require('../middleware/joiValidate');
 const { createBill, updateBill: updateBillSchema, updateBillStatus: updateBillStatusSchema, updateBillPayment: updateBillPaymentSchema } = require('../validation/commonSchemas');
@@ -22,7 +22,7 @@ const { createBill, updateBill: updateBillSchema, updateBillStatus: updateBillSt
 const router = express.Router();
 
 // Get services list (hardcoded for now, can be moved to DB later)
-router.get('/services', authenticateToken, (req, res) => {
+router.get('/services', (req, res) => {
   try {
     const services = [
       { name: 'Consultation', price: 500 },
@@ -43,11 +43,11 @@ router.get('/services', authenticateToken, (req, res) => {
   }
 });
 
-// Clinic settings routes (protected)
-router.get('/clinic-settings', authenticateToken, getClinicSettings);
+// Clinic settings routes (protected by app.use middleware)
+router.get('/clinic-settings', getClinicSettings);
 
 // Summary and unbilled visits routes
-router.get('/summary', authenticateToken, async (req, res) => {
+router.get('/summary', async (req, res) => {
   try {
     const { getDb } = require('../config/db');
     const db = getDb();
@@ -96,82 +96,17 @@ router.get('/summary', authenticateToken, async (req, res) => {
   }
 });
 
-router.get('/unbilled-visits', authenticateToken, async (req, res) => {
-  try {
-    const { getDb } = require('../config/db');
-    const db = getDb();
-    
-    // Get pagination parameters
-    const page = Math.max(parseInt(req.query.page) || 1, 1);
-    const limit = Math.min(parseInt(req.query.limit) || 10, 100);
-    const offset = (page - 1) * limit;
-    
-    // Use db.query instead of db.execute to avoid parameter binding issues
-    const [unbilledAppointments] = await db.query(
-      `SELECT
-        a.id,
-        a.appointment_date,
-        a.appointment_time,
-        a.status,
-        a.patient_id,
-        p.name as patient_name,
-        p.patient_id as patient_uhid,
-        p.phone as patient_phone,
-        'appointment' as source_type
-      FROM appointments a
-      LEFT JOIN patients p ON a.patient_id = p.id
-      WHERE (a.status = 'completed' OR a.status = 'pending')
-      AND a.id NOT IN (
-        SELECT DISTINCT b.appointment_id 
-        FROM bills b 
-        WHERE b.appointment_id IS NOT NULL AND b.appointment_id != ''
-      )
-      ORDER BY a.appointment_date DESC, a.appointment_time DESC
-      LIMIT ${limit} OFFSET ${offset}`
-    );
-    
-    // Get total count
-    const [totalCount] = await db.query(
-      `SELECT COUNT(*) as total
-      FROM appointments a
-      WHERE (a.status = 'completed' OR a.status = 'pending')
-      AND a.id NOT IN (
-        SELECT DISTINCT b.appointment_id 
-        FROM bills b 
-        WHERE b.appointment_id IS NOT NULL AND b.appointment_id != ''
-      )`
-    );
-    
-    const total = totalCount[0].total;
-    const totalPages = Math.ceil(total / limit);
-    
-    // Return simplified response
-    res.json({ 
-      visits: unbilledAppointments,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages,
-        hasNext: page < totalPages,
-        hasPrev: page > 1
-      }
-    });
-  } catch (error) {
-    console.error('Get unbilled visits error:', error);
-    res.status(500).json({ error: 'Failed to fetch unbilled visits' });
-  }
-});
+router.get('/unbilled-visits', getUnbilledVisits);
 
 // CRUD routes
-router.get('/', authenticateToken, listBills);
-router.get('/:id/pdf', authenticateToken, generateReceiptPDF);
-router.get('/:id/whatsapp', authenticateToken, sendBillWhatsApp);
-router.get('/:id', authenticateToken, getBill);
+router.get('/', listBills);
+router.get('/:id/pdf', generateReceiptPDF);
+router.get('/:id/whatsapp', sendBillWhatsApp);
+router.get('/:id', getBill);
 router.post('/', joiValidate(createBill), auditLogger('BILL'), addBill);
-router.put('/:id', authenticateToken, joiValidate(updateBillSchema), auditLogger('BILL'), updateBill);
-router.patch('/:id/status', authenticateToken, joiValidate(updateBillStatusSchema), auditLogger('BILL'), updateBillStatus);
-router.patch('/:id/payment', authenticateToken, joiValidate(updateBillPaymentSchema), async (req, res) => {
+router.put('/:id', joiValidate(updateBillSchema), auditLogger('BILL'), updateBill);
+router.patch('/:id/status', joiValidate(updateBillStatusSchema), auditLogger('BILL'), updateBillStatus);
+router.patch('/:id/payment', joiValidate(updateBillPaymentSchema), async (req, res) => {
   try {
     const { id } = req.params;
     const { amount, paid_amount } = req.body;
@@ -223,6 +158,7 @@ router.patch('/:id/payment', authenticateToken, joiValidate(updateBillPaymentSch
     res.status(500).json({ error: 'Failed to update payment' });
   }
 });
-router.delete('/:id', authenticateToken, auditLogger('BILL'), deleteBill);
+router.delete('/unbilled-visits/:id', auditLogger('BILL'), deleteUnbilledVisit);
+router.delete('/:id', auditLogger('BILL'), deleteBill);
 
 module.exports = router;

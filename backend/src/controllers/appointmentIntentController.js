@@ -25,28 +25,25 @@ async function addAppointmentIntent(req, res) {
 
     const db = getDb();
 
-    // Map appointment_type to arrival_type if not provided
-    let finalArrivalType = arrival_type;
+    // Map arrival_type / appointment_type to correct database values
+    // DB expects: 'walk-in' or 'online' (not 'offline')
+    let finalArrivalType = arrival_type || appointment_type || 'walk-in';
     console.log('🔍 Original arrival_type:', arrival_type);
     console.log('🔍 Original appointment_type:', appointment_type);
-    
-    if (!finalArrivalType && appointment_type) {
-      // Map frontend consultation types to backend arrival types
-      if (appointment_type === 'offline') {
-        finalArrivalType = 'walk-in'; // Offline appointments become walk-in
-        console.log('🔍 Mapped offline -> walk-in');
-      } else if (appointment_type === 'online') {
-        finalArrivalType = 'online'; // Online appointments stay online
-        console.log('🔍 Mapped online -> online');
-      } else {
-        finalArrivalType = 'walk-in'; // Default fallback
-        console.log('🔍 Used default walk-in');
-      }
-    } else if (!finalArrivalType) {
-      finalArrivalType = 'walk-in'; // Changed default from 'online' to 'walk-in'
-      console.log('🔍 Used default fallback walk-in');
+
+    // Map 'offline' to 'walk-in' (frontend sends 'offline', DB expects 'walk-in')
+    if (finalArrivalType === 'offline') {
+      finalArrivalType = 'walk-in';
+      console.log('🔍 Mapped offline -> walk-in');
+    } else if (finalArrivalType === 'online') {
+      // 'online' stays as 'online'
+      console.log('🔍 Keeping online as online');
+    } else if (!['walk-in', 'online', 'scheduled'].includes(finalArrivalType)) {
+      // Unknown value, default to walk-in
+      finalArrivalType = 'walk-in';
+      console.log('🔍 Unknown value, defaulting to walk-in');
     }
-    
+
     console.log('🔍 Final arrival_type:', finalArrivalType);
 
     // If auto_create is true, create patient and appointment directly

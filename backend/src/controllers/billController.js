@@ -168,28 +168,97 @@ async function listBills(req, res) {
 async function getUnbilledVisits(req, res) {
   try {
     console.log('🔍 getUnbilledVisits called with query:', req.query);
-    const { start_date, end_date } = req.query;
+    const { start_date, end_date, page = 1, limit = 50 } = req.query;
     const db = getDb();
+    const limitNum = Math.min(parseInt(limit, 10) || 50, 100);
+    const offset = (parseInt(page, 10) - 1) * limitNum;
+    
     console.log('🔍 Database connection obtained');
 
-    // Simple query first to test
+    // Get unbilled visits from queue table
+    let whereSql = "WHERE q.visit_status = 'unbilled' AND q.status = 'completed'";
+    const params = [];
+
+    if (start_date) {
+      whereSql += ' AND DATE(q.check_in_time) >= ?';
+      params.push(start_date);
+    }
+    if (end_date) {
+      whereSql += ' AND DATE(q.check_in_time) <= ?';
+      params.push(end_date);
+    }
+
     const [visits] = await db.execute(`
-      SELECT a.*, p.name as patient_name, p.patient_id as uhid 
-      FROM appointments a 
-      LEFT JOIN patients p ON a.patient_id = p.id 
-      WHERE a.status = 'completed' 
-      LIMIT 5
-    `);
-    console.log('🔍 Simple query successful, results:', visits.length);
+      SELECT q.id as queue_id, q.*, p.name as patient_name, p.patient_id as uhid, p.phone as patient_phone,
+             u.name as doctor_name, d.specialization as doctor_specialization,
+             c.name as clinic_name
+      FROM queue q
+      LEFT JOIN patients p ON q.patient_id = p.id 
+      LEFT JOIN doctors d ON q.doctor_id = d.id
+      LEFT JOIN users u ON d.user_id = u.id
+      LEFT JOIN clinics c ON q.clinic_id = c.id
+      ${whereSql}
+      ORDER BY q.check_in_time DESC
+      LIMIT ${limitNum} OFFSET ${offset}
+    `, params);
+    
+    const [countResult] = await db.execute(
+      `SELECT COUNT(*) as total FROM queue q ${whereSql}`,
+      params
+    );
+    const total = countResult[0]?.total || 0;
+    
+    console.log('🔍 Query successful, results:', visits.length);
     
     console.log('🔍 Sending response');
     return sendSuccess(res, {
-      visits: visits
+      visits: visits,
+      pagination: {
+        page: parseInt(page, 10),
+        limit: limitNum,
+        total,
+        pages: Math.ceil(total / limitNum)
+      }
     });
     
   } catch (error) {
     console.error('🔍 getUnbilledVisits error:', error);
     sendError(res, 'Failed to fetch unbilled visits', 500, process.env.NODE_ENV === 'development' ? error.message : undefined);
+  }
+}
+
+// Delete unbilled visit
+async function deleteUnbilledVisit(req, res) {
+  try {
+    const { id } = req.params;
+    const db = getDb();
+
+    // Get the queue entry first to verify it's actually unbilled
+    const [queueEntries] = await db.execute(
+      "SELECT * FROM queue WHERE id = ? AND visit_status = 'unbilled'",
+      [id]
+    );
+
+    if (queueEntries.length === 0) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'This visit is not unbilled or does not exist' 
+      });
+    }
+
+    // Delete the unbilled visit from queue
+    await db.execute('DELETE FROM queue WHERE id = ?', [id]);
+
+    res.json({
+      success: true,
+      message: 'Unbilled visit deleted successfully'
+    });
+  } catch (error) {
+    console.error('Delete unbilled visit error:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to delete unbilled visit' 
+    });
   }
 }
 
@@ -204,7 +273,8 @@ async function getBill(req, res) {
              p.phone as patient_phone, p.email as patient_email,
              u.name as doctor_name,
              d.specialization as doctor_specialization,
-             c.name as clinic_name
+             c.name as clinic_name, c.address as clinic_address, c.city as clinic_city,
+             c.state as clinic_state, c.pincode as clinic_pincode, c.phone as clinic_phone
       FROM bills b
       LEFT JOIN patients p ON b.patient_id = p.id
       LEFT JOIN doctors d ON b.doctor_id = d.id
@@ -221,7 +291,10 @@ async function getBill(req, res) {
     
     // Get bill items
     const [items] = await db.execute(`
-      SELECT bi.*, s.name as service_name, s.code as service_code
+      SELECT bi.id, bi.bill_id, bi.service_id, bi.service_name, 
+             bi.quantity, bi.unit_price, bi.discount_amount, 
+             bi.tax_percent, bi.tax_amount, bi.total_price, bi.sort_order,
+             s.name as service_code
       FROM bill_items bi
       LEFT JOIN services s ON bi.service_id = s.id
       WHERE bi.bill_id = ?
@@ -229,6 +302,7 @@ async function getBill(req, res) {
     `, [id]);
     
     bill.items = items;
+    bill.service_items = items;  // Also provide as service_items for frontend compatibility
     
     res.json({ success: true, bill });
   } catch (error) {
@@ -431,13 +505,17 @@ async function addBill(req, res) {
     // Fetch the complete bill with items to return to frontend
     const [billData] = await db.execute(
       `SELECT b.*, 
-              c.name as clinic_name, c.address as clinic_address, c.phone as clinic_phone,
-              p.name as patient_name, p.phone as patient_phone,
-              u.name as created_by_name
+              p.name as patient_name, p.patient_id as patient_uhid,
+              p.phone as patient_phone, p.email as patient_email,
+              u.name as doctor_name,
+              d.specialization as doctor_specialization,
+              c.name as clinic_name, c.address as clinic_address, c.city as clinic_city,
+              c.state as clinic_state, c.pincode as clinic_pincode, c.phone as clinic_phone
        FROM bills b
-       LEFT JOIN clinics c ON b.clinic_id = c.id
        LEFT JOIN patients p ON b.patient_id = p.id
-       LEFT JOIN users u ON b.created_by = u.id
+       LEFT JOIN doctors d ON b.doctor_id = d.id
+       LEFT JOIN users u ON d.user_id = u.id
+       LEFT JOIN clinics c ON b.clinic_id = c.id
        WHERE b.id = ?`,
       [billId]
     );
@@ -455,8 +533,7 @@ async function addBill(req, res) {
       success: true,
       message: 'Bill created successfully',
       bill_id: billId,
-      bill: bill,
-      ...bill // Include all bill data at root level for compatibility
+      bill: bill
     });
   } catch (error) {
     console.error('Add bill error:', error);
@@ -469,20 +546,68 @@ async function updateBill(req, res) {
   try {
     const { id } = req.params;
     const db = getDb();
-    const updates = req.body;
+    const updates = { ...req.body };
 
-    // Remove fields that shouldn't be updated
+    // Preserve items arrays before removing from updates
+    const itemsArray = req.body.items;
+    const serviceItemsArray = req.body.service_items;
+
+    // Remove fields that shouldn't be updated or don't exist in DB
     delete updates.id;
     delete updates.created_at;
     delete updates.created_by;
+    delete updates.items;
+    delete updates.service_items;
 
-    // Build dynamic update query
-    const updateFields = Object.keys(updates).filter(key => updates[key] !== undefined);
+    // Map frontend field names to database column names
+    const fieldMapping = {
+      'amount': 'subtotal',
+      'tax': 'tax_amount',
+      'discount': 'discount_amount',
+      'payment_id': 'payment_reference'
+    };
+
+    // Apply field mapping
+    for (const [frontendField, dbField] of Object.entries(fieldMapping)) {
+      if (updates[frontendField] !== undefined) {
+        updates[dbField] = updates[frontendField];
+        delete updates[frontendField];
+      }
+    }
+
+    // Valid database columns for bills table
+    const validColumns = [
+      'patient_id', 'clinic_id', 'appointment_id', 'doctor_id', 'bill_number',
+      'template_id', 'subtotal', 'discount_percent', 'discount_amount',
+      'tax_percent', 'tax_amount', 'total_amount', 'amount_paid', 'balance_due',
+      'payment_method', 'payment_reference', 'payment_status', 'bill_date',
+      'due_date', 'notes'
+    ];
+
+    // Filter to only valid columns
+    const updateFields = Object.keys(updates).filter(key =>
+      validColumns.includes(key) && updates[key] !== undefined
+    );
     const updateValues = updateFields.map(key => `${key} = ?`);
     const updateParams = updateFields.map(key => updates[key]);
 
     if (updateFields.length === 0) {
       return res.status(400).json({ error: 'No valid fields to update' });
+    }
+
+    // If total_amount is being updated, recalculate balance_due
+    if (updates.total_amount !== undefined) {
+      const [bills] = await db.execute('SELECT amount_paid FROM bills WHERE id = ?', [id]);
+      if (bills.length > 0) {
+        const amountPaid = parseFloat(bills[0].amount_paid) || 0;
+        const totalAmount = parseFloat(updates.total_amount) || 0;
+        const newBalanceDue = Math.max(0, totalAmount - amountPaid);
+        if (!updateFields.includes('balance_due')) {
+          updateFields.push('balance_due');
+          updateValues.push('balance_due = ?');
+          updateParams.push(newBalanceDue);
+        }
+      }
     }
 
     const updateQuery = `
@@ -494,10 +619,10 @@ async function updateBill(req, res) {
     await db.execute(updateQuery, [...updateParams, req.user.id, id]);
 
     // Update bill items if provided (support both items and service_items)
-    const hasItems = Array.isArray(updates.items);
-    const hasServiceItems = Array.isArray(updates.service_items);
+    const hasItems = Array.isArray(itemsArray);
+    const hasServiceItems = Array.isArray(serviceItemsArray);
     if (hasItems || hasServiceItems) {
-      const incoming = hasItems ? updates.items : updates.service_items;
+      const incoming = hasItems ? itemsArray : serviceItemsArray;
 
       await db.execute('DELETE FROM bill_items WHERE bill_id = ?', [id]);
 
@@ -543,9 +668,46 @@ async function updateBill(req, res) {
       }
     }
 
+    // Fetch and return the updated bill with all details
+    const [updatedBills] = await db.execute(`
+      SELECT b.*, 
+             p.name as patient_name, p.patient_id as patient_uhid,
+             p.phone as patient_phone, p.email as patient_email,
+             u.name as doctor_name,
+             d.specialization as doctor_specialization,
+             c.name as clinic_name, c.address as clinic_address, c.city as clinic_city,
+             c.state as clinic_state, c.pincode as clinic_pincode, c.phone as clinic_phone
+      FROM bills b
+      LEFT JOIN patients p ON b.patient_id = p.id
+      LEFT JOIN doctors d ON b.doctor_id = d.id
+      LEFT JOIN users u ON d.user_id = u.id
+      LEFT JOIN clinics c ON b.clinic_id = c.id
+      WHERE b.id = ?
+    `, [id]);
+
+    if (updatedBills.length === 0) {
+      return res.status(404).json({ error: 'Bill not found after update' });
+    }
+
+    const updatedBill = updatedBills[0];
+
+    // Get updated bill items
+    const [updatedItems] = await db.execute(`
+      SELECT bi.id, bi.bill_id, bi.service_id, bi.service_name, 
+             bi.quantity, bi.unit_price, bi.discount_amount, 
+             bi.tax_percent, bi.tax_amount, bi.total_price, bi.sort_order
+      FROM bill_items bi
+      WHERE bi.bill_id = ?
+      ORDER BY bi.sort_order
+    `, [id]);
+
+    updatedBill.items = updatedItems;
+    updatedBill.service_items = updatedItems;
+
     res.json({
       success: true,
-      message: 'Bill updated successfully'
+      message: 'Bill updated successfully',
+      bill: updatedBill
     });
   } catch (error) {
     console.error('Update bill error:', error);
@@ -560,12 +722,42 @@ async function updateBillStatus(req, res) {
     const { payment_status, amount_paid, payment_method, payment_reference } = req.body;
     const db = getDb();
 
+    // Validate required fields
+    if (!payment_status) {
+      return res.status(400).json({ error: 'Payment status is required' });
+    }
+
+    // Get current bill for balance calculation
+    const [bills] = await db.execute('SELECT total_amount FROM bills WHERE id = ? LIMIT 1', [id]);
+    if (bills.length === 0) {
+      return res.status(404).json({ error: 'Bill not found' });
+    }
+
+    const bill = bills[0];
+    const currentAmountPaid = amount_paid !== undefined ? parseFloat(amount_paid) : 0;
+    const totalAmount = parseFloat(bill.total_amount);
+    
+    // Calculate balance
+    const balanceDue = Math.max(0, totalAmount - currentAmountPaid);
+
+    // Auto-determine payment status if amount_paid is provided
+    let finalStatus = payment_status;
+    if (amount_paid !== undefined) {
+      if (currentAmountPaid >= totalAmount) {
+        finalStatus = 'paid';
+      } else if (currentAmountPaid > 0) {
+        finalStatus = 'partial';
+      } else {
+        finalStatus = 'pending';
+      }
+    }
+
     await db.execute(`
       UPDATE bills 
-      SET payment_status = ?, amount_paid = ?, payment_method = ?, 
+      SET payment_status = ?, amount_paid = ?, balance_due = ?, payment_method = ?, 
           payment_reference = ?, updated_at = NOW()
       WHERE id = ?
-    `, [payment_status, amount_paid, payment_method, payment_reference, id]);
+    `, [finalStatus, currentAmountPaid, balanceDue, payment_method || 'cash', payment_reference || null, id]);
 
     const hasAppointmentId = await hasBillsColumn(db, 'appointment_id');
     if (hasAppointmentId) {
@@ -579,17 +771,17 @@ async function updateBillStatus(req, res) {
         try {
           await db.execute(
             'UPDATE appointments SET payment_status = ?, updated_at = NOW() WHERE id = ?',
-            [payment_status, appointmentId]
+            [finalStatus, appointmentId]
           );
         } catch (_e) {
           // ignore
         }
 
         // When paid, ensure any linked queue entry is marked completed
-        if ((payment_status || '').toLowerCase() === 'paid') {
+        if ((finalStatus || '').toLowerCase() === 'paid') {
           try {
             await db.execute(
-              "UPDATE queue SET status = 'completed', completed_at = IFNULL(completed_at, NOW()) WHERE appointment_id = ? AND status <> 'completed'",
+              "UPDATE queue SET status = 'completed', visit_status = 'billed', completed_at = IFNULL(completed_at, NOW()) WHERE appointment_id = ? AND status <> 'completed'",
               [appointmentId]
             );
           } catch (_e) {
@@ -601,7 +793,10 @@ async function updateBillStatus(req, res) {
 
     res.json({
       success: true,
-      message: 'Bill status updated successfully'
+      message: 'Bill status updated successfully',
+      payment_status: finalStatus,
+      balance_due: balanceDue,
+      amount_paid: currentAmountPaid
     });
   } catch (error) {
     console.error('Update bill status error:', error);
@@ -767,5 +962,7 @@ module.exports = {
   updateBillStatus,
   deleteBill,
   generateReceiptPDF,
-  sendBillWhatsApp
+  sendBillWhatsApp,
+  getUnbilledVisits,
+  deleteUnbilledVisit
 };

@@ -28,15 +28,16 @@ try {
 }
 
 // Create queues - use memory-only if Redis is not available
-const queueOptions = redisClient ? { redis: redisConfig, defaultJobOptions: { removeOnComplete: 100, removeOnFail: 50 } } : { 
-  defaultJobOptions: { removeOnComplete: 100, removeOnFail: 50 } 
-};
-
-const queues = {
-  auth: new Queue('auth requests', queueOptions),
-  database: new Queue('database requests', queueOptions),
-  general: new Queue('general requests', queueOptions)
-};
+// Only create queues if queue feature is enabled
+let queues = {};
+if (process.env.ENABLE_REQUEST_QUEUE === 'true' && redisClient) {
+  const queueOptions = { redis: redisConfig, defaultJobOptions: { removeOnComplete: 100, removeOnFail: 50 } };
+  queues = {
+    auth: new Queue('auth requests', queueOptions),
+    database: new Queue('database requests', queueOptions),
+    general: new Queue('general requests', queueOptions)
+  };
+}
 
 // Token bucket for rate limiting
 class TokenBucket {
@@ -206,25 +207,27 @@ async function processRequest(job) {
   }
 }
 
-// Set up queue processors
-queues.auth.process(20, processRequest);
-queues.database.process(50, processRequest);
-queues.general.process(100, processRequest);
+// Set up queue processors - only if queues are enabled
+if (process.env.ENABLE_REQUEST_QUEUE === 'true' && redisClient) {
+  queues.auth.process(20, processRequest);
+  queues.database.process(50, processRequest);
+  queues.general.process(100, processRequest);
 
-// Queue event listeners
-Object.values(queues).forEach(queue => {
-  queue.on('completed', (job, result) => {
-    console.log(`✅ Queue job completed: ${job.id}`);
+  // Queue event listeners
+  Object.values(queues).forEach(queue => {
+    queue.on('completed', (job, result) => {
+      console.log(`✅ Queue job completed: ${job.id}`);
+    });
+    
+    queue.on('failed', (job, err) => {
+      console.error(`❌ Queue job failed: ${job.id}`, err);
+    });
+    
+    queue.on('stalled', (job) => {
+      console.warn(`⚠️ Queue job stalled: ${job.id}`);
+    });
   });
-  
-  queue.on('failed', (job, err) => {
-    console.error(`❌ Queue job failed: ${job.id}`, err);
-  });
-  
-  queue.on('stalled', (job) => {
-    console.warn(`⚠️ Queue job stalled: ${job.id}`);
-  });
-});
+}
 
 /**
  * Get queue statistics

@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ssh:*)",
+      "Bash(pip show:*)",
+      "Bash(python:*)",
+      "Bash(curl:*)"
+    ]
+  }
+}

@@ -118,17 +118,20 @@ export default function Queue() {
       // Add walk-in patients from queue (those without appointments)
       queueData.forEach(queueItem => {
         if (!queueItem.appointment_id) {
+          // Use queue_id or id - whichever is available
+          const queueId = queueItem.queue_id || queueItem.id;
           combinedData.push({
             ...queueItem,
             source: 'walkin',
-            id: queueItem.queue_id,
+            id: queueId,
+            queue_id: queueId, // Store queue_id for reference
             patient_id: queueItem.patient_id,
-            patient_name: queueItem.name, // Ensure patient_name is set
+            patient_name: queueItem.name || queueItem.patient_name, // Ensure patient_name is set
             uhid: queueItem.patient_id, // Use patient_id as uhid for search
             phone: queueItem.phone, // Ensure phone is available for search
             appointment_date: queueItem.check_in_time?.split('T')[0] || new Date().toISOString().split('T')[0],
             appointment_time: queueItem.check_in_time?.split('T')[1]?.substring(0, 5) || new Date().toTimeString().split(' ')[0].substring(0, 5),
-            status: 'waiting',
+            status: queueItem.status || 'waiting',
             reason_for_visit: 'Walk-in',
             in_queue: true
           });
@@ -178,8 +181,8 @@ export default function Queue() {
     } else {
       console.log('All appointments data:', filteredAppointments);
       const validIds = filteredAppointments
-        .filter(apt => apt.id) // Only select appointments with valid IDs
-        .map(a => a.id);
+        .map(apt => apt.id || apt.queue_id || apt.appointment_id) // Get best available ID
+        .filter(id => id); // Only select entries with valid IDs
       console.log('Valid IDs to select:', validIds);
       setSelectedAppointments(validIds);
     }
@@ -206,14 +209,19 @@ export default function Queue() {
           console.log('Skipping undefined ID');
           return null;
         }
-        
-        const appointment = filteredAppointments.find(a => a.id === id);
+
+        // Find the appointment by any of its IDs
+        const appointment = filteredAppointments.find(a =>
+          a.id === id || a.queue_id === id || a.appointment_id === id
+        );
         console.log('Processing appointment:', appointment);
-        
-        if (appointment?.source === 'walkin') {
-          console.log('Deleting walk-in from queue:', id);
-          const response = await api.delete(`/api/queue/${id}`);
-          console.log('Walk-in delete response:', response);
+
+        if (appointment?.source === 'walkin' || appointment?.queue_id) {
+          // For walk-in or queue entries, delete from queue
+          const queueId = appointment?.queue_id || id;
+          console.log('Deleting from queue:', queueId);
+          const response = await api.delete(`/api/queue/${queueId}`);
+          console.log('Queue delete response:', response);
           return response;
         } else {
           console.log('Deleting appointment:', id);
@@ -285,25 +293,60 @@ export default function Queue() {
 
   // Update appointment status
   const updateAppointmentStatus = useCallback(async (appointmentId, newStatus, apt) => {
+    // Determine the best ID to use
+    const effectiveId = appointmentId || apt?.id || apt?.queue_id || apt?.appointment_id;
+
+    // Guard against undefined appointment ID
+    if (!effectiveId) {
+      console.warn('Cannot update status: no valid ID found', apt);
+      addToast('Cannot update status: Invalid appointment ID', 'error');
+      return;
+    }
+
     try {
-      await api.patch(`/api/appointments/${appointmentId}/status`, { status: newStatus });
+      // For walk-in patients or queue entries, update queue status
+      const isWalkIn = apt?.source === 'walkin' || (apt?.queue_id && !apt?.appointment_id);
+
+      if (isWalkIn) {
+        const queueId = apt?.queue_id || effectiveId;
+        await api.patch(`/api/queue/${queueId}/status`, { status: newStatus });
+      } else {
+        // Try appointment update first
+        try {
+          await api.patch(`/api/appointments/${effectiveId}/status`, { status: newStatus });
+        } catch (appointmentError) {
+          // If appointment update fails (404/400), try queue update as fallback
+          if (appointmentError.response?.status === 404 || appointmentError.response?.status === 400) {
+            console.log('Appointment update failed, trying queue update...');
+            // Try with queue_id if available, otherwise use the original ID
+            const queueId = apt?.queue_id || effectiveId;
+            await api.patch(`/api/queue/${queueId}/status`, { status: newStatus });
+          } else {
+            throw appointmentError;
+          }
+        }
+      }
 
       setAppointments(prev => {
         const updated = prev.map(a =>
-          a.id === appointmentId ? { ...a, status: newStatus } : a
+          (a.id === effectiveId || a.queue_id === effectiveId || a.appointment_id === effectiveId)
+            ? { ...a, status: newStatus }
+            : a
         );
         calculateStats(updated);
         return updated;
       });
 
-      addToast(`Appointment status updated to ${newStatus}`, 'success');
+      addToast(`Status updated to ${newStatus}`, 'success');
 
       // Auto-navigate to create receipt when appointment is completed
       if (newStatus === 'completed' && apt) {
         setTimeout(() => {
           const pid = resolvePatientDbId(apt);
           if (!pid) return;
-          navigate(`/receipts?patient=${pid}&appointment=${apt.id}&quick=true`);
+          // Only include appointment ID if it's a valid appointment (not walk-in)
+          const appointmentParam = apt.source !== 'walkin' && apt.id ? `&appointment=${apt.id}` : '';
+          navigate(`/receipts?patient=${pid}${appointmentParam}&quick=true`);
         }, 1000); // Wait 1 second to show the success message
       }
     } catch (err) {
@@ -314,6 +357,13 @@ export default function Queue() {
 
   // Update payment status
   const updatePaymentStatus = useCallback(async (appointmentId, newPaymentStatus) => {
+    // Guard against undefined appointment ID
+    if (!appointmentId) {
+      console.warn('Cannot update payment status: appointment ID is undefined');
+      addToast('Cannot update payment: No bill found. Please create a receipt first.', 'error');
+      return;
+    }
+
     try {
       // Prefer updating the bill directly if we have a bill_id for the appointment
       const apt = appointments.find(a => a.id === appointmentId) || {};
@@ -325,17 +375,22 @@ export default function Queue() {
       }
 
       setAppointments(prev =>
-        prev.map(apt =>
-          apt.id === appointmentId ? { ...apt, payment_status: newPaymentStatus } : apt
+        prev.map(a =>
+          a.id === appointmentId ? { ...a, payment_status: newPaymentStatus } : a
         )
       );
 
       addToast(`Payment status updated to ${newPaymentStatus}`, 'success');
     } catch (err) {
       console.error('Update payment status error:', err);
-      addToast(err.response?.data?.error || 'Failed to update payment status', 'error');
+      // Show user-friendly message for NO_BILL_FOUND
+      if (err.response?.data?.code === 'NO_BILL_FOUND') {
+        addToast('No receipt found. Please create a receipt first.', 'error');
+      } else {
+        addToast(err.response?.data?.error || 'Failed to update payment status', 'error');
+      }
     }
-  }, [api, addToast]);
+  }, [api, addToast, appointments]);
 
   // Navigate to patient overview - FIXED to use patient_db_id
   const handleVisitPatient = useCallback((apt) => {
@@ -1550,20 +1605,31 @@ Thank you!`;
                           >
                             {/* Checkbox */}
                             <div className="col-span-1 flex items-center">
-                              <input
-                                type="checkbox"
-                                checked={selectedAppointments.includes(apt.id)}
-                                onChange={() => {
-                                  console.log('Checkbox clicked for appointment:', apt);
-                                  console.log('Appointment ID:', apt.id);
-                                  handleSelectAppointment(apt.id);
-                                }}
-                                className="rounded border-slate-300"
-                              />
+                              {(() => {
+                                // Get the best available ID for this entry
+                                const entryId = apt.id || apt.queue_id || apt.appointment_id;
+                                return (
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedAppointments.includes(entryId)}
+                                    onChange={() => {
+                                      console.log('Checkbox clicked for:', apt);
+                                      console.log('Using ID:', entryId);
+                                      if (entryId) {
+                                        handleSelectAppointment(entryId);
+                                      } else {
+                                        console.warn('No valid ID found for entry');
+                                      }
+                                    }}
+                                    disabled={!entryId}
+                                    className="rounded border-slate-300 disabled:opacity-50"
+                                  />
+                                );
+                              })()}
                             </div>
                             
                             {/* Patient Info */}
-                            <div className="col-span-2 flex items-center gap-3">
+                            <div className="col-span-3 flex items-center gap-3">
                               <div className="w-9 h-9 rounded-full bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center text-white text-sm font-medium flex-shrink-0">
                                 {apt.patient_name?.charAt(0)?.toUpperCase() || '?'}
                               </div>
@@ -1627,7 +1693,7 @@ Thank you!`;
                                 <option value="partial">Partial</option>
                                 <option value="cancelled">Cancelled</option>
                               </select>
-                              {Number(getPendingAmount(apt)) > 0 && (
+                              {apt.payment_status !== 'paid' && Number(getPendingAmount(apt)) > 0 && (
                                 <div className="text-[11px] font-semibold text-red-700 bg-red-100 inline-flex px-1.5 py-0.5 rounded">
                                   Pending {formatCurrency(getPendingAmount(apt))}
                                 </div>
@@ -1945,7 +2011,7 @@ Thank you!`;
                                   <span className={`inline-flex items-center px-2 py-0.5 text-xs rounded ${getPaymentBadgeClass(apt.payment_status)}`}>
                                     {apt.payment_status || 'pending'}{apt.amount > 0 ? ` • Paid ₹${apt.amount}` : ''}
                                   </span>
-                                  {Number(getPendingAmount(apt)) > 0 && (
+                                  {apt.payment_status !== 'paid' && Number(getPendingAmount(apt)) > 0 && (
                                     <span className="inline-flex items-center px-2 py-0.5 text-xs rounded bg-red-100 text-red-700 font-semibold">
                                       ⚠️ Pending ₹{getPendingAmount(apt).toFixed(2)}
                                     </span>

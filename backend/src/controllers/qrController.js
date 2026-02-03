@@ -178,12 +178,12 @@ const getDoctorAvailability = async (req, res) => {
 const bookViaQR = async (req, res) => {
   try {
     const { doctorId } = req.params;
-    const { patientName, patientPhone, patientAge, patientGender, symptoms, preferredTime } = req.body;
+    const { patientName, patientPhone, patientAge, patientGender, symptoms, preferredTime, appointmentDate, appointmentTime } = req.body;
     const db = getDb();
 
     // Check if doctor is available
     const [doctor] = await db.execute(
-      'SELECT * FROM doctors WHERE id = ? AND is_active = 1',
+      'SELECT d.*, c.id as clinic_id FROM doctors d LEFT JOIN clinics c ON c.is_active = 1 WHERE d.id = ? AND d.is_active = 1 LIMIT 1',
       [doctorId]
     );
 
@@ -194,77 +194,83 @@ const bookViaQR = async (req, res) => {
       });
     }
 
-    // Check if patient already exists
+    const clinicId = doctor[0].clinic_id || 2; // Default clinic
+
+    // Check if patient already exists by phone
     const [existingPatient] = await db.execute(
       'SELECT * FROM patients WHERE phone = ?',
       [patientPhone]
     );
 
-    let patientId;
+    let patientDbId;
+    let patientUhid;
+
     if (existingPatient.length > 0) {
-      patientId = existingPatient[0].id;
+      patientDbId = existingPatient[0].id;
+      patientUhid = existingPatient[0].patient_id;
+      console.log('Found existing patient:', patientDbId, patientUhid);
     } else {
-      // Create new patient
+      // Create new patient with auto-generated UHID
+      const uhid = 'P' + Date.now() + Math.floor(Math.random() * 1000);
+      const genderCode = patientGender === 'male' ? 'M' : patientGender === 'female' ? 'F' : 'U';
+
       const [newPatient] = await db.execute(
-        `INSERT INTO patients 
-         (id, name, phone, age, gender, created_at, created_by)
-         VALUES (?, ?, ?, ?, ?, NOW(), ?)`,
-        [uuidv4(), patientName, patientPhone, patientAge, patientGender, 'system']
+        `INSERT INTO patients
+         (patient_id, name, phone, age_years, gender, created_at)
+         VALUES (?, ?, ?, ?, ?, NOW())`,
+        [uhid, patientName, patientPhone, patientAge || null, genderCode]
       );
-      patientId = newPatient.insertId;
+      patientDbId = newPatient.insertId;
+      patientUhid = uhid;
+      console.log('Created new patient:', patientDbId, patientUhid);
     }
 
-    // Get current queue count
+    // Determine appointment date and time
+    const aptDate = appointmentDate || new Date().toISOString().split('T')[0];
+    const aptTime = appointmentTime || preferredTime || new Date().toTimeString().split(' ')[0].substring(0, 5) + ':00';
+
+    // Create appointment record
+    const [appointmentResult] = await db.execute(
+      `INSERT INTO appointments
+       (patient_id, doctor_id, clinic_id, appointment_date, appointment_time, status, payment_status, arrival_type, reason_for_visit, created_at)
+       VALUES (?, ?, ?, ?, ?, 'scheduled', 'pending', 'walk-in', ?, NOW())`,
+      [patientDbId, doctorId, clinicId, aptDate, aptTime, symptoms ? JSON.stringify(symptoms) : 'QR Booking']
+    );
+
+    const appointmentId = appointmentResult.insertId;
+
+    // Get current queue count for token number
     const [queueCount] = await db.execute(
-      `SELECT COUNT(*) as count FROM opd_queue 
-       WHERE doctor_id = ? AND DATE(created_at) = CURDATE()`,
+      `SELECT COUNT(*) as count FROM queue
+       WHERE doctor_id = ? AND DATE(check_in_time) = CURDATE()`,
       [doctorId]
     );
 
-    const tokenNumber = queueCount[0].count + 1;
-
-    // Create OPD visit
-    const visitId = uuidv4();
-    await db.execute(
-      `INSERT INTO opd_visits 
-       (id, patient_id, doctor_id, appointment_type, priority, status, token_number, created_at, created_by)
-       VALUES (?, ?, ?, 'OPD', 'normal', 'waiting', ?, NOW(), ?)`,
-      [visitId, patientId, doctorId, tokenNumber, 'qr_booking']
-    );
+    const tokenNumber = (queueCount[0]?.count || 0) + 1;
 
     // Add to queue
     await db.execute(
-      `INSERT INTO opd_queue 
-       (visit_id, patient_id, doctor_id, token_number, status, priority, created_at)
-       VALUES (?, ?, ?, ?, 'waiting', 'normal', NOW())`,
-      [visitId, patientId, doctorId, tokenNumber]
+      `INSERT INTO queue
+       (patient_id, doctor_id, clinic_id, appointment_id, token_number, status, check_in_time, check_in_date)
+       VALUES (?, ?, ?, ?, ?, 'waiting', NOW(), CURDATE())`,
+      [patientDbId, doctorId, clinicId, appointmentId, tokenNumber]
     );
 
-    // Create appointment record
-    await db.execute(
-      `INSERT INTO appointments 
-       (id, patient_id, doctor_id, visit_id, appointment_type, status, symptoms, preferred_time, created_at, created_by)
-       VALUES (?, ?, ?, ?, 'OPD', 'booked', ?, ?, NOW(), ?)`,
-      [uuidv4(), patientId, doctorId, visitId, JSON.stringify(symptoms || []), preferredTime, 'qr_booking']
-    );
-
-    // Send WhatsApp notification (if configured)
-    try {
-      // WhatsApp integration code here
-      console.log(`WhatsApp notification sent to ${patientPhone}: Your token #${tokenNumber} for Dr. ${doctor[0].name}`);
-    } catch (error) {
-      console.log('WhatsApp notification failed:', error.message);
-    }
+    console.log(`QR Booking successful: Patient ${patientName} (${patientUhid}), Appointment #${appointmentId}, Token #${tokenNumber}`);
 
     res.json({
       success: true,
       data: {
-        visitId,
+        appointmentId,
         tokenNumber,
         patientName,
+        patientUhid,
+        patientId: patientDbId,
         doctorName: doctor[0].name,
         specialization: doctor[0].specialization,
-        estimatedWaitTime: queueCount[0].count * 15,
+        appointmentDate: aptDate,
+        appointmentTime: aptTime,
+        estimatedWaitTime: (queueCount[0]?.count || 0) * 15,
         bookingTime: new Date().toISOString()
       }
     });
@@ -273,7 +279,7 @@ const bookViaQR = async (req, res) => {
     console.error('Error booking via QR:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to book appointment'
+      error: 'Failed to book appointment: ' + error.message
     });
   }
 };

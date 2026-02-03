@@ -13,7 +13,7 @@ const RepeatPrescriptionButton = ({ patientId, onRepeatSuccess }) => {
   const fetchLastPrescription = async () => {
     setIsLoading(true);
     try {
-      const response = await api.get(`/prescriptions/patient/${patientId}/last`);
+      const response = await api.get(`/api/prescriptions/patient/${patientId}/last`);
       if (response.data && response.data.length > 0) {
         setLastPrescription(response.data[0]);
         setShowConfirm(true);
@@ -45,7 +45,7 @@ const RepeatPrescriptionButton = ({ patientId, onRepeatSuccess }) => {
         notes: `Repeat prescription from ${new Date(lastPrescription.created_at).toLocaleDateString()}`
       };
 
-      const response = await api.post('/prescriptions', newPrescription);
+      const response = await api.post('/api/prescriptions', newPrescription);
 
       addToast('Prescription repeated successfully!', 'success');
       setShowConfirm(false);

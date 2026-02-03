@@ -3,7 +3,7 @@ import HeaderBar from '../components/HeaderBar';
 import BookAppointmentModal from '../components/appointments/BookAppointmentModal';
 import EditAppointmentModal from '../components/appointments/EditAppointmentModal';
 import { useApiClient } from '../api/client';
-import { FiPlus, FiCalendar, FiUser, FiClock, FiRepeat, FiSend, FiEdit2 } from 'react-icons/fi';
+import { FiPlus, FiCalendar, FiUser, FiClock, FiRepeat, FiSend, FiEdit2, FiTrash2 } from 'react-icons/fi';
 import { openWhatsApp } from '../utils/whatsapp';
 
 export default function Appointments() {
@@ -156,6 +156,22 @@ export default function Appointments() {
     } catch (error) {
       console.error('Failed to delete appointments:', error);
       alert('Failed to delete some appointments');
+    }
+  };
+
+  // Handle single appointment delete
+  const handleDeleteAppointment = async (appointment) => {
+    if (!window.confirm(`Are you sure you want to delete appointment for ${appointment.patient_name || 'this patient'}?`)) {
+      return;
+    }
+
+    try {
+      await api.delete(`/api/appointments/${appointment.id}`);
+      alert('Appointment deleted successfully');
+      fetchAppointments();
+    } catch (error) {
+      console.error('Failed to delete appointment:', error);
+      alert('Failed to delete appointment: ' + (error.response?.data?.error || error.message));
     }
   };
 
@@ -454,6 +470,14 @@ export default function Appointments() {
                                   >
                                     <FiSend size={12} />
                                     WhatsApp
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteAppointment(appointment)}
+                                    className="flex items-center gap-1 px-3 py-1.5 text-xs bg-red-50 text-red-600 rounded hover:bg-red-100 transition"
+                                    title="Delete Appointment"
+                                  >
+                                    <FiTrash2 size={12} />
+                                    Delete
                                   </button>
                                 </div>
                               </div>

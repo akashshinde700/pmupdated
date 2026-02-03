@@ -80,7 +80,10 @@ const createAppointmentIntent = Joi.object({
   speciality: Joi.string().allow('', null),
   doctor_id: Joi.number().integer().positive().allow(null),
   message: Joi.string().allow('', null),
-  auto_create: Joi.boolean().default(false)
+  auto_create: Joi.boolean().default(false),
+  // Consultation type fields - online/offline/walk-in
+  arrival_type: Joi.string().valid('online', 'offline', 'walk-in', 'scheduled').allow('', null),
+  appointment_type: Joi.string().valid('online', 'offline', 'walk-in', 'scheduled').allow('', null)
 }).or('name', 'full_name'); // At least one name field required
 
 // ---------- Queue ----------
@@ -132,9 +135,30 @@ const createBill = Joi.object({
 const updateBill = Joi.object({
   doctor_id: Joi.number().integer().positive().allow(null),
   clinic_id: Joi.number().integer().positive().allow(null),
+  template_id: Joi.number().integer().positive().allow(null),
   bill_date: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  due_date: Joi.date().allow(null),
+  subtotal: Joi.number().precision(2).allow(null),
+  amount: Joi.number().precision(2).allow(null),
+  tax: Joi.number().precision(2).allow(null),
+  tax_percent: Joi.number().precision(2).allow(null),
+  tax_amount: Joi.number().precision(2).allow(null),
+  discount: Joi.number().precision(2).allow(null),
+  discount_percent: Joi.number().precision(2).allow(null),
+  discount_amount: Joi.number().precision(2).allow(null),
+  additional_discount: Joi.number().precision(2).allow(null),
+  total_amount: Joi.number().precision(2).allow(null),
+  amount_paid: Joi.number().precision(2).allow(null),
+  balance_due: Joi.number().precision(2).allow(null),
+  payment_method: Joi.string().allow('', null),
+  payment_reference: Joi.string().allow('', null),
+  payment_id: Joi.string().allow('', null),
+  payment_status: Joi.string().allow('', null),
   status: Joi.string().valid('draft','issued','paid','cancelled','refunded','partially_paid').optional(),
-  notes: Joi.string().allow('', null)
+  notes: Joi.string().allow('', null),
+  remarks: Joi.string().allow('', null),
+  items: Joi.array().optional(),
+  service_items: Joi.array().optional()
 });
 const addPayment = Joi.object({
   bill_id: Joi.number().integer().positive().required(),

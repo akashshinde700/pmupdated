@@ -15,7 +15,7 @@ export default function BookAppointment() {
     phone: '',
     preferred_date: '',
     appointment_time: '',
-    appointment_type: 'offline' // Default to offline
+    appointment_type: 'online' // Default to online
   });
   
   const [allTimeSlots, setAllTimeSlots] = useState([]);
@@ -95,7 +95,8 @@ export default function BookAppointment() {
         preferred_date: bookingData.preferred_date,
         preferred_time: bookingData.appointment_time,
         doctor_id: doctorParam,
-        appointment_type: bookingData.appointment_type, // Include appointment type
+        arrival_type: bookingData.appointment_type, // Send as arrival_type to backend
+        appointment_type: bookingData.appointment_type,
         message: `${bookingData.appointment_type === 'online' ? 'Online' : 'Offline'} appointment request on ${bookingData.preferred_date} at ${bookingData.appointment_time}`,
         auto_create: true
       });
@@ -111,7 +112,7 @@ export default function BookAppointment() {
           phone: '',
           preferred_date: '',
           appointment_time: '',
-          appointment_type: 'offline'
+          appointment_type: 'online'
         });
         setSubmitSuccess(false);
       }, 2000);

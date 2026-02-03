@@ -698,8 +698,7 @@ async function updatePaymentStatus(req, res) {
     let billId;
 
     if (bills.length === 0) {
-      console.log('🔍 No bills found, creating new bill...');
-      // Warning logged silently
+      console.log('🔍 No bills found for appointment, checking patient bills...');
 
       // Fallback: try to find a bill by the appointment's patient_id (some bills may not have appointment_id set)
       const [appts] = await db.execute(
@@ -712,41 +711,25 @@ async function updatePaymentStatus(req, res) {
         return res.status(404).json({ error: 'Appointment not found' });
       }
 
-      const { patient_id: patientDbId, doctor_id: doctorId, appointment_date } = appts[0];
+      const { patient_id: patientDbId } = appts[0];
 
       if (!patientDbId) {
         console.log('❌ No patient associated with this appointment');
         return res.status(404).json({ error: 'No patient associated with this appointment' });
       }
 
-      console.log('🔍 Creating new bill for patient:', patientDbId);
-
+      // Try to find a recent bill for this patient (created today)
       const [patientBills] = await db.execute(
-        'SELECT id FROM bills WHERE patient_id = ? ORDER BY created_at DESC LIMIT 1',
+        `SELECT id FROM bills WHERE patient_id = ? AND DATE(created_at) = CURDATE() ORDER BY created_at DESC LIMIT 1`,
         [patientDbId]
       );
 
       if (patientBills.length === 0) {
-        console.log('🔧 No patient bills found, creating new bill');
-
-        // Get consultation fee from doctor
-        const [doctors] = await db.execute(
-          'SELECT consultation_fee FROM doctors WHERE id = ?',
-          [doctorId]
-        );
-
-        const consultationFee = doctors.length > 0 ? doctors[0].consultation_fee || DEFAULT_CONSULTATION_FEE : DEFAULT_CONSULTATION_FEE;
-        console.log('🔧 Consultation fee:', consultationFee);
-
-        // Create a default bill for this appointment
-        const [result] = await db.execute(
-          `INSERT INTO bills (patient_id, doctor_id, clinic_id, appointment_id, bill_date, total_amount, payment_status, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
-          [patientDbId, doctorId, req.user?.clinic_id || 2, id, appointment_date || new Date().toISOString().split('T')[0], consultationFee, payment_status]
-        );
-
-        billId = result.insertId;
-        console.log('✅ Created new bill with ID:', billId);
+        console.log('ℹ️ No bill found for this appointment. Please create a receipt first.');
+        return res.status(404).json({
+          error: 'No bill found for this appointment. Please create a receipt first.',
+          code: 'NO_BILL_FOUND'
+        });
       } else {
         billId = patientBills[0].id;
         console.log('🔧 Using existing patient bill ID:', billId);

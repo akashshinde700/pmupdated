@@ -50,7 +50,8 @@ export default function Receipts() {
   // Print ref for react-to-print
   const printRef = useRef(null);
   const handlePrint = useReactToPrint({
-    content: () => printRef.current
+    contentRef: printRef,
+    documentTitle: 'Receipt'
   });
 
   // Create receipt form state
@@ -220,27 +221,42 @@ export default function Receipts() {
     // Handle edit mode
     if (edit === 'true' && billId) {
       console.log('Opening edit modal for bill:', billId);
-      // Find the receipt/bill to edit
-      const receiptToEdit = receipts.find(r => r.id == billId);
-      if (receiptToEdit) {
-        setEditingReceipt(receiptToEdit);
-        setShowEditModal(true);
-      } else {
-        // If not found in receipts, fetch it directly
-        const fetchBillForEdit = async () => {
-          try {
-            const detail = await api.get(`/api/bills/${billId}`);
-            const bill = detail.data?.bill || detail.data?.data?.bill;
-            if (bill) {
-              setEditingReceipt(bill);
-              setShowEditModal(true);
+      // ALWAYS fetch the full bill detail for editing to ensure service_items are loaded
+      const fetchBillForEdit = async () => {
+        try {
+          const detail = await api.get(`/api/bills/${billId}`);
+          const bill = detail.data?.bill || detail.data?.data?.bill || detail.data;
+          if (bill) {
+            // Ensure service_items are properly formatted
+            if (!bill.service_items && bill.items) {
+              bill.service_items = bill.items;
             }
-          } catch (error) {
-            console.error('Failed to fetch bill for edit:', error);
+            // If still no items, create an empty array
+            if (!bill.service_items) {
+              bill.service_items = [];
+            }
+            // Ensure all service items have unit_price field
+            if (bill.service_items && Array.isArray(bill.service_items)) {
+              bill.service_items = bill.service_items.map(item => ({
+                ...item,
+                unit_price: item.unit_price ?? item.amount ?? 0,
+                quantity: item.quantity ?? item.qty ?? 1
+              }));
+            }
+            setEditingReceipt(bill);
+            setShowEditModal(true);
           }
-        };
-        fetchBillForEdit();
-      }
+        } catch (error) {
+          console.error('Failed to fetch bill for edit:', error);
+          // Try to find in list as fallback
+          const receiptToEdit = receipts.find(r => r.id == billId);
+          if (receiptToEdit) {
+            setEditingReceipt(receiptToEdit);
+            setShowEditModal(true);
+          }
+        }
+      };
+      fetchBillForEdit();
     }
 
     // Only show create modal if we have valid quick/full parameters with patient
@@ -723,23 +739,32 @@ export default function Receipts() {
                     <td className="px-4 py-3 text-sm">
                       <div className="flex gap-2">
                         <button
-                          onClick={() => {
-                            // Add template data if receipt has template_id
-                            let receiptWithTemplate = { ...receipt };
-                            if (receipt.template_id) {
-                              const template = receiptTemplates.find(t => t.id === parseInt(receipt.template_id));
-                              if (template) {
-                                receiptWithTemplate = {
-                                  ...receiptWithTemplate,
-                                  template_header_image: template.header_image,
-                                  template_header_content: template.header_content,
-                                  template_footer_image: template.footer_image,
-                                  template_footer_content: template.footer_content
-                                };
+                          onClick={async () => {
+                            try {
+                              // Fetch full bill with service_items from API
+                              const res = await api.get(`/api/bills/${receipt.id}`);
+                              const fullBill = res.data?.bill || res.data;
+
+                              // Add template data if receipt has template_id
+                              let receiptWithTemplate = { ...fullBill };
+                              if (fullBill.template_id) {
+                                const template = receiptTemplates.find(t => t.id === parseInt(fullBill.template_id));
+                                if (template) {
+                                  receiptWithTemplate = {
+                                    ...receiptWithTemplate,
+                                    template_header_image: template.header_image,
+                                    template_header_content: template.header_content,
+                                    template_footer_image: template.footer_image,
+                                    template_footer_content: template.footer_content
+                                  };
+                                }
                               }
+                              setSelectedReceipt(receiptWithTemplate);
+                              setShowSuccessModal(true);
+                            } catch (error) {
+                              console.error('Failed to fetch receipt details:', error);
+                              addToast('Failed to load receipt details', 'error');
                             }
-                            setSelectedReceipt(receiptWithTemplate);
-                            setShowSuccessModal(true);
                           }}
                           className="text-primary hover:underline"
                         >
@@ -754,46 +779,55 @@ export default function Receipts() {
                           PDF
                         </button>
                         <button
-                          onClick={() => {
-                            // Prepare receipt for editing with proper service_items structure
-                            let receiptForEdit = { ...receipt };
+                          onClick={async () => {
+                            try {
+                              // Fetch full bill with service_items from API
+                              const res = await api.get(`/api/bills/${receipt.id}`);
+                              const fullBill = res.data?.bill || res.data;
 
-                            // Ensure service_items exists and is properly formatted
-                            if (!receiptForEdit.service_items || receiptForEdit.service_items.length === 0) {
-                              receiptForEdit.service_items = [{
-                                service_name: 'Consultation',
-                                qty: 1,
-                                unit_price: parseFloat(receipt.amount) || 0,
-                                discount: 0,
-                                total: parseFloat(receipt.amount) || 0
-                              }];
-                            } else {
-                              // Ensure all numeric values are parsed
-                              receiptForEdit.service_items = receiptForEdit.service_items.map(item => ({
-                                service_name: item.service_name || item.service || 'Service',
-                                qty: parseFloat(item.qty) || 1,
-                                unit_price: parseFloat(item.unit_price) || parseFloat(item.amount) || 0,
-                                discount: parseFloat(item.discount) || 0,
-                                total: parseFloat(item.total) || 0
-                              }));
-                            }
+                              // Prepare receipt for editing with proper service_items structure
+                              let receiptForEdit = { ...fullBill };
 
-                            // Add template data if receipt has template_id
-                            if (receipt.template_id) {
-                              const template = receiptTemplates.find(t => t.id === parseInt(receipt.template_id));
-                              if (template) {
-                                receiptForEdit = {
-                                  ...receiptForEdit,
-                                  template_header_image: template.header_image,
-                                  template_header_content: template.header_content,
-                                  template_footer_image: template.footer_image,
-                                  template_footer_content: template.footer_content
-                                };
+                              // Ensure service_items exists and is properly formatted
+                              if (!receiptForEdit.service_items || receiptForEdit.service_items.length === 0) {
+                                receiptForEdit.service_items = [{
+                                  service_name: 'Consultation',
+                                  qty: 1,
+                                  unit_price: parseFloat(fullBill.amount) || 0,
+                                  discount: 0,
+                                  total: parseFloat(fullBill.amount) || 0
+                                }];
+                              } else {
+                                // Ensure all numeric values are parsed
+                                receiptForEdit.service_items = receiptForEdit.service_items.map(item => ({
+                                  service_name: item.service_name || item.service || 'Service',
+                                  qty: parseFloat(item.qty || item.quantity) || 1,
+                                  unit_price: parseFloat(item.unit_price) || parseFloat(item.amount) || 0,
+                                  discount: parseFloat(item.discount || item.discount_amount) || 0,
+                                  total: parseFloat(item.total || item.total_price) || 0
+                                }));
                               }
-                            }
 
-                            setEditingReceipt(receiptForEdit);
-                            setShowEditModal(true);
+                              // Add template data if receipt has template_id
+                              if (fullBill.template_id) {
+                                const template = receiptTemplates.find(t => t.id === parseInt(fullBill.template_id));
+                                if (template) {
+                                  receiptForEdit = {
+                                    ...receiptForEdit,
+                                    template_header_image: template.header_image,
+                                    template_header_content: template.header_content,
+                                    template_footer_image: template.footer_image,
+                                    template_footer_content: template.footer_content
+                                  };
+                                }
+                              }
+
+                              setEditingReceipt(receiptForEdit);
+                              setShowEditModal(true);
+                            } catch (error) {
+                              console.error('Failed to fetch receipt for editing:', error);
+                              addToast('Failed to load receipt details', 'error');
+                            }
                           }}
                           className="text-blue-600 hover:underline"
                         >
@@ -1475,7 +1509,7 @@ export default function Receipts() {
                       return;
                     }
                     try {
-                      const response = await api.get(`/api/bills/pdf/${selectedReceipt.id}`, {
+                      const response = await api.get(`/api/pdf/bill/${selectedReceipt.id}`, {
                         responseType: 'blob'
                       });
 
@@ -1518,7 +1552,7 @@ export default function Receipts() {
                           window.open(shareUrl, '_blank');
                         }
                       } else {
-                        const link = `${window.location.origin.replace(/\/$/, '')}/api/bills/${selectedReceipt.id}/pdf`;
+                        const link = `${window.location.origin.replace(/\/$/, '')}/api/pdf/bill/${selectedReceipt.id}`;
                         const msg = `Your receipt: ${link}`;
                         const shareUrl = `https://wa.me/?text=${encodeURIComponent(msg)}`;
                         window.open(shareUrl, '_blank');
@@ -1543,7 +1577,7 @@ export default function Receipts() {
                 <button
                   type="button"
                   onClick={() => {
-                    const link = `${window.location.origin.replace(/\/$/, '')}/api/bills/${selectedReceipt.id}/pdf`;
+                    const link = `${window.location.origin.replace(/\/$/, '')}/api/pdf/bill/${selectedReceipt.id}`;
                     navigator.clipboard.writeText(link).then(() => alert('PDF link copied to clipboard'));
                   }}
                   className="px-4 py-2 border rounded hover:bg-slate-50 transition active:scale-[0.98]"
@@ -1553,7 +1587,7 @@ export default function Receipts() {
                 <button
                   type="button"
                   onClick={() => {
-                    const link = `${window.location.origin.replace(/\/$/, '')}/api/bills/${selectedReceipt.id}/pdf`;
+                    const link = `${window.location.origin.replace(/\/$/, '')}/api/pdf/bill/${selectedReceipt.id}`;
                     const qr = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(link)}`;
                     window.open(qr, '_blank');
                   }}
@@ -1697,48 +1731,89 @@ export default function Receipts() {
                       <td className="px-4 py-3 text-sm">
                         <div className="flex gap-2">
                           <button
-                            onClick={() => {
-                              // Add template data if receipt has template_id
-                              let receiptWithTemplate = { ...receipt, justCreated: false };
-                              if (receipt.template_id) {
-                                const template = receiptTemplates.find(t => t.id === parseInt(receipt.template_id));
-                                if (template) {
-                                  receiptWithTemplate = {
-                                    ...receiptWithTemplate,
-                                    template_header_image: template.header_image,
-                                    template_header_content: template.header_content,
-                                    template_footer_image: template.footer_image,
-                                    template_footer_content: template.footer_content
-                                  };
+                            onClick={async () => {
+                              try {
+                                // Fetch full bill with service_items from API
+                                const res = await api.get(`/api/bills/${receipt.id}`);
+                                const fullBill = res.data?.bill || res.data;
+
+                                // Add template data if receipt has template_id
+                                let receiptWithTemplate = { ...fullBill, justCreated: false };
+                                if (fullBill.template_id) {
+                                  const template = receiptTemplates.find(t => t.id === parseInt(fullBill.template_id));
+                                  if (template) {
+                                    receiptWithTemplate = {
+                                      ...receiptWithTemplate,
+                                      template_header_image: template.header_image,
+                                      template_header_content: template.header_content,
+                                      template_footer_image: template.footer_image,
+                                      template_footer_content: template.footer_content
+                                    };
+                                  }
                                 }
+                                setSelectedReceipt(receiptWithTemplate);
+                                setShowViewAllModal(false);
+                                setShowSuccessModal(true);
+                              } catch (error) {
+                                console.error('Failed to fetch receipt details:', error);
+                                addToast('Failed to load receipt details', 'error');
                               }
-                              setSelectedReceipt(receiptWithTemplate);
-                              setShowViewAllModal(false);
-                              setShowSuccessModal(true);
                             }}
                             className="text-primary hover:underline"
                           >
                             View
                           </button>
                           <button
-                            onClick={() => {
-                              // Add template data if receipt has template_id
-                              let receiptWithTemplate = { ...receipt };
-                              if (receipt.template_id) {
-                                const template = receiptTemplates.find(t => t.id === parseInt(receipt.template_id));
-                                if (template) {
-                                  receiptWithTemplate = {
-                                    ...receiptWithTemplate,
-                                    template_header_image: template.header_image,
-                                    template_header_content: template.header_content,
-                                    template_footer_image: template.footer_image,
-                                    template_footer_content: template.footer_content
-                                  };
+                            onClick={async () => {
+                              try {
+                                // Fetch full bill with service_items from API
+                                const res = await api.get(`/api/bills/${receipt.id}`);
+                                const fullBill = res.data?.bill || res.data;
+
+                                // Prepare receipt for editing with proper service_items structure
+                                let receiptForEdit = { ...fullBill };
+
+                                // Ensure service_items exists and is properly formatted
+                                if (!receiptForEdit.service_items || receiptForEdit.service_items.length === 0) {
+                                  receiptForEdit.service_items = [{
+                                    service_name: 'Consultation',
+                                    qty: 1,
+                                    unit_price: parseFloat(fullBill.amount) || 0,
+                                    discount: 0,
+                                    total: parseFloat(fullBill.amount) || 0
+                                  }];
+                                } else {
+                                  // Ensure all numeric values are parsed
+                                  receiptForEdit.service_items = receiptForEdit.service_items.map(item => ({
+                                    service_name: item.service_name || item.service || 'Service',
+                                    qty: parseFloat(item.qty || item.quantity) || 1,
+                                    unit_price: parseFloat(item.unit_price) || parseFloat(item.amount) || 0,
+                                    discount: parseFloat(item.discount || item.discount_amount) || 0,
+                                    total: parseFloat(item.total || item.total_price) || 0
+                                  }));
                                 }
+
+                                // Add template data if receipt has template_id
+                                if (fullBill.template_id) {
+                                  const template = receiptTemplates.find(t => t.id === parseInt(fullBill.template_id));
+                                  if (template) {
+                                    receiptForEdit = {
+                                      ...receiptForEdit,
+                                      template_header_image: template.header_image,
+                                      template_header_content: template.header_content,
+                                      template_footer_image: template.footer_image,
+                                      template_footer_content: template.footer_content
+                                    };
+                                  }
+                                }
+
+                                setEditingReceipt(receiptForEdit);
+                                setShowViewAllModal(false);
+                                setShowEditModal(true);
+                              } catch (error) {
+                                console.error('Failed to fetch receipt for editing:', error);
+                                addToast('Failed to load receipt details', 'error');
                               }
-                              setEditingReceipt(receiptWithTemplate);
-                              setShowViewAllModal(false);
-                              setShowEditModal(true);
                             }}
                             className="text-blue-600 hover:underline"
                           >
@@ -1788,6 +1863,14 @@ export default function Receipts() {
       >
         {editingReceipt && (
           <div className="space-y-6">
+            {(() => {
+              // Ensure service_items always exist
+              if (!editingReceipt.service_items || editingReceipt.service_items.length === 0) {
+                editingReceipt.service_items = [{ service_name: '', qty: 1, unit_price: 0, discount_amount: 0, total_price: 0 }];
+              }
+              return null;
+            })()}
+            
             {/* Patient Info Display */}
             <div className="bg-slate-50 p-4 rounded grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
@@ -1911,14 +1994,15 @@ export default function Receipts() {
                     </tr>
                   </thead>
                   <tbody>
-                    {(editingReceipt.service_items || []).map((service, index) => (
-                      <tr key={index}>
-                        <td className="px-3 py-2">
-                          <input
-                            type="text"
-                            className="w-full px-2 py-1 border rounded text-sm"
-                            placeholder="Service name"
-                            value={service.service_name || service.service}
+                    {(editingReceipt.service_items && editingReceipt.service_items.length > 0) ? (
+                      editingReceipt.service_items.map((service, index) => (
+                        <tr key={index}>
+                          <td className="px-3 py-2">
+                            <input
+                              type="text"
+                              className="w-full px-2 py-1 border rounded text-sm"
+                              placeholder="Service name"
+                              value={service.service_name || service.service}
                             onChange={(e) => {
                               const updatedReceipt = { ...editingReceipt };
                               updatedReceipt.service_items[index].service_name = e.target.value;
@@ -2003,7 +2087,14 @@ export default function Receipts() {
                           )}
                         </td>
                       </tr>
-                    ))}
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan="6" className="px-3 py-4 text-center text-slate-500">
+                          No services added. Use the "Add Service" button to add items.
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -2131,7 +2222,8 @@ export default function Receipts() {
               <button
                 onClick={async () => {
                   try {
-                    const subtotal = (editingReceipt.service_items || []).reduce((sum, s) => sum + (parseFloat(s.total) || 0), 0);
+                    // Calculate subtotal using both total and total_price fields
+                    const subtotal = (editingReceipt.service_items || []).reduce((sum, s) => sum + (parseFloat(s.total || s.total_price || 0) || 0), 0);
                     const taxAmount = (subtotal * (parseFloat(editingReceipt.tax) || 0)) / 100;
                     const total = subtotal + taxAmount - (parseFloat(editingReceipt.discount) || 0);
 
@@ -2146,19 +2238,13 @@ export default function Receipts() {
                       payment_status: editingReceipt.payment_status || 'pending',
                       notes: editingReceipt.notes || null,
                       remarks: editingReceipt.remarks || null,
+                      // Send service_items in the exact backend format
                       service_items: (editingReceipt.service_items || []).map(s => ({
-                        service_name: s.service_name || s.service,
-                        qty: parseFloat(s.qty) || 1,
-                        amount: parseFloat(s.amount) || 0,
-                        discount: parseFloat(s.discount) || 0,
-                        total: parseFloat(s.total) || 0
-                      })),
-                      items: (editingReceipt.service_items || []).map(s => ({
-                        service_name: s.service_name || s.service,
-                        quantity: parseFloat(s.qty) || 1,
-                        unit_price: parseFloat(s.amount) || 0,
-                        discount_amount: parseFloat(s.discount) || 0,
-                        total_price: parseFloat(s.total) || 0
+                        service_name: s.service_name || s.service || '',
+                        quantity: parseFloat(s.qty || s.quantity || 1) || 1,
+                        unit_price: parseFloat(s.unit_price || s.amount || 0) || 0,
+                        discount_amount: parseFloat(s.discount_amount || s.discount || 0) || 0,
+                        total_price: parseFloat(s.total_price || s.total || 0) || 0
                       }))
                     };
 

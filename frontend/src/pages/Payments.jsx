@@ -328,7 +328,7 @@ export default function Payments() {
   const handlePrintReceipt = async (payment) => {
     try {
       // Fetch the receipt PDF and print it
-      const response = await api.get(`/api/bills/${payment.id}/pdf`, {
+      const response = await api.get(`/api/pdf/bill/${payment.id}`, {
         responseType: 'blob'
       });
 
@@ -501,15 +501,21 @@ export default function Payments() {
       } else {
         // Update bill payment status
         if (newStatus === 'partial' && partialPaymentAmount) {
-          // Handle partial payment
-          await api.patch(`/api/bills/${editingStatus.id}/payment`, {
-            paid_amount: parseFloat(partialPaymentAmount),
-            payment_status: 'pending'
+          // Handle partial payment - send amount_paid which backend will use to calculate balance
+          const paidAmount = parseFloat(partialPaymentAmount) || 0;
+          await api.patch(`/api/bills/${editingStatus.id}/status`, {
+            amount_paid: paidAmount,
+            payment_status: 'partial'
           });
           addToast(`Partial payment of ₹${partialPaymentAmount} recorded`, 'success');
         } else {
           // Handle full payment or status change
+          // For paid status, send amount_paid = total_amount
+          const billTotal = parseFloat(editingStatus.total_amount) || 0;
+          const amountPaid = newStatus === 'paid' ? billTotal : 0;
+          
           await api.patch(`/api/bills/${editingStatus.id}/status`, { 
+            amount_paid: amountPaid,
             payment_status: newStatus === 'paid' ? 'paid' : newStatus 
           });
           addToast('Status updated successfully', 'success');
@@ -957,6 +963,26 @@ export default function Payments() {
                                   Update Status
                                 </button>
                               </div>
+                              {/* Delete unbilled visit button */}
+                              <button
+                                onClick={async () => {
+                                  if (window.confirm('Delete this unbilled visit?')) {
+                                    try {
+                                      await api.delete(`/api/bills/unbilled-visits/${payment.id}`);
+                                      addToast('Unbilled visit deleted', 'success');
+                                      fetchPayments();
+                                      fetchSummary();
+                                    } catch (error) {
+                                      console.error('Failed to delete unbilled visit:', error);
+                                      addToast('Failed to delete unbilled visit', 'error');
+                                    }
+                                  }
+                                }}
+                                className="p-1 text-red-600 hover:bg-red-50 rounded"
+                                title="Delete Unbilled Visit"
+                              >
+                                <FiTrash2 size={16} />
+                              </button>
                             </>
                           ) : (
                             <>
@@ -981,6 +1007,20 @@ export default function Payments() {
                               >
                                 <FiSend size={16} />
                               </button>
+                              {/* Delete button for pending payments only */}
+                              {activeTab === 'pending' && payment.payment_status === 'pending' && (
+                                <button
+                                  onClick={() => {
+                                    if (window.confirm('Delete this pending bill?')) {
+                                      handleDeletePayment(payment.id);
+                                    }
+                                  }}
+                                  className="p-1 text-red-600 hover:bg-red-50 rounded"
+                                  title="Delete Pending Bill"
+                                >
+                                  <FiTrash2 size={16} />
+                                </button>
+                              )}
                             </>
                           )}
                         </div>
