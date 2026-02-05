@@ -523,6 +523,20 @@ export default function PrescriptionPad() {
     spo2: ''
   });
 
+  // Medical History State (dr.eka.care style)
+  const [medicalHistoryData, setMedicalHistoryData] = useState({
+    medicalHistory: [],      // Y/N toggle conditions
+    existingConditions: [],  // Chronic conditions
+    surgicalHistory: [],     // Past surgeries
+    allergies: [],           // Drug allergies
+    familyHistory: []        // Family history
+  });
+  const [medicalHistoryLoading, setMedicalHistoryLoading] = useState(false);
+  const [showAddConditionModal, setShowAddConditionModal] = useState(false);
+  const [showAddSurgeryModal, setShowAddSurgeryModal] = useState(false);
+  const [newCondition, setNewCondition] = useState({ condition_name: '', icd_code: '', start_date: '', notes: '' });
+  const [newSurgery, setNewSurgery] = useState({ surgery_name: '', surgery_date: '', hospital: '', surgeon: '', complications: '' });
+
   // Load pad configuration from localStorage
   useEffect(() => {
     const savedConfig = localStorage.getItem('padConfiguration');
@@ -549,34 +563,365 @@ export default function PrescriptionPad() {
       switch (fieldName) {
         case 'Patient Medical History':
           return (
-            <div key="medical-history" className="bg-white border rounded shadow-sm p-4 space-y-3">
-              <h2 className="text-lg font-semibold flex items-center gap-2">
-                <span className="w-6 h-6 rounded-full bg-yellow-100 text-yellow-700 flex items-center justify-center text-xs font-bold">Hx</span>
-                Patient Medical History
-              </h2>
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Medical Conditions</label>
-                  <div className="px-3 py-2 bg-gray-50 border rounded text-sm min-h-[60px]">
-                    {patient?.medical_conditions || <span className="text-gray-400">No medical conditions recorded</span>}
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Allergies</label>
-                  <div className="px-3 py-2 bg-gray-50 border rounded text-sm min-h-[60px]">
-                    {patient?.allergies || <span className="text-gray-400">No allergies recorded</span>}
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Current Medications</label>
-                  <div className="px-3 py-2 bg-gray-50 border rounded text-sm min-h-[60px]">
-                    {patient?.current_medications || <span className="text-gray-400">No current medications</span>}
-                  </div>
-                </div>
+            <div key="medical-history" className="bg-white border border-amber-200 rounded-lg shadow-sm overflow-hidden">
+              {/* Header */}
+              <div className="bg-gradient-to-r from-amber-50 to-yellow-50 px-4 py-3 border-b border-amber-100">
+                <h2 className="text-lg font-semibold flex items-center gap-2 text-amber-800">
+                  <span className="w-7 h-7 rounded-full bg-amber-500 text-white flex items-center justify-center text-xs font-bold">Hx</span>
+                  Patient Medical History
+                  {medicalHistoryLoading && <span className="text-xs text-amber-600 ml-2">(Loading...)</span>}
+                </h2>
               </div>
-              <p className="text-xs text-gray-500 italic">
-                * Medical history is managed in the Patient Profile. This information is read-only here.
-              </p>
+
+              <div className="p-4 space-y-5">
+                {/* Quick Condition Toggles - dr.eka.care style */}
+                {medicalHistoryData.medicalHistory && medicalHistoryData.medicalHistory.length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
+                      <span className="w-2 h-2 bg-amber-500 rounded-full"></span>
+                      Quick Medical History
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                      {medicalHistoryData.medicalHistory.map((item) => (
+                        <div key={item.option_id} className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg border hover:bg-gray-100 transition-colors">
+                          <span className="text-sm text-gray-700 flex-1 truncate" title={item.condition_name}>
+                            {item.condition_name}
+                          </span>
+                          <div className="flex items-center gap-1">
+                            {/* Y/N Toggle Buttons */}
+                            <button
+                              onClick={() => toggleMedicalCondition(item, true)}
+                              className={`px-2 py-0.5 text-xs font-bold rounded transition-all ${
+                                item.has_condition
+                                  ? 'bg-green-500 text-white shadow-sm'
+                                  : 'bg-gray-200 text-gray-500 hover:bg-green-100'
+                              }`}
+                            >
+                              Y+
+                            </button>
+                            <button
+                              onClick={() => toggleMedicalCondition(item, false)}
+                              className={`px-2 py-0.5 text-xs font-bold rounded transition-all ${
+                                !item.has_condition
+                                  ? 'bg-red-500 text-white shadow-sm'
+                                  : 'bg-gray-200 text-gray-500 hover:bg-red-100'
+                              }`}
+                            >
+                              -
+                            </button>
+                          </div>
+                          {/* Since field - only shows when Y is selected */}
+                          {item.has_condition && (
+                            <input
+                              type="text"
+                              placeholder="Since"
+                              className="w-16 px-1 py-0.5 text-xs border rounded bg-white focus:ring-1 focus:ring-amber-300"
+                              value={item.since_date || ''}
+                              onChange={(e) => updateConditionSince(item, e.target.value)}
+                            />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Existing Conditions Section */}
+                <div className="border-t pt-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                      <span className="w-2 h-2 bg-red-500 rounded-full"></span>
+                      EXISTING CONDITIONS
+                      {medicalHistoryData.existingConditions?.length > 0 && (
+                        <span className="px-2 py-0.5 text-xs bg-red-100 text-red-700 rounded-full">
+                          {medicalHistoryData.existingConditions.length}
+                        </span>
+                      )}
+                    </h3>
+                    <button
+                      onClick={() => setShowAddConditionModal(true)}
+                      className="text-xs px-3 py-1 bg-red-50 text-red-600 rounded-full hover:bg-red-100 transition-colors flex items-center gap-1 font-medium"
+                    >
+                      <span>+</span> Add Condition
+                    </button>
+                  </div>
+                  {medicalHistoryData.existingConditions?.length > 0 ? (
+                    <div className="space-y-2">
+                      {medicalHistoryData.existingConditions.map((condition) => (
+                        <div key={condition.id} className="flex items-center justify-between p-2 bg-red-50 rounded-lg border border-red-100">
+                          <div className="flex-1">
+                            <span className="font-medium text-gray-800">{condition.condition_name}</span>
+                            {condition.icd_code && <span className="ml-2 text-xs text-gray-500">({condition.icd_code})</span>}
+                            {condition.start_date && <span className="ml-2 text-xs text-gray-400">Since: {condition.start_date}</span>}
+                          </div>
+                          <button
+                            onClick={() => deleteExistingCondition(condition.id)}
+                            className="text-red-400 hover:text-red-600 p-1"
+                          >
+                            <FiX size={16} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-400 italic">No existing conditions recorded</p>
+                  )}
+                </div>
+
+                {/* Past Surgical Procedures Section */}
+                <div className="border-t pt-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                      <span className="w-2 h-2 bg-purple-500 rounded-full"></span>
+                      PAST SURGICAL PROCEDURES
+                      {medicalHistoryData.surgicalHistory?.length > 0 && (
+                        <span className="px-2 py-0.5 text-xs bg-purple-100 text-purple-700 rounded-full">
+                          {medicalHistoryData.surgicalHistory.length}
+                        </span>
+                      )}
+                    </h3>
+                    <button
+                      onClick={() => setShowAddSurgeryModal(true)}
+                      className="text-xs px-3 py-1 bg-purple-50 text-purple-600 rounded-full hover:bg-purple-100 transition-colors flex items-center gap-1 font-medium"
+                    >
+                      <span>+</span> Add Surgery
+                    </button>
+                  </div>
+                  {medicalHistoryData.surgicalHistory?.length > 0 ? (
+                    <div className="space-y-2">
+                      {medicalHistoryData.surgicalHistory.map((surgery) => (
+                        <div key={surgery.id} className="flex items-center justify-between p-2 bg-purple-50 rounded-lg border border-purple-100">
+                          <div className="flex-1">
+                            <span className="font-medium text-gray-800">{surgery.surgery_name}</span>
+                            {surgery.surgery_date && <span className="ml-2 text-xs text-gray-500">{surgery.surgery_date}</span>}
+                            {surgery.hospital && <span className="ml-2 text-xs text-gray-400">@ {surgery.hospital}</span>}
+                          </div>
+                          <button
+                            onClick={() => deleteSurgicalProcedure(surgery.id)}
+                            className="text-purple-400 hover:text-purple-600 p-1"
+                          >
+                            <FiX size={16} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-400 italic">No surgical history recorded</p>
+                  )}
+                </div>
+
+                {/* Allergies Quick View */}
+                {medicalHistoryData.allergies?.length > 0 && (
+                  <div className="border-t pt-4">
+                    <h3 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                      <span className="w-2 h-2 bg-orange-500 rounded-full"></span>
+                      DRUG ALLERGIES
+                      <span className="px-2 py-0.5 text-xs bg-orange-100 text-orange-700 rounded-full">
+                        {medicalHistoryData.allergies.length}
+                      </span>
+                    </h3>
+                    <div className="flex flex-wrap gap-2">
+                      {medicalHistoryData.allergies.map((allergy) => (
+                        <span
+                          key={allergy.id}
+                          className={`px-3 py-1 rounded-full text-sm font-medium ${
+                            allergy.severity === 'Severe'
+                              ? 'bg-red-100 text-red-700 border border-red-200'
+                              : allergy.severity === 'Moderate'
+                              ? 'bg-orange-100 text-orange-700 border border-orange-200'
+                              : 'bg-yellow-100 text-yellow-700 border border-yellow-200'
+                          }`}
+                        >
+                          {allergy.allergen_name}
+                          {allergy.severity && <span className="ml-1 text-xs opacity-70">({allergy.severity})</span>}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Family History Quick View */}
+                {medicalHistoryData.familyHistory?.length > 0 && (
+                  <div className="border-t pt-4">
+                    <h3 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                      <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
+                      FAMILY HISTORY
+                      <span className="px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded-full">
+                        {medicalHistoryData.familyHistory.length}
+                      </span>
+                    </h3>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                      {medicalHistoryData.familyHistory.map((fh) => (
+                        <div key={fh.id} className="p-2 bg-blue-50 rounded-lg border border-blue-100 text-sm">
+                          <span className="font-medium text-blue-800">{fh.relation}</span>
+                          {fh.condition_name && <span className="text-gray-600">: {fh.condition_name}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Empty state - show when no quick toggles are configured */}
+                {(!medicalHistoryData.medicalHistory || medicalHistoryData.medicalHistory.length === 0) &&
+                 !medicalHistoryLoading && (
+                  <div className="text-center py-4">
+                    <p className="text-gray-500 text-sm">No medical history options configured.</p>
+                    <p className="text-gray-400 text-xs mt-1">Contact admin to configure quick toggle conditions.</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Add Condition Modal */}
+              {showAddConditionModal && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                  <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
+                    <div className="flex items-center justify-between p-4 border-b">
+                      <h3 className="font-semibold text-gray-800">Add Existing Condition</h3>
+                      <button onClick={() => setShowAddConditionModal(false)} className="text-gray-400 hover:text-gray-600">
+                        <FiX size={20} />
+                      </button>
+                    </div>
+                    <div className="p-4 space-y-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Condition Name *</label>
+                        <input
+                          type="text"
+                          className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-red-300"
+                          placeholder="e.g., Type 2 Diabetes"
+                          value={newCondition.condition_name}
+                          onChange={(e) => setNewCondition({ ...newCondition, condition_name: e.target.value })}
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">ICD Code</label>
+                          <input
+                            type="text"
+                            className="w-full px-3 py-2 border rounded-lg"
+                            placeholder="E11.9"
+                            value={newCondition.icd_code}
+                            onChange={(e) => setNewCondition({ ...newCondition, icd_code: e.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+                          <input
+                            type="date"
+                            className="w-full px-3 py-2 border rounded-lg"
+                            value={newCondition.start_date}
+                            onChange={(e) => setNewCondition({ ...newCondition, start_date: e.target.value })}
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                        <textarea
+                          className="w-full px-3 py-2 border rounded-lg"
+                          rows={2}
+                          placeholder="Additional notes..."
+                          value={newCondition.notes}
+                          onChange={(e) => setNewCondition({ ...newCondition, notes: e.target.value })}
+                        />
+                      </div>
+                    </div>
+                    <div className="flex justify-end gap-2 p-4 border-t bg-gray-50">
+                      <button
+                        onClick={() => setShowAddConditionModal(false)}
+                        className="px-4 py-2 text-gray-600 hover:text-gray-800"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={addExistingCondition}
+                        className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
+                      >
+                        Add Condition
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Add Surgery Modal */}
+              {showAddSurgeryModal && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                  <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
+                    <div className="flex items-center justify-between p-4 border-b">
+                      <h3 className="font-semibold text-gray-800">Add Surgical Procedure</h3>
+                      <button onClick={() => setShowAddSurgeryModal(false)} className="text-gray-400 hover:text-gray-600">
+                        <FiX size={20} />
+                      </button>
+                    </div>
+                    <div className="p-4 space-y-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Surgery Name *</label>
+                        <input
+                          type="text"
+                          className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-300"
+                          placeholder="e.g., Appendectomy"
+                          value={newSurgery.surgery_name}
+                          onChange={(e) => setNewSurgery({ ...newSurgery, surgery_name: e.target.value })}
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Surgery Date</label>
+                          <input
+                            type="date"
+                            className="w-full px-3 py-2 border rounded-lg"
+                            value={newSurgery.surgery_date}
+                            onChange={(e) => setNewSurgery({ ...newSurgery, surgery_date: e.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Hospital</label>
+                          <input
+                            type="text"
+                            className="w-full px-3 py-2 border rounded-lg"
+                            placeholder="Hospital name"
+                            value={newSurgery.hospital}
+                            onChange={(e) => setNewSurgery({ ...newSurgery, hospital: e.target.value })}
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Surgeon</label>
+                        <input
+                          type="text"
+                          className="w-full px-3 py-2 border rounded-lg"
+                          placeholder="Surgeon name"
+                          value={newSurgery.surgeon}
+                          onChange={(e) => setNewSurgery({ ...newSurgery, surgeon: e.target.value })}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Complications</label>
+                        <textarea
+                          className="w-full px-3 py-2 border rounded-lg"
+                          rows={2}
+                          placeholder="Any complications..."
+                          value={newSurgery.complications}
+                          onChange={(e) => setNewSurgery({ ...newSurgery, complications: e.target.value })}
+                        />
+                      </div>
+                    </div>
+                    <div className="flex justify-end gap-2 p-4 border-t bg-gray-50">
+                      <button
+                        onClick={() => setShowAddSurgeryModal(false)}
+                        className="px-4 py-2 text-gray-600 hover:text-gray-800"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={addSurgicalProcedure}
+                        className="px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600"
+                      >
+                        Add Surgery
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           );
 
@@ -1798,6 +2143,147 @@ export default function PrescriptionPad() {
   }, [api, patientId]);
 
   // ========================================
+  // Medical History Functions (dr.eka.care style)
+  // ========================================
+  const fetchMedicalHistory = useCallback(async () => {
+    if (!patientId) return;
+    setMedicalHistoryLoading(true);
+    try {
+      const res = await api.get(`/api/medical-history/patient/${patientId}`);
+      if (res.data?.success) {
+        setMedicalHistoryData(res.data.data || {
+          medicalHistory: [],
+          existingConditions: [],
+          surgicalHistory: [],
+          allergies: [],
+          familyHistory: []
+        });
+      }
+    } catch (err) {
+      console.error('Failed to fetch medical history:', err);
+    } finally {
+      setMedicalHistoryLoading(false);
+    }
+  }, [api, patientId]);
+
+  const toggleMedicalCondition = async (option, newValue) => {
+    try {
+      await api.put(`/api/medical-history/patient/${patientId}/toggle`, {
+        option_id: option.option_id,
+        condition_name: option.condition_name,
+        has_condition: newValue,
+        since_date: option.since_date || null
+      });
+      // Update local state
+      setMedicalHistoryData(prev => ({
+        ...prev,
+        medicalHistory: prev.medicalHistory.map(item =>
+          item.option_id === option.option_id
+            ? { ...item, has_condition: newValue }
+            : item
+        )
+      }));
+    } catch (err) {
+      console.error('Failed to toggle condition:', err);
+      addToast('Failed to update condition', 'error');
+    }
+  };
+
+  const updateConditionSince = async (option, sinceDate) => {
+    try {
+      await api.put(`/api/medical-history/patient/${patientId}/toggle`, {
+        option_id: option.option_id,
+        condition_name: option.condition_name,
+        has_condition: option.has_condition,
+        since_date: sinceDate
+      });
+      // Update local state
+      setMedicalHistoryData(prev => ({
+        ...prev,
+        medicalHistory: prev.medicalHistory.map(item =>
+          item.option_id === option.option_id
+            ? { ...item, since_date: sinceDate }
+            : item
+        )
+      }));
+    } catch (err) {
+      console.error('Failed to update since date:', err);
+    }
+  };
+
+  const addExistingCondition = async () => {
+    if (!newCondition.condition_name.trim()) {
+      addToast('Condition name is required', 'error');
+      return;
+    }
+    try {
+      const res = await api.post(`/api/medical-history/patient/${patientId}/existing-condition`, newCondition);
+      if (res.data?.success) {
+        setMedicalHistoryData(prev => ({
+          ...prev,
+          existingConditions: [...prev.existingConditions, { id: res.data.id, ...newCondition, status: 'Active' }]
+        }));
+        setNewCondition({ condition_name: '', icd_code: '', start_date: '', notes: '' });
+        setShowAddConditionModal(false);
+        addToast('Condition added', 'success');
+      }
+    } catch (err) {
+      console.error('Failed to add condition:', err);
+      addToast('Failed to add condition', 'error');
+    }
+  };
+
+  const deleteExistingCondition = async (conditionId) => {
+    try {
+      await api.delete(`/api/medical-history/patient/${patientId}/existing-condition/${conditionId}`);
+      setMedicalHistoryData(prev => ({
+        ...prev,
+        existingConditions: prev.existingConditions.filter(c => c.id !== conditionId)
+      }));
+      addToast('Condition removed', 'success');
+    } catch (err) {
+      console.error('Failed to delete condition:', err);
+      addToast('Failed to remove condition', 'error');
+    }
+  };
+
+  const addSurgicalProcedure = async () => {
+    if (!newSurgery.surgery_name.trim()) {
+      addToast('Surgery name is required', 'error');
+      return;
+    }
+    try {
+      const res = await api.post(`/api/medical-history/patient/${patientId}/surgical-procedure`, newSurgery);
+      if (res.data?.success) {
+        setMedicalHistoryData(prev => ({
+          ...prev,
+          surgicalHistory: [...prev.surgicalHistory, { id: res.data.id, ...newSurgery }]
+        }));
+        setNewSurgery({ surgery_name: '', surgery_date: '', hospital: '', surgeon: '', complications: '' });
+        setShowAddSurgeryModal(false);
+        addToast('Surgery added', 'success');
+      }
+    } catch (err) {
+      console.error('Failed to add surgery:', err);
+      addToast('Failed to add surgery', 'error');
+    }
+  };
+
+  const deleteSurgicalProcedure = async (procedureId) => {
+    try {
+      await api.delete(`/api/medical-history/patient/${patientId}/surgical-procedure/${procedureId}`);
+      setMedicalHistoryData(prev => ({
+        ...prev,
+        surgicalHistory: prev.surgicalHistory.filter(s => s.id !== procedureId)
+      }));
+      addToast('Surgery removed', 'success');
+    } catch (err) {
+      console.error('Failed to delete surgery:', err);
+      addToast('Failed to remove surgery', 'error');
+    }
+  };
+
+  // ========================================
   // useEffect Hooks
   // ========================================
 
@@ -1825,8 +2311,9 @@ export default function PrescriptionPad() {
     if (patientId) {
       fetchPatient();
       fetchPastData();
+      fetchMedicalHistory();
     }
-  }, [patientId, fetchPatient, fetchPastData]);
+  }, [patientId, fetchPatient, fetchPastData, fetchMedicalHistory]);
 
   // Fetch active allergies for this patient
   useEffect(() => {
