@@ -204,10 +204,14 @@ async function handleEmailShare(req, res, prescription, pdfLink, email) {
 
     // Log email sent
     const db = getDb();
-    await db.execute(`
-      INSERT INTO email_logs (recipient, subject, email_type, related_id, status, sent_at)
-      VALUES (?, ?, 'prescription', ?, 'sent', NOW())
-    `, [recipientEmail, `Prescription - ${prescription.clinic_name}`, prescription.id]);
+    try {
+      await db.execute(`
+        INSERT INTO email_logs (recipient_email, subject, status, template_type, sent_at)
+        VALUES (?, ?, 'sent', 'prescription', NOW())
+      `, [recipientEmail, `Prescription - ${prescription.clinic_name}`]);
+    } catch (logErr) {
+      console.warn('Email log insert warning:', logErr.message);
+    }
 
     res.json({
       success: true,
@@ -430,10 +434,11 @@ exports.viewSharedPrescription = async (req, res) => {
       SELECT * FROM prescription_items WHERE prescription_id = ?
     `, [prescriptionId]);
 
-    // Fetch vitals
+    // Fetch vitals (table is patient_vitals, linked via appointment_id or patient_id)
     const [vitals] = await db.execute(`
-      SELECT * FROM vitals WHERE prescription_id = ? LIMIT 1
-    `, [prescriptionId]);
+      SELECT * FROM patient_vitals WHERE patient_id = ?
+      ORDER BY recorded_at DESC LIMIT 1
+    `, [prescription.patient_id]);
 
     res.json({
       success: true,
