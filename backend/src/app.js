@@ -89,6 +89,8 @@ const qrRoutes = require('./routes/qrRoutes');
 const swaggerUi = require('swagger-ui-express');
 const swaggerSpec = require('./config/swagger');
 const staffDashboardRoutes = require('./routes/staffDashboardRoutes');
+const padConfigurationRoutes = require('./routes/padConfigurationRoutes');
+const medicalHistoryRoutes = require('./routes/medicalHistoryRoutes');
 
 const app = express();
 app.set("trust proxy", 1); // Enable trust proxy for nginx reverse proxy
@@ -292,7 +294,7 @@ app.use('/api/clinical', authenticateToken, clinicalRoutes);
 app.use('/api/injection-templates', authenticateToken, injectionTemplateRoutes);
 app.use('/api/subscription-packages', authenticateToken, subscriptionPackageRoutes);
 app.use('/api/patient-referrals', authenticateToken, patientReferralRoutes);
-app.use('/api/pdf', authenticateToken, pdfGeneratorRoutes);
+app.use('/api/pdf', pdfGeneratorRoutes); // Auth handled within routes (bill is public for sharing)
 app.use('/api/my-genie', authenticateToken, myGenieRoutes);
 app.use('/api/google-reviews', googleReviewsRoutes); // Public endpoint - no auth needed
 app.use('/api/snomed', authenticateToken, cacheReferenceData({ maxAge: 600 }), etagMiddleware(), snomedRoutes);
@@ -300,6 +302,8 @@ app.use('/api/snomed-local', authenticateToken, cacheReferenceData({ maxAge: 600
 app.use('/api/medications', authenticateToken, cacheReferenceData({ maxAge: 600 }), etagMiddleware(), medicationRoutes); // Protected endpoint - authentication required for safety
 app.use('/api/logs', logsRoutes); // Logging endpoint - mixed public/protected routes
 app.use('/api/staff-dashboard', authenticateToken, staffDashboardRoutes); // Staff dashboard routes
+app.use('/api/pad-config', padConfigurationRoutes); // Prescription pad configuration routes
+app.use('/api/medical-history', medicalHistoryRoutes); // Patient medical history for prescription pad
 
 // CSRF Token Endpoint - Disabled due to csurf deprecation
 // Consider implementing alternative CSRF protection if needed

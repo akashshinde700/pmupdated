@@ -18,10 +18,21 @@ async function listPatients(req, res) {
     // If doctor is logged in, filter by primary_doctor_id (most accurate)
     if (req.user && req.user.role === 'doctor') {
       console.log('🔍 Doctor user found:', { user_id: req.user.id, doctor_id: req.user.doctor_id, clinic_id: req.user.clinic_id });
-      
-      if (req.user.doctor_id) {
+
+      let doctorId = req.user.doctor_id;
+
+      // If doctor_id not in user object, look it up from doctors table using user_id
+      if (!doctorId && req.user.id) {
+        const [doctors] = await db.execute('SELECT id FROM doctors WHERE user_id = ?', [req.user.id]);
+        if (doctors.length > 0) {
+          doctorId = doctors[0].id;
+          console.log('🔍 Found doctor_id from doctors table:', doctorId);
+        }
+      }
+
+      if (doctorId) {
         whereClause += ' AND p.primary_doctor_id = ?';
-        params.push(req.user.doctor_id);
+        params.push(doctorId);
       } else if (req.user.clinic_id) {
         whereClause += ' AND p.clinic_id = ?';
         params.push(req.user.clinic_id);
@@ -201,17 +212,34 @@ async function addPatient(req, res) {
     console.log('🔍 Original gender:', gender);
     console.log('🔍 Mapped gender:', mappedGender);
 
+    const db = getDb();
+
     // Get clinic_id from request body, user context, or default to 2
     const patientClinicId = clinic_id || req.user?.clinic_id || 2;
     console.log('🔍 Clinic ID:', patientClinicId);
 
     // Set primary_doctor_id from logged-in doctor
-    const primaryDoctorId = req.user?.doctor_id || null;
+    // If user is a doctor, look up their doctor_id from doctors table using user_id
+    let primaryDoctorId = req.user?.doctor_id || null;
+
+    if (!primaryDoctorId && req.user?.role === 'doctor' && req.user?.id) {
+      console.log('🔍 Looking up doctor_id for user_id:', req.user.id);
+      const [doctors] = await db.execute('SELECT id FROM doctors WHERE user_id = ?', [req.user.id]);
+      if (doctors.length > 0) {
+        primaryDoctorId = doctors[0].id;
+        console.log('🔍 Found doctor_id from doctors table:', primaryDoctorId);
+      }
+    }
+
+    // Fallback to request body if still not set
+    if (!primaryDoctorId) {
+      primaryDoctorId = req.body.doctor_id || req.body.primary_doctor_id || null;
+    }
+
+    console.log('🔍 Final primary_doctor_id:', primaryDoctorId);
 
     // Generate patient_id if not provided
     const generatedPatientId = patient_id || `P${Date.now()}${Math.floor(Math.random() * 1000)}`;
-
-    const db = getDb();
     const [result] = await db.execute(
       `INSERT INTO patients (
           patient_id, name, email, phone, dob, gender, blood_group,

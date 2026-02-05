@@ -22,6 +22,29 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
+// Optional authentication - populates req.user if token present, but doesn't block if no token
+const optionalAuth = (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) {
+    // No token - continue without user context
+    console.log('🔍 User: Public access');
+    return next();
+  }
+
+  jwt.verify(token, env.jwtSecret || process.env.JWT_SECRET, (err, user) => {
+    if (err) {
+      // Invalid token - continue without user context
+      console.log('🔍 User: Invalid token, public access');
+      return next();
+    }
+    console.log('🔍 User authenticated:', { id: user.id, role: user.role });
+    req.user = user;
+    next();
+  });
+};
+
 const requireRole = (...allowedRoles) => {
   return (req, res, next) => {
     if (!req.user || !req.user.role) {
@@ -40,8 +63,9 @@ const requireRole = (...allowedRoles) => {
   };
 };
 
-// ✅ SAHI EXPORT - Object mein dono functions
+// ✅ SAHI EXPORT - Object mein teeno functions
 module.exports = {
   authenticateToken,
+  optionalAuth,
   requireRole
 };
