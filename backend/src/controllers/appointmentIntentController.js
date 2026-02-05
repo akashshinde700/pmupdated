@@ -48,6 +48,21 @@ async function addAppointmentIntent(req, res) {
 
     // If auto_create is true, create patient and appointment directly
     if (auto_create) {
+      // Get doctor - use provided doctor_id or first active doctor (need this BEFORE creating patient)
+      let doctorId;
+      let clinicId;
+      if (reqDoctorId) {
+        doctorId = reqDoctorId;
+        const [docRow] = await db.execute('SELECT clinic_id FROM doctors WHERE id = ?', [doctorId]);
+        clinicId = docRow.length > 0 ? docRow[0].clinic_id : 2;
+      } else {
+        const [doctors] = await db.execute(
+          "SELECT id, clinic_id FROM doctors WHERE status = 'active' LIMIT 1"
+        );
+        doctorId = doctors.length > 0 ? doctors[0].id : 1;
+        clinicId = doctors.length > 0 ? doctors[0].clinic_id : 2;
+      }
+
       // Check if patient exists by phone
       let [patients] = await db.execute(
         'SELECT id FROM patients WHERE phone = ? LIMIT 1',
@@ -62,31 +77,12 @@ async function addAppointmentIntent(req, res) {
         // Generate a safe unique external patient_id
         const externalPatientId = await generateExternalPatientId(db);
 
-        // Get default clinic_id (first clinic or 1)
-        const [clinics] = await db.execute('SELECT id FROM clinics LIMIT 1');
-        const clinicId = clinics.length > 0 ? clinics[0].id : 1;
-
         const [patientResult] = await db.execute(
-          `INSERT INTO patients (patient_id, name, phone, email, gender, clinic_id, created_at)
-           VALUES (?, ?, ?, ?, 'O', ?, NOW())`,
-          [externalPatientId, full_name, phone, email || null, clinicId]
+          `INSERT INTO patients (patient_id, name, phone, email, gender, clinic_id, primary_doctor_id, created_at)
+           VALUES (?, ?, ?, ?, 'O', ?, ?, NOW())`,
+          [externalPatientId, full_name, phone, email || null, clinicId, doctorId]
         );
         patientId = patientResult.insertId;
-      }
-
-      // Get doctor - use provided doctor_id or first active doctor
-      let doctorId;
-      let clinicId;
-      if (reqDoctorId) {
-        doctorId = reqDoctorId;
-        const [docRow] = await db.execute('SELECT clinic_id FROM doctors WHERE id = ?', [doctorId]);
-        clinicId = docRow.length > 0 ? docRow[0].clinic_id : 2;
-      } else {
-        const [doctors] = await db.execute(
-          "SELECT id, clinic_id FROM doctors WHERE status = 'active' LIMIT 1"
-        );
-        doctorId = doctors.length > 0 ? doctors[0].id : 1;
-        clinicId = doctors.length > 0 ? doctors[0].clinic_id : 2;
       }
 
       // Create appointment
@@ -247,11 +243,18 @@ async function convertToAppointment(req, res) {
       const [existingPatients] = await db.execute('SELECT COUNT(*) as count FROM patients');
       const patientId = `PAT${String(existingPatients[0].count + 1).padStart(6, '0')}`;
 
+      // Get clinic_id from doctor
+      let clinicId = 2;
+      if (doctor_id) {
+        const [docRow] = await db.execute('SELECT clinic_id FROM doctors WHERE id = ?', [doctor_id]);
+        clinicId = docRow.length > 0 && docRow[0].clinic_id ? docRow[0].clinic_id : 2;
+      }
+
       // Create new patient from intent data
       const [patientResult] = await db.execute(
-        `INSERT INTO patients (patient_id, name, phone, email, gender, created_at)
-         VALUES (?, ?, ?, ?, 'Unknown', CURRENT_TIMESTAMP)`,
-        [patientId, intent.full_name, intent.phone, null]
+        `INSERT INTO patients (patient_id, name, phone, email, gender, clinic_id, primary_doctor_id, created_at)
+         VALUES (?, ?, ?, ?, 'U', ?, ?, CURRENT_TIMESTAMP)`,
+        [patientId, intent.full_name, intent.phone, null, clinicId, doctor_id]
       );
 
       finalPatientId = patientResult.insertId;

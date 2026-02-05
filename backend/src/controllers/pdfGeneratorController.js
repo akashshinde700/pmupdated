@@ -235,7 +235,7 @@ exports.generatePrescriptionPDF = async (req, res) => {
     console.log('🔍 PDF data generated, size:', pdfData.byteLength);
     
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="prescription_${prescriptionId}.pdf"`);
+    res.setHeader('Content-Disposition', `inline; filename="prescription_${prescriptionId}.pdf"`);
     console.log('🔍 Sending PDF response...');
     res.send(Buffer.from(pdfData));
     console.log('🔍 PDF sent successfully');
@@ -363,11 +363,11 @@ exports.generateBillingPDF = async (req, res) => {
 
     const itemTableHeaders = ['Description', 'Service', 'Qty', 'Unit Price', 'Amount'];
     const itemTableData = items.map(item => [
-      item.description,
+      item.description || item.service_name || 'Service',
       'Service',  // Default service type since item_type doesn't exist
-      item.quantity.toString(),
-      `₹${item.unit_price.toFixed(2)}`,
-      `₹${item.amount.toFixed(2)}`
+      String(item.quantity || 1),
+      `Rs.${(parseFloat(item.unit_price) || 0).toFixed(2)}`,
+      `Rs.${(parseFloat(item.amount || item.total_price) || 0).toFixed(2)}`
     ]);
 
     if (typeof doc.autoTable === 'function') {
@@ -390,10 +390,35 @@ exports.generateBillingPDF = async (req, res) => {
         }
       });
     } else {
-      itemTableData.forEach((row) => {
-        doc.text(`- ${row[0]} | ${row[2]} x ${row[3]} = ${row[4]}`, 15, yPosition);
-        yPosition += 6;
+      // Manual table rendering when autoTable is not available
+      // Draw table header
+      doc.setFillColor(240, 240, 240);
+      doc.rect(15, yPosition - 5, pageWidth - 30, 8, 'F');
+      doc.setFont(undefined, 'bold');
+      doc.text('S.No', 18, yPosition);
+      doc.text('Service', 35, yPosition);
+      doc.text('Qty', 100, yPosition);
+      doc.text('Rate', 125, yPosition);
+      doc.text('Amount', 160, yPosition);
+
+      yPosition += 8;
+      doc.setFont(undefined, 'normal');
+
+      // Draw table rows
+      itemTableData.forEach((row, index) => {
+        doc.text(String(index + 1), 18, yPosition);
+        doc.text(row[0].substring(0, 30), 35, yPosition);  // Truncate long names
+        doc.text(row[2], 100, yPosition);
+        doc.text(row[3], 125, yPosition);
+        doc.text(row[4], 160, yPosition);
+        yPosition += 7;
       });
+
+      // Draw bottom line
+      doc.setDrawColor(200, 200, 200);
+      doc.line(15, yPosition, pageWidth - 15, yPosition);
+      yPosition += 5;
+
       doc.lastAutoTable = { finalY: yPosition };
     }
 
@@ -402,11 +427,11 @@ exports.generateBillingPDF = async (req, res) => {
     doc.setFont(undefined, 'bold');
     doc.setFontSize(10);
     doc.text(`Total Amount:`, pageWidth - 80, yPosition);
-    doc.text(`₹${bill.total_amount.toFixed(2)}`, pageWidth - 30, yPosition, { align: 'right' });
+    doc.text(`Rs.${(parseFloat(bill.total_amount) || 0).toFixed(2)}`, pageWidth - 30, yPosition, { align: 'right' });
 
     yPosition += 7;
     doc.text(`Discount:`, pageWidth - 80, yPosition);
-    doc.text(`-₹${bill.discount_amount.toFixed(2)}`, pageWidth - 30, yPosition, { align: 'right' });
+    doc.text(`-Rs.${(parseFloat(bill.discount_amount) || 0).toFixed(2)}`, pageWidth - 30, yPosition, { align: 'right' });
 
     yPosition += 7;
     doc.setDrawColor(0, 0, 0);
@@ -416,7 +441,7 @@ exports.generateBillingPDF = async (req, res) => {
     doc.setFont(undefined, 'bold');
     doc.setFontSize(11);
     doc.text(`Net Amount:`, pageWidth - 80, yPosition);
-    doc.text(`₹${bill.net_amount.toFixed(2)}`, pageWidth - 30, yPosition, { align: 'right' });
+    doc.text(`Rs.${(parseFloat(bill.net_amount || bill.total_amount) || 0).toFixed(2)}`, pageWidth - 30, yPosition, { align: 'right' });
 
     // Payment Status
     yPosition += 10;
@@ -443,7 +468,7 @@ exports.generateBillingPDF = async (req, res) => {
     // Send PDF
     const pdfData = doc.output('arraybuffer');
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="invoice_${billId}.pdf"`);
+    res.setHeader('Content-Disposition', `inline; filename="invoice_${billId}.pdf"`);
     res.send(Buffer.from(pdfData));
 
   } catch (error) {
@@ -570,7 +595,7 @@ exports.generateCertificatePDF = async (req, res) => {
     // Send PDF
     const pdfData = doc.output('arraybuffer');
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="certificate_${certificateId}.pdf"`);
+    res.setHeader('Content-Disposition', `inline; filename="certificate_${certificateId}.pdf"`);
     res.send(Buffer.from(pdfData));
 
   } catch (error) {
@@ -718,12 +743,264 @@ exports.generateReferralPDF = async (req, res) => {
     // Send PDF
     const pdfData = doc.output('arraybuffer');
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="referral_${referralId}.pdf"`);
+    res.setHeader('Content-Disposition', `inline; filename="referral_${referralId}.pdf"`);
     res.send(Buffer.from(pdfData));
 
   } catch (error) {
     console.error('Error generating referral PDF:', error);
     res.status(500).json({ error: 'Failed to generate PDF' });
+  }
+};
+
+// =====================================================
+// SEND PRESCRIPTION PDF VIA EMAIL
+// =====================================================
+
+const { sendEmail } = require('../services/emailService');
+
+exports.sendPrescriptionPDFEmail = async (req, res) => {
+  try {
+    const { prescriptionId } = req.params;
+    const { email, patientName } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ error: 'Email address is required' });
+    }
+
+    console.log('📧 Sending prescription PDF via email for ID:', prescriptionId);
+
+    const db = getDb();
+
+    // Fetch prescription data
+    const [prescriptions] = await db.execute(`
+      SELECT
+        p.id,
+        p.patient_id,
+        p.doctor_id,
+        p.prescribed_date,
+        p.chief_complaint,
+        p.advice,
+        p.diagnosis,
+        pa.name as patient_name,
+        pa.phone as patient_phone,
+        pa.email as patient_email,
+        pa.dob,
+        pa.age_years,
+        pa.gender,
+        u.name as doctor_name,
+        d.specialization,
+        c.name as clinic_name,
+        c.phone as clinic_phone,
+        c.address as clinic_address
+      FROM prescriptions p
+      JOIN patients pa ON p.patient_id = pa.id
+      JOIN doctors d ON p.doctor_id = d.id
+      LEFT JOIN users u ON d.user_id = u.id
+      JOIN clinics c ON d.clinic_id = c.id
+      WHERE p.id = ?
+    `, [prescriptionId]);
+
+    if (prescriptions.length === 0) {
+      return res.status(404).json({ error: 'Prescription not found' });
+    }
+
+    const prescription = prescriptions[0];
+
+    // Fetch prescription items (medicines)
+    const [items] = await db.execute(`
+      SELECT
+        pi.id,
+        pi.medicine_id,
+        pi.medicine_name,
+        pi.dosage,
+        pi.frequency,
+        pi.duration,
+        pi.notes as instructions
+      FROM prescription_items pi
+      WHERE pi.prescription_id = ?
+    `, [prescriptionId]);
+
+    // Generate PDF
+    const doc = new jsPDF('p', 'mm', 'A4');
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    let yPosition = 20;
+
+    // Header
+    doc.setFontSize(16);
+    doc.setTextColor(0, 51, 102);
+    doc.text(prescription.clinic_name || 'Clinic', pageWidth / 2, yPosition, { align: 'center' });
+
+    yPosition += 8;
+    doc.setFontSize(10);
+    doc.setTextColor(100, 100, 100);
+    doc.text(`${prescription.clinic_address || ''}`, pageWidth / 2, yPosition, { align: 'center' });
+    doc.text(`Phone: ${prescription.clinic_phone || 'N/A'}`, pageWidth / 2, yPosition + 5, { align: 'center' });
+
+    // Horizontal line
+    yPosition += 15;
+    doc.setDrawColor(0, 51, 102);
+    doc.line(15, yPosition, pageWidth - 15, yPosition);
+
+    // Prescription Header
+    yPosition += 10;
+    doc.setFontSize(12);
+    doc.setTextColor(0, 0, 0);
+    doc.setFont(undefined, 'bold');
+    doc.text('PRESCRIPTION', 15, yPosition);
+
+    // Doctor Info
+    yPosition += 12;
+    doc.setFontSize(10);
+    doc.setFont(undefined, 'normal');
+    doc.text(`Doctor: Dr. ${prescription.doctor_name || 'N/A'}`, 15, yPosition);
+    doc.text(`Specialization: ${prescription.specialization || 'General'}`, 15, yPosition + 6);
+
+    // Patient Info
+    yPosition += 16;
+    doc.setFont(undefined, 'bold');
+    doc.text('Patient Information:', 15, yPosition);
+
+    yPosition += 8;
+    doc.setFont(undefined, 'normal');
+    doc.text(`Name: ${prescription.patient_name || 'N/A'}`, 15, yPosition);
+    yPosition += 6;
+    doc.text(`Age: ${prescription.age_years || 'N/A'} years | Gender: ${prescription.gender || 'N/A'}`, 15, yPosition);
+    yPosition += 6;
+    doc.text(`Date: ${prescription.prescribed_date ? new Date(prescription.prescribed_date).toLocaleDateString() : 'N/A'}`, 15, yPosition);
+
+    // Diagnosis
+    if (prescription.diagnosis) {
+      yPosition += 12;
+      doc.setFont(undefined, 'bold');
+      doc.text('Diagnosis:', 15, yPosition);
+      yPosition += 6;
+      doc.setFont(undefined, 'normal');
+      const splitDiagnosis = doc.splitTextToSize(prescription.diagnosis, pageWidth - 30);
+      doc.text(splitDiagnosis, 20, yPosition);
+      yPosition += splitDiagnosis.length * 5;
+    }
+
+    // Medicines
+    yPosition += 12;
+    doc.setFont(undefined, 'bold');
+    doc.text('Medications:', 15, yPosition);
+    yPosition += 8;
+    doc.setFont(undefined, 'normal');
+    doc.setFontSize(9);
+
+    const medicineTableHeaders = ['Medicine', 'Dosage', 'Frequency', 'Duration', 'Instructions'];
+    const medicineTableData = items.map(item => [
+      item.medicine_name,
+      item.dosage || '-',
+      item.frequency || '-',
+      item.duration || '-',
+      item.instructions || '-'
+    ]);
+
+    if (typeof doc.autoTable === 'function') {
+      doc.autoTable({
+        head: [medicineTableHeaders],
+        body: medicineTableData,
+        startY: yPosition,
+        margin: 15,
+        theme: 'grid',
+        styles: { fontSize: 9, cellPadding: 3 }
+      });
+    }
+
+    // Advice
+    if (prescription.advice) {
+      yPosition = doc.lastAutoTable ? doc.lastAutoTable.finalY + 12 : yPosition + 30;
+      doc.setFont(undefined, 'bold');
+      doc.setFontSize(10);
+      doc.text('Advice:', 15, yPosition);
+      yPosition += 6;
+      doc.setFont(undefined, 'normal');
+      doc.setFontSize(9);
+      const splitAdvice = doc.splitTextToSize(prescription.advice, pageWidth - 30);
+      doc.text(splitAdvice, 15, yPosition);
+    }
+
+    // Footer
+    doc.setFont(undefined, 'italic');
+    doc.setFontSize(8);
+    doc.setTextColor(150, 150, 150);
+    doc.text('Generated by Patient Management System', pageWidth / 2, pageHeight - 10, { align: 'center' });
+
+    // Get PDF as buffer
+    const pdfBuffer = Buffer.from(doc.output('arraybuffer'));
+
+    // Send email with PDF attachment
+    await sendEmail({
+      to: email,
+      subject: `Prescription from ${prescription.clinic_name} - ${prescription.patient_name}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; padding: 20px;">
+          <h2 style="color: #003366;">Prescription</h2>
+          <p>Dear ${patientName || prescription.patient_name},</p>
+          <p>Please find attached your prescription from <strong>${prescription.clinic_name}</strong>.</p>
+          <p><strong>Doctor:</strong> Dr. ${prescription.doctor_name}</p>
+          <p><strong>Date:</strong> ${prescription.prescribed_date ? new Date(prescription.prescribed_date).toLocaleDateString() : 'N/A'}</p>
+          <p><strong>Diagnosis:</strong> ${prescription.diagnosis || 'N/A'}</p>
+          <br>
+          <p>For any queries, please contact the clinic at: ${prescription.clinic_phone || 'N/A'}</p>
+          <br>
+          <p style="color: #888; font-size: 12px;">This is an automated email from Patient Management System.</p>
+        </div>
+      `,
+      text: `Prescription from ${prescription.clinic_name}. Doctor: Dr. ${prescription.doctor_name}. Diagnosis: ${prescription.diagnosis || 'N/A'}`,
+      attachments: [{
+        filename: `prescription_${prescriptionId}.pdf`,
+        content: pdfBuffer,
+        contentType: 'application/pdf'
+      }]
+    });
+
+    console.log('📧 Prescription PDF sent successfully to:', email);
+
+    res.json({
+      success: true,
+      message: 'Prescription PDF sent successfully to ' + email
+    });
+
+  } catch (error) {
+    console.error('📧 Error sending prescription PDF:', error);
+    res.status(500).json({
+      error: 'Failed to send prescription PDF',
+      details: error.message
+    });
+  }
+};
+
+// =====================================================
+// GET PRESCRIPTION SHARE LINK
+// =====================================================
+
+exports.getPrescriptionShareLink = async (req, res) => {
+  try {
+    const { prescriptionId } = req.params;
+    const baseUrl = process.env.FRONTEND_URL || process.env.BASE_URL || 'http://localhost:5173';
+
+    // Generate share link for PDF
+    const pdfUrl = `${baseUrl}/api/pdf/prescription/${prescriptionId}`;
+
+    // Generate WhatsApp share link
+    const whatsappMessage = encodeURIComponent(`View your prescription: ${pdfUrl}`);
+    const whatsappLink = `https://wa.me/?text=${whatsappMessage}`;
+
+    res.json({
+      success: true,
+      links: {
+        pdf: pdfUrl,
+        whatsapp: whatsappLink,
+        copy: pdfUrl
+      }
+    });
+
+  } catch (error) {
+    console.error('Error generating share link:', error);
+    res.status(500).json({ error: 'Failed to generate share link' });
   }
 };
 

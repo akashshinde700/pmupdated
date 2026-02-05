@@ -16,8 +16,8 @@ const {
 const { listTimeline } = require('../controllers/patientDataController');
 const { getComplianceReport } = require('../controllers/complianceController');
 
-// ✅ SAHI IMPORT - Destructuring se dono middleware ek saath
-const { authenticateToken, requireRole } = require('../middleware/auth'); // requireRole future ke liye bhi ready
+// ✅ SAHI IMPORT - Destructuring se teeno middleware ek saath
+const { authenticateToken, optionalAuth, requireRole } = require('../middleware/auth');
 
 const { validateId } = require('../middleware/validator');
 const joiValidate = require('../middleware/joiValidate');
@@ -27,14 +27,15 @@ const { auditLogger } = require('../middleware/auditLogger');
 
 const router = express.Router();
 
-// Make patient creation and search public for testing
+// Patient creation - uses optionalAuth to get user context if logged in
 router.post('/',
+  optionalAuth,
   joiValidate(createPatient),
   addPatient
 );
 
-// Make patient search public for quick check-in
-router.get('/', cacheMiddleware(2 * 60 * 1000), listPatients);
+// Patient search - uses optionalAuth for doctor filtering if logged in
+router.get('/', optionalAuth, cacheMiddleware(2 * 60 * 1000), listPatients);
 
 // All other routes require authentication
 router.use(authenticateToken);

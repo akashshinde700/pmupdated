@@ -936,16 +936,50 @@ async function sendBillWhatsApp(req, res) {
     }
 
     const bill = bills[0];
-    
-    // Generate WhatsApp message
-    const message = `Dear ${bill.patient_name},\n\nYour bill (${bill.bill_number}) of ₹${bill.total_amount} is ready.\n\nDue date: ${bill.due_date}\n\nThank you!`;
+
+    // Format date nicely
+    const formatDate = (dateStr) => {
+      if (!dateStr) return null;
+      const date = new Date(dateStr);
+      return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+    };
+
+    // Get bill/receipt number with fallback
+    const billNumber = bill.bill_number || bill.receipt_number || `REC${String(bill.id).padStart(4, '0')}`;
+    const billDate = formatDate(bill.bill_date || bill.created_at) || formatDate(new Date());
+    const dueDate = bill.due_date ? formatDate(bill.due_date) : null;
+
+    // PDF link
+    const pdfLink = `https://drjaju.com/api/pdf/bill/${id}`;
+
+    // Generate WhatsApp message with better format
+    let message = `🏥 *${bill.clinic_name || 'Om Clinic And Diagnostic Center'}*
+
+Dear *${bill.patient_name}*,
+
+Your receipt is ready.
+
+📋 *Receipt No:* ${billNumber}
+📅 *Date:* ${billDate}
+💰 *Amount:* ₹${Number(bill.total_amount || 0).toFixed(2)}`;
+
+    if (dueDate) {
+      message += `\n⏰ *Due Date:* ${dueDate}`;
+    }
+
+    message += `
+
+📄 *Download Receipt:*
+${pdfLink}
+
+Thank you for visiting us! 🙏`;
 
     res.json({
       success: true,
       message: 'WhatsApp message prepared successfully',
       patient_phone: bill.patient_phone,
       whatsapp_message: message,
-      pdf_url: `/api/bills/${id}/pdf`
+      pdf_url: pdfLink
     });
   } catch (error) {
     console.error('Send bill WhatsApp error:', error);

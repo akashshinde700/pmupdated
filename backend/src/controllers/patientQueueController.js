@@ -97,26 +97,40 @@ exports.registerNewPatientAndQueue = async (req, res) => {
     } = req.body;
     
     await db.beginTransaction();
-    
+
     try {
       // Generate patient ID
       const [lastPatient] = await db.execute(
         'SELECT patient_id FROM patients ORDER BY id DESC LIMIT 1'
       );
-      
+
       let newPatientId = 'P1001';
       if (lastPatient.length > 0) {
         const lastId = lastPatient[0].patient_id;
         const lastNumber = parseInt(lastId.replace('P', ''));
         newPatientId = `P${lastNumber + 1}`;
       }
-      
+
+      // Get doctor_id from request body or logged-in user
+      let finalDoctorId = doctor_id;
+      if (!finalDoctorId && req.user?.role === 'doctor') {
+        if (req.user.doctor_id) {
+          finalDoctorId = req.user.doctor_id;
+        } else if (req.user.id) {
+          const [doctorLookup] = await db.execute('SELECT id FROM doctors WHERE user_id = ?', [req.user.id]);
+          if (doctorLookup.length > 0) {
+            finalDoctorId = doctorLookup[0].id;
+          }
+        }
+      }
+      const clinicId = req.user?.clinic_id || 2;
+
       // Register patient
       const [patientResult] = await db.execute(`
         INSERT INTO patients (
-          patient_id, name, age_years, gender, phone, address, email, blood_group, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())
-      `, [newPatientId, name, age, gender === 'Male' ? 'M' : gender === 'Female' ? 'F' : gender === 'Other' ? 'O' : 'U', phone, address, email, blood_group]);
+          patient_id, name, age_years, gender, phone, address, email, blood_group, primary_doctor_id, clinic_id, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+      `, [newPatientId, name, age, gender === 'Male' ? 'M' : gender === 'Female' ? 'F' : gender === 'Other' ? 'O' : 'U', phone, address, email, blood_group, finalDoctorId, clinicId]);
       
       const patientId = patientResult.insertId;
       

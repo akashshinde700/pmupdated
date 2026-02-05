@@ -229,7 +229,7 @@ async function addAppointment(req, res) {
     const {
       patient_id,      // This should be the database ID (INT)
       doctor_id,       // Database ID of doctor
-      clinic_id,
+      clinic_id: bodyClinicId,
       appointment_date,
       appointment_time,
       slot_time,
@@ -238,6 +238,10 @@ async function addAppointment(req, res) {
       reason_for_visit,
       notes
     } = req.body;
+
+    // Get clinic_id from request body, user context, or default to 2
+    const clinic_id = bodyClinicId || req.user?.clinic_id || 2;
+    console.log('🔍 Clinic ID:', clinic_id);
 
     // Validate required fields
     if (!patient_id || !appointment_date || !appointment_time) {
@@ -258,14 +262,32 @@ async function addAppointment(req, res) {
       return res.status(404).json({ error: 'Patient not found' });
     }
 
+    // Get doctor_id from request body or logged-in user
+    let finalDoctorId = doctor_id;
+
+    // If no doctor_id provided and user is a doctor, use their doctor_id
+    if (!finalDoctorId && req.user?.role === 'doctor') {
+      if (req.user.doctor_id) {
+        finalDoctorId = req.user.doctor_id;
+      } else if (req.user.id) {
+        // Look up doctor_id from doctors table using user_id
+        const [doctorLookup] = await db.execute('SELECT id FROM doctors WHERE user_id = ?', [req.user.id]);
+        if (doctorLookup.length > 0) {
+          finalDoctorId = doctorLookup[0].id;
+          console.log('🔍 Found doctor_id from doctors table:', finalDoctorId);
+        }
+      }
+    }
+    console.log('🔍 Final doctor_id:', finalDoctorId);
+
     // Verify doctor exists (optional)
     let doctor = null;
-    if (doctor_id) {
+    if (finalDoctorId) {
       const [doctors] = await db.execute(
         'SELECT d.id, u.name FROM doctors d JOIN users u ON d.user_id = u.id WHERE d.id = ?',
-        [doctor_id]
+        [finalDoctorId]
       );
-      
+
       if (doctors.length === 0) {
         return res.status(404).json({ error: 'Doctor not found' });
       }
@@ -306,9 +328,9 @@ async function addAppointment(req, res) {
     `;
     let duplicateParams = [patient_id, appointment_date, appointment_time];
     
-    if (doctor_id) {
+    if (finalDoctorId) {
       duplicateQuery += ' AND doctor_id = ?';
-      duplicateParams.push(doctor_id);
+      duplicateParams.push(finalDoctorId);
     }
 
     const [existing] = await db.execute(duplicateQuery, duplicateParams);
@@ -322,17 +344,16 @@ async function addAppointment(req, res) {
     const [result] = await db.execute(`
       INSERT INTO appointments (
         patient_id, doctor_id, clinic_id, appointment_date,
-        appointment_time, slot_time, arrival_type, reason_for_visit, notes, status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'scheduled')`,
+        appointment_time, arrival_type, reason_for_visit, notes, status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'scheduled')`,
       [
-        patient_id, 
-        doctor_id, 
-        clinic_id || null, 
-        appointment_date, 
-        appointment_time, 
-        slot_time || appointment_time,
+        patient_id,
+        finalDoctorId,
+        clinic_id,
+        appointment_date,
+        appointment_time,
         finalArrivalType || 'walk-in',
-        reason_for_visit || null, 
+        reason_for_visit || null,
         notes || null
       ]
     );

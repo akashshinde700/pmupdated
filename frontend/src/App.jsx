@@ -64,6 +64,9 @@ const PrintPrescription = lazy(() => import('./pages/PrintPrescription'));
 const QRCodeBooking = lazy(() => import('./pages/QRCodeBooking'));
 const DoctorQRManagement = lazy(() => import('./pages/DoctorQRCode'));
 
+// Public prescription view (shared links)
+const PrescriptionView = lazy(() => import('./pages/PrescriptionView'));
+
 function App() {
   const { token } = useAuth();
 
@@ -77,7 +80,12 @@ function App() {
       <Route path="/doctor-otp-login" element={<DoctorOTPLogin />} />
       <Route path="/book-appointment" element={<BookAppointment />} />
       <Route path="/qr/:doctorId" element={<QRCodeBooking />} />
-      
+      <Route path="/prescription/view/:prescriptionId" element={
+        <Suspense fallback={<div className="flex items-center justify-center h-screen"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div></div>}>
+          <PrescriptionView />
+        </Suspense>
+      } />
+
       {/* Protected routes */}
       {token ? (
         <>
