@@ -525,24 +525,38 @@ const generatePdf = Joi.object({
 // ---------- Family History ----------
 const createFamilyHistory = Joi.object({
   relation: Joi.string().max(255).required(),
-  condition: Joi.string().required(),
+  condition: Joi.string().allow('', null).optional(),
+  condition_name: Joi.string().allow('', null).optional(),
+  medical_condition: Joi.string().allow('', null).optional(), // Support alternative field name
+  icd_code: Joi.string().max(20).allow('', null),
   notes: Joi.string().allow('', null)
-});
+}); // Controller validates that at least one condition field has value
 const updateFamilyHistory = Joi.object({
   relation: Joi.string().max(255).optional(),
   condition: Joi.string().optional(),
+  condition_name: Joi.string().optional(),
+  icd_code: Joi.string().max(20).allow('', null),
   notes: Joi.string().allow('', null)
 });
 
 // ---------- Patient Data (Vitals) ----------
 const addVitals = Joi.object({
-  temp: Joi.number().precision(1).min(0).max(120).allow(null),
-  height: Joi.number().precision(1).min(0).max(300).allow(null),
-  weight: Joi.number().precision(1).min(0).max(500).allow(null),
-  pulse: Joi.number().integer().min(0).max(300).allow(null),
-  spo2: Joi.number().integer().min(0).max(100).allow(null),
-  blood_pressure: Joi.string().pattern(/^\d{2,3}\/\d{2,3}$/).allow('', null)
-});
+  temp: Joi.alternatives().try(Joi.number(), Joi.string()).allow(null, ''),
+  temperature: Joi.alternatives().try(Joi.number(), Joi.string()).allow(null, ''),
+  height: Joi.alternatives().try(Joi.number(), Joi.string()).allow(null, ''),
+  height_cm: Joi.alternatives().try(Joi.number(), Joi.string()).allow(null, ''),
+  weight: Joi.alternatives().try(Joi.number(), Joi.string()).allow(null, ''),
+  weight_kg: Joi.alternatives().try(Joi.number(), Joi.string()).allow(null, ''),
+  pulse: Joi.alternatives().try(Joi.number(), Joi.string()).allow(null, ''),
+  spo2: Joi.alternatives().try(Joi.number(), Joi.string()).allow(null, ''),
+  blood_pressure: Joi.string().allow('', null),
+  bp_systolic: Joi.alternatives().try(Joi.number(), Joi.string()).allow(null, ''),
+  bp_diastolic: Joi.alternatives().try(Joi.number(), Joi.string()).allow(null, ''),
+  bmi: Joi.alternatives().try(Joi.number(), Joi.string()).allow(null, ''),
+  respiratory_rate: Joi.alternatives().try(Joi.number(), Joi.string()).allow(null, ''),
+  waist_hip_ratio: Joi.alternatives().try(Joi.number(), Joi.string()).allow(null, ''),
+  homa_ir: Joi.alternatives().try(Joi.number(), Joi.string()).allow(null, '')
+}).unknown(true); // Allow any field - controller handles validation
 
 // ---------- Patient Data (Lab Records) ----------
 const addLabRecord = Joi.object({
