@@ -1,13 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useApiClient } from '../api/client';
 import { useToast } from '../hooks/useToast';
-import { FiPlus, FiX } from 'react-icons/fi';
+import { FiPlus, FiX, FiSearch } from 'react-icons/fi';
 
 export default function InjectionForm({ onAdd, onCancel }) {
   const api = useApiClient();
   const { addToast } = useToast();
-  const [templates, setTemplates] = useState([]);
-  const [showTemplateForm, setShowTemplateForm] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const searchRef = useRef(null);
+  const dropdownRef = useRef(null);
   const [formData, setFormData] = useState({
     item_type: 'injection',
     injection_name: '',
@@ -21,18 +25,41 @@ export default function InjectionForm({ onAdd, onCancel }) {
     instructions: ''
   });
 
+  // Search injections as user types
   useEffect(() => {
-    fetchTemplates();
-  }, []);
+    const searchInjections = async () => {
+      if (searchQuery.length < 2) {
+        setSearchResults([]);
+        return;
+      }
 
-  const fetchTemplates = async () => {
-    try {
-      const res = await api.get('/api/injection-templates');
-      setTemplates(res.data.templates || []);
-    } catch (error) {
-      console.error('Fetch injection templates error:', error);
-    }
-  };
+      setIsLoading(true);
+      try {
+        const res = await api.get(`/api/injection-templates/search?q=${encodeURIComponent(searchQuery)}&limit=50`);
+        setSearchResults(res.data.injections || []);
+        setShowDropdown(true);
+      } catch (error) {
+        console.error('Search injections error:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    const debounceTimer = setTimeout(searchInjections, 300);
+    return () => clearTimeout(debounceTimer);
+  }, [searchQuery]);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target) &&
+          searchRef.current && !searchRef.current.contains(event.target)) {
+        setShowDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const handleTemplateSelect = (template) => {
     setFormData({
@@ -47,6 +74,10 @@ export default function InjectionForm({ onAdd, onCancel }) {
       timing: template.timing || '',
       instructions: template.instructions || ''
     });
+
+    // Clear search and hide dropdown
+    setSearchQuery('');
+    setShowDropdown(false);
 
     // Increment usage count
     api.post(`/api/injection-templates/${template.id}/use`).catch(err => {
@@ -132,25 +163,56 @@ export default function InjectionForm({ onAdd, onCancel }) {
         )}
       </div>
 
-      {/* Template Selector */}
-      <div>
+      {/* Search-based Template Selector */}
+      <div className="relative">
         <label className="block text-sm font-medium text-gray-700 mb-2">
-          Quick Select from Templates
+          Search Injection (23,000+ available)
         </label>
-        <select
-          onChange={(e) => {
-            const template = templates.find(t => t.id == e.target.value);
-            if (template) handleTemplateSelect(template);
-          }}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-        >
-          <option value="">-- Select Injection Template --</option>
-          {templates.map(t => (
-            <option key={t.id} value={t.id}>
-              {t.template_name} ({t.injection_name})
-            </option>
-          ))}
-        </select>
+        <div className="relative" ref={searchRef}>
+          <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onFocus={() => searchQuery.length >= 2 && setShowDropdown(true)}
+            placeholder="Type to search... (e.g., Ceftriaxone, Amikacin, Pantoprazole)"
+            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          {isLoading && (
+            <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+              <div className="animate-spin h-4 w-4 border-2 border-blue-500 rounded-full border-t-transparent"></div>
+            </div>
+          )}
+        </div>
+
+        {/* Search Results Dropdown */}
+        {showDropdown && searchResults.length > 0 && (
+          <div
+            ref={dropdownRef}
+            className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto"
+          >
+            {searchResults.map(template => (
+              <div
+                key={template.id}
+                onClick={() => handleTemplateSelect(template)}
+                className="px-4 py-2 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0"
+              >
+                <div className="font-medium text-gray-900">{template.template_name}</div>
+                <div className="text-sm text-gray-500">
+                  {template.generic_name && <span>{template.generic_name} | </span>}
+                  <span>{template.dose}</span>
+                  <span className="ml-2 px-2 py-0.5 bg-gray-100 rounded text-xs">{template.route}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {showDropdown && searchQuery.length >= 2 && searchResults.length === 0 && !isLoading && (
+          <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg p-4 text-center text-gray-500">
+            No injections found for "{searchQuery}"
+          </div>
+        )}
       </div>
 
       <div className="border-t pt-4">

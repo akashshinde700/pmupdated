@@ -4247,10 +4247,13 @@ export default function PrescriptionPad() {
 
                 {/* Injection Suggestions */}
                 {smartSuggestions.injections && smartSuggestions.injections.length > 0 && (
-                  <div className="mb-3">
-                    <div className="text-xs font-medium text-gray-700 mb-2">💉 Suggested Injections</div>
-                    <div className="flex flex-wrap gap-1">
-                      {smartSuggestions.injections.slice(0, 5).map((inj, idx) => (
+                  <div className="mb-3 p-2 bg-orange-50 border border-orange-200 rounded-lg">
+                    <div className="text-xs font-semibold text-orange-800 mb-2 flex items-center gap-1">
+                      💉 Suggested Injections
+                      <span className="text-[10px] font-normal text-orange-600">({smartSuggestions.injections.length} found)</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {smartSuggestions.injections.slice(0, 8).map((inj, idx) => (
                         <button
                           key={`inj-sugg-${idx}`}
                           type="button"
@@ -4258,14 +4261,20 @@ export default function PrescriptionPad() {
                             name: inj.injection_name,
                             brand: inj.generic_name || inj.injection_name,
                             strength: inj.dose,
+                            dose: inj.dose,
                             dosage_form: `${inj.route} Injection`,
-                            frequency: inj.timing || 'Once',
+                            route: inj.route,
+                            frequency: inj.timing || 'As directed',
                             duration: 'As needed',
-                            instructions: inj.instructions || ''
+                            instructions: inj.instructions || '',
+                            type: 'injection'
                           })}
-                          className="px-2 py-1 bg-white border border-orange-200 rounded text-xs hover:bg-orange-50 transition"
+                          className="px-2.5 py-1.5 bg-white border border-orange-300 rounded-md text-xs hover:bg-orange-100 hover:border-orange-400 transition shadow-sm"
+                          title={`${inj.generic_name || ''} - ${inj.dose || ''}\n${inj.instructions || ''}`}
                         >
-                          {inj.injection_name} ({inj.route})
+                          <span className="font-medium">{inj.injection_name}</span>
+                          <span className="ml-1 text-orange-600">({inj.route})</span>
+                          {inj.is_first_line === 1 && <span className="ml-1 text-green-600">★</span>}
                         </button>
                       ))}
                     </div>
@@ -4339,24 +4348,29 @@ export default function PrescriptionPad() {
             <div className="space-y-4">
               {/* Medications List */}
               {meds.filter(m => !m.type || m.type === 'medication').length > 0 && (
-                <div>
-                  <h4 className="font-medium text-sm mb-2">💊 Medications</h4>
-                  <div className="border rounded overflow-x-auto">
-                    <div className="grid grid-cols-7 min-w-[800px] bg-slate-50 text-xs font-semibold text-slate-600 px-3 py-2">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <h4 className="font-semibold text-sm mb-3 text-blue-800 flex items-center gap-2">
+                    💊 Medications
+                    <span className="text-xs font-normal bg-blue-100 px-2 py-0.5 rounded-full">
+                      {meds.filter(m => !m.type || m.type === 'medication').length} items
+                    </span>
+                  </h4>
+                  <div className="bg-white border rounded overflow-x-auto">
+                    <div className="grid grid-cols-7 min-w-[800px] bg-blue-100 text-xs font-semibold text-blue-800 px-3 py-2">
                       <span className="col-span-2">MEDICINE (Generic)</span>
                       <span>FREQUENCY</span>
                       <span>TIMING</span>
                       <span>DURATION</span>
                       <span>INSTRUCTIONS</span>
-                      <span>QUANTITY</span>
+                      <span>QTY / ACTION</span>
                     </div>
                     {meds.filter(m => !m.type || m.type === 'medication').map((med, idx) => {
                       const actualIdx = meds.findIndex(m => m === med);
                       return (
-                        <div key={idx} className="grid grid-cols-7 min-w-[800px] px-3 py-2 border-t text-sm hover:bg-slate-50">
+                        <div key={idx} className="grid grid-cols-7 min-w-[800px] px-3 py-2 border-t text-sm hover:bg-blue-50 transition">
                           <div className="col-span-2">
-                            <div className="font-medium">{med.brand || med.name}</div>
-                            {med.composition && <div className="text-xs text-slate-500">{med.composition}</div>}
+                            <div className="font-medium text-gray-900">{med.brand || med.name}</div>
+                            {med.composition && <div className="text-xs text-gray-500">{med.composition}</div>}
                           </div>
                           <input
                             className="px-2 py-1 border rounded text-xs"
@@ -4428,35 +4442,45 @@ export default function PrescriptionPad() {
 
               {/* Injections List */}
               {meds.filter(m => m.type === 'injection').length > 0 && (
-                <div>
-                  <h4 className="font-medium text-sm mb-2">💉 Injections / IVF</h4>
-                  <div className="border rounded overflow-x-auto">
-                    <div className="grid grid-cols-8 min-w-[900px] bg-slate-50 text-xs font-semibold text-slate-600 px-3 py-2">
-                      <span className="col-span-2">INJECTION</span>
+                <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
+                  <h4 className="font-semibold text-sm mb-3 text-orange-800 flex items-center gap-2">
+                    💉 Injections / IVF
+                    <span className="text-xs font-normal bg-orange-100 px-2 py-0.5 rounded-full">
+                      {meds.filter(m => m.type === 'injection').length} items
+                    </span>
+                  </h4>
+                  <div className="bg-white border rounded overflow-x-auto">
+                    <div className="grid grid-cols-9 min-w-[950px] bg-orange-100 text-xs font-semibold text-orange-800 px-3 py-2">
+                      <span className="col-span-2">INJECTION NAME</span>
                       <span>DOSE</span>
                       <span>ROUTE</span>
                       <span>INFUSION RATE</span>
                       <span>FREQUENCY</span>
                       <span>DURATION</span>
-                      <span className="col-span-2">INSTRUCTIONS</span>
+                      <span>INSTRUCTIONS</span>
+                      <span className="text-center">ACTION</span>
                     </div>
                     {meds.filter(m => m.type === 'injection').map((inj, idx) => {
                       const actualIdx = meds.findIndex(m => m === inj);
                       return (
-                        <div key={idx} className="grid grid-cols-8 min-w-[900px] px-3 py-2 border-t text-sm hover:bg-slate-50">
+                        <div key={idx} className="grid grid-cols-9 min-w-[950px] px-3 py-2 border-t text-sm hover:bg-orange-50 transition">
                           <div className="col-span-2">
-                            <div className="font-medium">{inj.brand || inj.name}</div>
-                            {inj.composition && <div className="text-xs text-slate-500">{inj.composition}</div>}
+                            <div className="font-medium text-gray-900">{inj.brand || inj.name}</div>
+                            {inj.composition && <div className="text-xs text-gray-500">{inj.composition}</div>}
                           </div>
-                          <div className="text-xs">{inj.dosage || inj.dose}</div>
-                          <div className="text-xs">{inj.route}</div>
-                          <div className="text-xs">{inj.frequency}</div>
-                          <div className="text-xs">{inj.duration}</div>
-                          <div className="col-span-2 flex items-center justify-between">
-                            <div className="text-xs">{translateInstruction(inj.instructions, language)}</div>
+                          <div className="text-xs text-gray-700">{inj.dosage || inj.dose || inj.strength || '-'}</div>
+                          <div className="text-xs">
+                            <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded">{inj.route || inj.dosage_form || '-'}</span>
+                          </div>
+                          <div className="text-xs text-gray-600">{inj.infusion_rate || '-'}</div>
+                          <div className="text-xs text-gray-700">{inj.frequency || '-'}</div>
+                          <div className="text-xs text-gray-700">{inj.duration || '-'}</div>
+                          <div className="text-xs text-gray-600 truncate" title={inj.instructions}>{translateInstruction(inj.instructions, language) || '-'}</div>
+                          <div className="flex justify-center">
                             <button
                               onClick={() => removeMed(actualIdx)}
-                              className="text-red-500 hover:text-red-700 ml-2"
+                              className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition"
+                              title="Remove injection"
                             >
                               ✕
                             </button>
@@ -4469,8 +4493,14 @@ export default function PrescriptionPad() {
               )}
 
               {meds.length === 0 && (
-                <div className="p-4 text-center text-slate-400 text-sm border rounded">
-                  Add medications or injections above
+                <div className="p-6 text-center border-2 border-dashed border-gray-300 rounded-lg bg-gray-50">
+                  <div className="text-gray-400 text-lg mb-2">💊 💉</div>
+                  <div className="text-gray-500 text-sm">
+                    No medications or injections added yet
+                  </div>
+                  <div className="text-gray-400 text-xs mt-1">
+                    Search above or use smart suggestions to add items
+                  </div>
                 </div>
               )}
             </div>

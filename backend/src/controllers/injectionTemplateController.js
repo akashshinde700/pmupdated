@@ -376,11 +376,131 @@ async function incrementTemplateUsage(req, res) {
   }
 }
 
+/**
+ * Search injections for autocomplete/dropdown
+ * GET /api/injection-templates/search?q=<query>&limit=20
+ * Returns matching injections based on injection_name or generic_name
+ */
+async function searchInjections(req, res) {
+  try {
+    const { q = '', limit = 20, category } = req.query;
+    const db = getDb();
+    const userId = req.user?.id;
+    const userRole = req.user?.role;
+
+    // Build search query
+    let query = `
+      SELECT
+        it.id,
+        it.template_name,
+        it.injection_name,
+        it.generic_name,
+        it.dose,
+        it.route,
+        it.infusion_rate,
+        it.frequency,
+        it.duration,
+        it.timing,
+        it.instructions,
+        it.usage_count
+      FROM injection_templates it
+      WHERE it.is_active = 1
+    `;
+
+    const params = [];
+
+    // Search filter - matches injection_name or generic_name
+    if (q && q.trim().length > 0) {
+      query += ` AND (it.injection_name LIKE ? OR it.generic_name LIKE ? OR it.template_name LIKE ?)`;
+      const searchPattern = `${q.trim()}%`;
+      params.push(searchPattern, searchPattern, searchPattern);
+    }
+
+    // Role-based filtering
+    if (userRole === 'doctor') {
+      query += ` AND (it.doctor_id IS NULL OR it.doctor_id = ?)`;
+      params.push(userId);
+    } else if (userRole === 'staff') {
+      query += ` AND it.doctor_id IS NULL`;
+    }
+
+    // Order by usage count (most used first), then alphabetically
+    query += ` ORDER BY it.usage_count DESC, it.injection_name ASC`;
+
+    // Limit results
+    const limitNum = Math.min(parseInt(limit) || 20, 100);
+    query += ` LIMIT ?`;
+    params.push(limitNum);
+
+    const [injections] = await db.execute(query, params);
+
+    res.json({
+      success: true,
+      query: q,
+      count: injections.length,
+      injections
+    });
+  } catch (error) {
+    console.error('Search injections error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to search injections'
+    });
+  }
+}
+
+/**
+ * Get all unique injection names for dropdown (simplified list)
+ * GET /api/injection-templates/names
+ */
+async function getInjectionNames(req, res) {
+  try {
+    const db = getDb();
+    const userId = req.user?.id;
+    const userRole = req.user?.role;
+
+    let query = `
+      SELECT DISTINCT
+        injection_name,
+        generic_name
+      FROM injection_templates
+      WHERE is_active = 1
+    `;
+
+    const params = [];
+
+    if (userRole === 'doctor') {
+      query += ` AND (doctor_id IS NULL OR doctor_id = ?)`;
+      params.push(userId);
+    } else if (userRole === 'staff') {
+      query += ` AND doctor_id IS NULL`;
+    }
+
+    query += ` ORDER BY injection_name ASC`;
+
+    const [names] = await db.execute(query, params);
+
+    res.json({
+      success: true,
+      count: names.length,
+      injections: names
+    });
+  } catch (error) {
+    console.error('Get injection names error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch injection names'
+    });
+  }
+}
+
 module.exports = {
   getAllInjectionTemplates,
   getInjectionTemplateById,
   createInjectionTemplate,
   updateInjectionTemplate,
   deleteInjectionTemplate,
-  incrementTemplateUsage
+  incrementTemplateUsage,
+  searchInjections,
+  getInjectionNames
 };
