@@ -478,8 +478,8 @@ async function addPrescription(req, res) {
     const [rxResult] = await db.execute(
       `INSERT INTO prescriptions (
          patient_id, doctor_id, clinic_id, appointment_id, template_id,
-         chief_complaint, diagnosis, advice, follow_up_date, follow_up_days, patient_notes, private_notes, prescribed_date, status
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), 'active')`,
+         chief_complaint, advice, prescribed_date, status
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, CURDATE(), 'active')`,
       [
         patient_id,
         finalDoctorId,
@@ -487,12 +487,7 @@ async function addPrescription(req, res) {
         validAppointmentId,
         template_id || null,
         symptoms.length > 0 ? symptoms.join(', ') : null,
-        diagnosis.length > 0 ? diagnosis.join(', ') : null,
-        combinedInstructions || null,
-        follow_up_date || null,
-        follow_up_days !== null && follow_up_days !== undefined ? parseInt(follow_up_days, 10) : null,
-        patient_notes || null,
-        private_notes || null
+        combinedInstructions || null
       ]
     );
 
@@ -551,8 +546,8 @@ async function addPrescription(req, res) {
 
       await db.execute(
         `INSERT INTO prescription_items (
-           prescription_id, medicine_id, medicine_name, dosage, frequency, duration, timing, quantity, notes
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           prescription_id, medicine_id, medicine_name, dosage, frequency, duration, notes
+         ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [
           prescriptionId,
           medicineId,
@@ -560,8 +555,6 @@ async function addPrescription(req, res) {
           med.dosage || '',
           med.frequency || '',
           med.duration || '',
-          med.timing || null,
-          med.quantity || 0,
           med.instructions || med.remarks || ''
         ]
       );
@@ -906,7 +899,7 @@ async function generatePrescriptionPDF(req, res) {
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader(
       'Content-Disposition',
-      `inline; filename=prescription-${prescriptionId}.pdf`
+      `attachment; filename=prescription-${prescriptionId}.pdf`
     );
 
     res.send(pdfBuffer);

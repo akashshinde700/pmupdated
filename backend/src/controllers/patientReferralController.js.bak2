@@ -11,23 +11,17 @@ async function getAllReferrals(req, res) {
 
     let query = `
       SELECT pr.*,
-             p.name as patient_name, p.patient_id as uhid, p.phone as patient_phone,
+             p.name as patient_name, p.uhid, p.phone as patient_phone,
              u1.name as referring_doctor_name,
              u2.name as referred_to_doctor_name
       FROM patient_referrals pr
-      LEFT JOIN patients p ON pr.patient_id = p.id
-      LEFT JOIN users u1 ON pr.referring_doctor_id = u1.id
+      INNER JOIN patients p ON pr.patient_id = p.id
+      INNER JOIN users u1 ON pr.referring_doctor_id = u1.id
       LEFT JOIN users u2 ON pr.referred_to_doctor_id = u2.id
       WHERE 1=1
     `;
 
     const params = [];
-
-    // Filter by patient_id if provided
-    if (req.query.patient_id) {
-      query += ` AND pr.patient_id = ?`;
-      params.push(req.query.patient_id);
-    }
 
     // Filter by doctor
     if (userRole === 'doctor') {
@@ -62,12 +56,12 @@ async function getReferralById(req, res) {
 
     const [referrals] = await db.execute(`
       SELECT pr.*,
-             p.name as patient_name, p.patient_id as uhid, p.phone as patient_phone, p.age_years as age, p.gender,
+             p.name as patient_name, p.uhid, p.phone as patient_phone, p.age, p.gender,
              u1.name as referring_doctor_name,
              u2.name as referred_to_doctor_name
       FROM patient_referrals pr
-      LEFT JOIN patients p ON pr.patient_id = p.id
-      LEFT JOIN users u1 ON pr.referring_doctor_id = u1.id
+      INNER JOIN patients p ON pr.patient_id = p.id
+      INNER JOIN users u1 ON pr.referring_doctor_id = u1.id
       LEFT JOIN users u2 ON pr.referred_to_doctor_id = u2.id
       WHERE pr.id = ?
     `, [id]);
@@ -137,18 +131,18 @@ async function createReferral(req, res) {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       patient_id,
-      userId || null,
-      referred_to_doctor_id || null,
-      referred_doctor_name || null,
-      referred_doctor_phone || null,
-      referred_doctor_email || null,
-      referred_doctor_specialization || null,
-      hospital_name || null,
+      userId,
+      referred_to_doctor_id,
+      referred_doctor_name,
+      referred_doctor_phone,
+      referred_doctor_email,
+      referred_doctor_specialization,
+      hospital_name,
       referral_date,
-      referral_time || null,
-      reason || null,
+      referral_time,
+      reason,
       priority || 'routine',
-      notes || null
+      notes
     ]);
 
     res.status(201).json({

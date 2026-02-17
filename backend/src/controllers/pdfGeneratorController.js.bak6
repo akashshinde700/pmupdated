@@ -46,10 +46,10 @@ exports.generatePrescriptionPDF = async (req, res) => {
         c.phone as clinic_phone,
         c.address as clinic_address
       FROM prescriptions p
-      LEFT JOIN patients pa ON p.patient_id = pa.id
-      LEFT JOIN doctors d ON p.doctor_id = d.id
+      JOIN patients pa ON p.patient_id = pa.id
+      JOIN doctors d ON p.doctor_id = d.id
       LEFT JOIN users u ON d.user_id = u.id
-      LEFT JOIN clinics c ON d.clinic_id = c.id
+      JOIN clinics c ON d.clinic_id = c.id
       WHERE p.id = ?
     `, [prescriptionId]);
 
@@ -235,7 +235,7 @@ exports.generatePrescriptionPDF = async (req, res) => {
     console.log('🔍 PDF data generated, size:', pdfData.byteLength);
     
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="prescription_${prescriptionId}.pdf"`);
+    res.setHeader('Content-Disposition', `attachment; filename="prescription_${prescriptionId}.pdf"`);
     console.log('🔍 Sending PDF response...');
     res.send(Buffer.from(pdfData));
     console.log('🔍 PDF sent successfully');
@@ -268,13 +268,13 @@ exports.generateBillingPDF = async (req, res) => {
 
     // Fetch bill data
     const [bills] = await db.execute(`
-      SELECT
+      SELECT 
         b.id,
         b.patient_id,
         b.bill_date,
         b.total_amount,
         b.discount_amount,
-        COALESCE(b.total_amount, 0) - COALESCE(b.discount_amount, 0) as net_amount,
+        b.total_amount - b.discount_amount as net_amount,
         b.payment_status,
         b.notes,
         pa.name as patient_name,
@@ -284,8 +284,8 @@ exports.generateBillingPDF = async (req, res) => {
         c.address as clinic_address,
         c.phone as clinic_phone
       FROM bills b
-      LEFT JOIN patients pa ON b.patient_id = pa.id
-      LEFT JOIN clinics c ON b.clinic_id = c.id
+      JOIN patients pa ON b.patient_id = pa.id
+      JOIN clinics c ON b.clinic_id = c.id
       WHERE b.id = ?
     `, [billId]);
 
@@ -314,13 +314,13 @@ exports.generateBillingPDF = async (req, res) => {
     // Header
     doc.setFontSize(16);
     doc.setTextColor(0, 51, 102);
-    doc.text(bill.clinic_name || 'Hospital', pageWidth / 2, yPosition, { align: 'center' });
-
+    doc.text(bill.clinic_name, pageWidth / 2, yPosition, { align: 'center' });
+    
     yPosition += 8;
     doc.setFontSize(10);
     doc.setTextColor(100, 100, 100);
-    doc.text(`${bill.clinic_address || ''}`, pageWidth / 2, yPosition, { align: 'center' });
-    doc.text(`Phone: ${bill.clinic_phone || ''}`, pageWidth / 2, yPosition + 5, { align: 'center' });
+    doc.text(`${bill.clinic_address}`, pageWidth / 2, yPosition, { align: 'center' });
+    doc.text(`Phone: ${bill.clinic_phone}`, pageWidth / 2, yPosition + 5, { align: 'center' });
 
     // Horizontal line
     yPosition += 15;
@@ -344,15 +344,13 @@ exports.generateBillingPDF = async (req, res) => {
     
     yPosition += 6;
     doc.setFont(undefined, 'normal');
-    doc.text(`${bill.patient_name || 'N/A'}`, 15, yPosition);
-    doc.text(`Phone: ${bill.patient_phone || 'N/A'}`, 15, yPosition + 6);
-    if (bill.patient_email) {
-      doc.text(`Email: ${bill.patient_email}`, 15, yPosition + 12);
-    }
+    doc.text(`${bill.patient_name}`, 15, yPosition);
+    doc.text(`Phone: ${bill.patient_phone}`, 15, yPosition + 6);
+    doc.text(`Email: ${bill.patient_email}`, 15, yPosition + 12);
 
     // Bill Date
     yPosition += 20;
-    doc.text(`Date: ${bill.bill_date ? new Date(bill.bill_date).toLocaleDateString() : 'N/A'}`, pageWidth - 50, yPosition);
+    doc.text(`Date: ${new Date(bill.bill_date).toLocaleDateString()}`, pageWidth - 50, yPosition);
 
     // Items Table
     yPosition += 12;
@@ -365,11 +363,11 @@ exports.generateBillingPDF = async (req, res) => {
 
     const itemTableHeaders = ['Description', 'Service', 'Qty', 'Unit Price', 'Amount'];
     const itemTableData = items.map(item => [
-      item.description || 'Service',
-      'Service',
-      (item.quantity != null ? item.quantity : 1).toString(),
-      `₹${(parseFloat(item.unit_price) || 0).toFixed(2)}`,
-      `₹${(parseFloat(item.amount) || 0).toFixed(2)}`
+      item.description,
+      'Service',  // Default service type since item_type doesn't exist
+      item.quantity.toString(),
+      `₹${item.unit_price.toFixed(2)}`,
+      `₹${item.amount.toFixed(2)}`
     ]);
 
     if (typeof doc.autoTable === 'function') {
@@ -403,16 +401,12 @@ exports.generateBillingPDF = async (req, res) => {
     yPosition = doc.lastAutoTable.finalY + 10;
     doc.setFont(undefined, 'bold');
     doc.setFontSize(10);
-    const totalAmt = parseFloat(bill.total_amount) || 0;
-    const discountAmt = parseFloat(bill.discount_amount) || 0;
-    const netAmt = parseFloat(bill.net_amount) || (totalAmt - discountAmt);
-
     doc.text(`Total Amount:`, pageWidth - 80, yPosition);
-    doc.text(`₹${totalAmt.toFixed(2)}`, pageWidth - 30, yPosition, { align: 'right' });
+    doc.text(`₹${bill.total_amount.toFixed(2)}`, pageWidth - 30, yPosition, { align: 'right' });
 
     yPosition += 7;
     doc.text(`Discount:`, pageWidth - 80, yPosition);
-    doc.text(`-₹${discountAmt.toFixed(2)}`, pageWidth - 30, yPosition, { align: 'right' });
+    doc.text(`-₹${bill.discount_amount.toFixed(2)}`, pageWidth - 30, yPosition, { align: 'right' });
 
     yPosition += 7;
     doc.setDrawColor(0, 0, 0);
@@ -422,16 +416,15 @@ exports.generateBillingPDF = async (req, res) => {
     doc.setFont(undefined, 'bold');
     doc.setFontSize(11);
     doc.text(`Net Amount:`, pageWidth - 80, yPosition);
-    doc.text(`₹${netAmt.toFixed(2)}`, pageWidth - 30, yPosition, { align: 'right' });
+    doc.text(`₹${bill.net_amount.toFixed(2)}`, pageWidth - 30, yPosition, { align: 'right' });
 
     // Payment Status
     yPosition += 10;
     doc.setFontSize(10);
     doc.setFont(undefined, 'normal');
-    const paymentStatus = bill.payment_status || 'pending';
-    const statusColor = paymentStatus === 'paid' ? [0, 128, 0] : [255, 0, 0];
+    const statusColor = bill.payment_status === 'paid' ? [0, 128, 0] : [255, 0, 0];
     doc.setTextColor(...statusColor);
-    doc.text(`Status: ${paymentStatus.toUpperCase()}`, pageWidth - 80, yPosition);
+    doc.text(`Status: ${bill.payment_status.toUpperCase()}`, pageWidth - 80, yPosition);
 
     // Notes
     if (bill.notes) {
@@ -450,7 +443,7 @@ exports.generateBillingPDF = async (req, res) => {
     // Send PDF
     const pdfData = doc.output('arraybuffer');
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="invoice_${billId}.pdf"`);
+    res.setHeader('Content-Disposition', `attachment; filename="invoice_${billId}.pdf"`);
     res.send(Buffer.from(pdfData));
 
   } catch (error) {
@@ -577,7 +570,7 @@ exports.generateCertificatePDF = async (req, res) => {
     // Send PDF
     const pdfData = doc.output('arraybuffer');
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="certificate_${certificateId}.pdf"`);
+    res.setHeader('Content-Disposition', `attachment; filename="certificate_${certificateId}.pdf"`);
     res.send(Buffer.from(pdfData));
 
   } catch (error) {
@@ -725,7 +718,7 @@ exports.generateReferralPDF = async (req, res) => {
     // Send PDF
     const pdfData = doc.output('arraybuffer');
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="referral_${referralId}.pdf"`);
+    res.setHeader('Content-Disposition', `attachment; filename="referral_${referralId}.pdf"`);
     res.send(Buffer.from(pdfData));
 
   } catch (error) {
@@ -1040,7 +1033,7 @@ exports.generateLabReportPDF = async (req, res) => {
     // Send PDF
     const pdfData = doc.output('arraybuffer');
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="lab_report_${patientId}.pdf"`);
+    res.setHeader('Content-Disposition', `attachment; filename="lab_report_${patientId}.pdf"`);
     res.send(Buffer.from(pdfData));
 
   } catch (error) {

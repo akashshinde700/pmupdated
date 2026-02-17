@@ -117,8 +117,8 @@ async function listLabs(req, res) {
     const { patientId } = req.params;
     const db = getDb();
     const [labs] = await db.execute(
-      `SELECT id, test_name as name, result_value as reading, result_date as date, result_unit as unit, report_group, reference_range, test_category
-       FROM lab_investigations WHERE patient_id = ? AND status = 'completed' ORDER BY result_date DESC, report_group, id`,
+      `SELECT test_name as name, result_value as reading, result_date as date, result_unit as unit
+       FROM lab_investigations WHERE patient_id = ? AND status = 'completed' ORDER BY result_date DESC`,
       [patientId]
     );
     res.json({ labs });
@@ -133,45 +133,15 @@ async function addLab(req, res) {
     const { patientId } = req.params;
     const { name, reading, date, unit } = req.body;
     const db = getDb();
-    const clinicId = req.user?.clinic_id || null;
     const [result] = await db.execute(
-      `INSERT INTO lab_investigations (patient_id, clinic_id, doctor_id, test_name, result_value, result_date, result_unit, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'completed')`,
-      [patientId, clinicId, req.user?.id || null, name, reading, date || new Date(), unit || null]
+      `INSERT INTO lab_investigations (patient_id, doctor_id, test_name, result_value, result_date, result_unit, status)
+       VALUES (?, ?, ?, ?, ?, ?, 'completed')`,
+      [patientId, req.user?.id || null, name, reading, date || new Date(), unit || null]
     );
     res.status(201).json({ id: result.insertId, message: 'Lab result added' });
   } catch (error) {
     console.error('Add lab error:', error);
     res.status(500).json({ error: 'Failed to add lab result' });
-  }
-}
-
-async function addLabBatch(req, res) {
-  try {
-    const { patientId } = req.params;
-    const { category, results, date } = req.body;
-    if (!category || !results || !Array.isArray(results) || results.length === 0) {
-      return res.status(400).json({ error: 'category and results array are required' });
-    }
-    const db = getDb();
-    const clinicId = req.user?.clinic_id || null;
-    const doctorId = req.user?.id || null;
-    const reportGroup = `${category}-${Date.now()}`;
-    const resultDate = date || new Date();
-    const ids = [];
-    for (const item of results) {
-      if (!item.name || !item.reading) continue;
-      const [result] = await db.execute(
-        `INSERT INTO lab_investigations (patient_id, clinic_id, doctor_id, test_name, result_value, result_date, result_unit, status, report_group, reference_range, test_category)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?)`,
-        [patientId, clinicId, doctorId, item.name, item.reading, resultDate, item.unit || null, reportGroup, item.normalRange || null, category]
-      );
-      ids.push(result.insertId);
-    }
-    res.status(201).json({ ids, report_group: reportGroup, message: `${ids.length} lab results saved` });
-  } catch (error) {
-    console.error('Add lab batch error:', error);
-    res.status(500).json({ error: 'Failed to save lab results' });
   }
 }
 
@@ -343,7 +313,6 @@ module.exports = {
   deleteRecord,
   listLabs,
   addLab,
-  addLabBatch,
   listVitals,
   addVital,
   listTimeline,

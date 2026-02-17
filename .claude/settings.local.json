@@ -4,7 +4,14 @@
       "Bash(ssh:*)",
       "Bash(pip show:*)",
       "Bash(python:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(npx vite build:*)",
+      "Bash(npm run build:*)",
+      "Bash(python3:*)",
+      "Bash(npm install:*)",
+      "Bash(node:*)",
+      "Bash(sshpass -p 'LASTrivon@8055' scp -o StrictHostKeyChecking=no -r \"c:/Users/ACER/Desktop/pm/pmupdated/frontend/dist\"/* root@72.60.206.56:/var/www/patient_management/frontend/dist/)",
+      "Bash(scp:*)"
     ]
   }
 }

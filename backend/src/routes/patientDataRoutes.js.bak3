@@ -7,7 +7,6 @@ const {
   deleteRecord,
   listLabs,
   addLab,
-  addLabBatch,
   listVitals,
   addVital,
   listTimeline,
@@ -23,7 +22,6 @@ router.post('/records/:patientId', authenticateToken, upload, imageOptimizationM
 router.delete('/records/:patientId/:recordId', authenticateToken, deleteRecord);
 router.get('/labs/:patientId', authenticateToken, listLabs);
 router.post('/labs/:patientId', authenticateToken, joiValidate(addLabRecord), addLab);
-router.post('/labs/:patientId/batch', authenticateToken, addLabBatch);
 router.get('/vitals/:patientId', authenticateToken, listVitals);
 router.post('/vitals/:patientId', authenticateToken, joiValidate(addVitals), addVital);
 router.get('/timeline/:patientId', authenticateToken, listTimeline);

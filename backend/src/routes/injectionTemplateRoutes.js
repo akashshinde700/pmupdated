@@ -6,9 +6,7 @@ const {
   createInjectionTemplate,
   updateInjectionTemplate,
   deleteInjectionTemplate,
-  incrementTemplateUsage,
-  searchInjections,
-  getInjectionNames
+  incrementTemplateUsage
 } = require('../controllers/injectionTemplateController');
 const joiValidate = require('../middleware/joiValidate');
 const { createInjectionTemplate: createInjectionTemplateSchema, updateInjectionTemplate: updateInjectionTemplateSchema } = require('../validation/commonSchemas');
@@ -17,14 +15,6 @@ const router = express.Router();
 
 // All routes require authentication
 router.use(authenticateToken);
-
-// Search injections for autocomplete/dropdown - MUST be before /:id route
-// GET /api/injection-templates/search?q=<query>&limit=20
-router.get('/search', searchInjections);
-
-// Get all unique injection names (simplified list for dropdown)
-// GET /api/injection-templates/names
-router.get('/names', getInjectionNames);
 
 // Get all injection templates
 router.get('/', getAllInjectionTemplates);

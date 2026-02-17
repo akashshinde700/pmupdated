@@ -2,6 +2,7 @@ const express = require('express');
 const {
   listLabTemplates,
   getLabTemplate,
+  getLabTemplateParameters,
   createLabTemplate,
   updateLabTemplate,
   deleteLabTemplate
@@ -17,6 +18,7 @@ const router = express.Router();
 
 router.get('/', authenticateToken, cacheMiddleware(5 * 60 * 1000), listLabTemplates);
 router.get('/:id', authenticateToken, validateId('id'), cacheMiddleware(5 * 60 * 1000), getLabTemplate);
+router.get('/:id/parameters', authenticateToken, validateId('id'), cacheMiddleware(5 * 60 * 1000), getLabTemplateParameters);
 router.post('/',
   authenticateToken,
   requireRole('admin', 'doctor'),

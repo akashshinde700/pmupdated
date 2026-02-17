@@ -233,7 +233,7 @@ app.use('/api/patients', patientRoutes);
 app.use('/api/appointments', appointmentRoutes);
 app.use('/api/appointment-intents', appointmentIntentRoutes);
 app.use('/api/diagnosis-suggestion', authenticateToken, diagnosisSuggestionRoutes);
-app.use('/api/prescriptions', authenticateToken, prescriptionRoutes);
+app.use('/api/prescriptions', prescriptionRoutes); // Auth handled inside route file (PDF route is public)
 app.use('/api/bills', authenticateToken, billRoutes);
 app.use('/api/staff-billing', authenticateToken, staffBillingRoutes);
 app.use('/api/doctor-billing', authenticateToken, doctorBillingRoutes);

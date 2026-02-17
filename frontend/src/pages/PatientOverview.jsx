@@ -72,7 +72,14 @@ export default function PatientOverview() {
   const [showEditVitalsModal, setShowEditVitalsModal] = useState(false);
   const [editVitalsForm, setEditVitalsForm] = useState({ temp: '', height: '', weight: '', pulse: '', spo2: '', blood_pressure: '' });
   const [showLabUploadModal, setShowLabUploadModal] = useState(false);
-  const [labUploadForm, setLabUploadForm] = useState({ test_name: '', reading: '', unit: '', date: new Date().toISOString().split('T')[0], notes: '' });
+  const [labUploadForm, setLabUploadForm] = useState({ test_name: '', reading: '', unit: '', date: new Date().toISOString().split('T')[0], notes: '', reference_range: '' });
+  const [labTemplates, setLabTemplates] = useState([]);
+  const [labTemplateCategories, setLabTemplateCategories] = useState([]);
+  const [selectedLabCategory, setSelectedLabCategory] = useState('');
+  const [labParamFormTest, setLabParamFormTest] = useState(null);
+  const [labParamFormData, setLabParamFormData] = useState([]);
+  const [labParamLoading, setLabParamLoading] = useState(false);
+  const [labSearchQuery, setLabSearchQuery] = useState('');
   const [showMedicalHistoryModal, setShowMedicalHistoryModal] = useState(false);
   const [medicalHistoryForm, setMedicalHistoryForm] = useState({ condition: '', diagnosis_date: '', notes: '' });
   const [medicalHistory, setMedicalHistory] = useState([]);
@@ -124,6 +131,51 @@ export default function PatientOverview() {
     fetchPatientData();
     addToast('Data refreshed', 'success');
   };
+
+  // Add lab result handler
+  const handleAddLabResult = async (e) => {
+    e.preventDefault();
+    if (!labUploadForm.test_name.trim()) {
+      addToast('Please enter test name', 'error');
+      return;
+    }
+    setLabUploadLoading(true);
+    try {
+      await api.post(`/api/labs/${id}`, {
+        test_name: labUploadForm.test_name,
+        result_value: labUploadForm.reading,
+        result_unit: labUploadForm.unit,
+        reference_range: labUploadForm.reference_range || '',
+        result_date: labUploadForm.date,
+        notes: labUploadForm.notes,
+        status: 'completed'
+      });
+      addToast('Lab result added', 'success');
+      setShowLabUploadModal(false);
+      setLabUploadForm({ test_name: '', reading: '', unit: '', date: new Date().toISOString().split('T')[0], notes: '', reference_range: '' });
+      fetchPatientData();
+    } catch (error) {
+      console.error('Error adding lab result:', error);
+      addToast(error.response?.data?.error || 'Failed to add lab result', 'error');
+    } finally {
+      setLabUploadLoading(false);
+    }
+  };
+
+  // Fetch lab templates
+  useEffect(() => {
+    const fetchLabTemplates = async () => {
+      try {
+        const res = await api.get('/api/lab-templates');
+        const templates = res.data.data || res.data.templates || res.data || [];
+        setLabTemplates(templates);
+        setLabTemplateCategories([...new Set(templates.map(t => t.category).filter(Boolean))]);
+      } catch (error) {
+        console.error('Failed to fetch lab templates:', error);
+      }
+    };
+    fetchLabTemplates();
+  }, [api]);
 
   const filteredLabs = labs.filter(lab =>
     lab.name.toLowerCase().includes(labSearch.toLowerCase())
@@ -640,14 +692,21 @@ export default function PatientOverview() {
                   See Historical Data
                 </button>
                 <button
-                  className="px-3 py-2 text-sm bg-primary text-white rounded hover:bg-primary/90"
+                  className="px-3 py-2 text-sm bg-green-600 text-white rounded hover:bg-green-700"
+                  onClick={() => setShowLabUploadModal(true)}
+                  title="Add Lab Result"
+                >
+                  Add Lab Result
+                </button>
+                <button
+                  className="px-3 py-2 text-sm border rounded hover:bg-slate-50"
                   onClick={() => {
                     setShowUploadRecordModal(true);
                     setUploadForm(prev => ({ ...prev, category: 'BLOOD_TEST', name: '' }));
                   }}
-                  title="Upload Lab Report"
+                  title="Upload Report"
                 >
-                  Upload Lab Report
+                  Upload Report
                 </button>
               </div>
             </div>
@@ -1427,6 +1486,221 @@ export default function PatientOverview() {
       )}
 
       {/* Upload Record Modal */}
+      {/* Add Lab Result Modal with Template Selection & Parameter Forms */}
+      {showLabUploadModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h2 className="text-lg font-semibold">
+                {labParamFormTest ? `Fill Results: ${labParamFormTest.test_name}` : 'Add Lab Result'}
+              </h2>
+              <button onClick={() => { setShowLabUploadModal(false); setLabParamFormTest(null); setLabParamFormData([]); setLabSearchQuery(''); }} className="p-1 hover:bg-gray-100 rounded text-gray-500">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+
+            {/* Parameter Form View */}
+            {labParamFormTest ? (
+              <>
+                <div className="overflow-y-auto flex-1 p-4">
+                  <div className="mb-3 p-3 bg-purple-50 rounded-lg">
+                    <div className="text-sm font-semibold text-purple-800">{labParamFormTest.test_name}</div>
+                    <div className="text-xs text-purple-600">{labParamFormTest.category} | Sample: {labParamFormTest.sample_type || 'Blood'}</div>
+                  </div>
+                  {labParamLoading ? (
+                    <div className="text-center py-8 text-gray-500">Loading parameters...</div>
+                  ) : labParamFormData.length > 0 ? (
+                    <div className="border rounded overflow-hidden">
+                      <div className="grid grid-cols-12 bg-gray-100 text-xs font-semibold text-gray-700 px-3 py-2 gap-2">
+                        <span className="col-span-4">Parameter</span>
+                        <span className="col-span-3">Result Value</span>
+                        <span className="col-span-2">Unit</span>
+                        <span className="col-span-3">Reference Range</span>
+                      </div>
+                      {labParamFormData.map((param, idx) => (
+                        <div key={idx} className="grid grid-cols-12 px-3 py-2 text-sm border-t items-center gap-2">
+                          <div className="col-span-4">
+                            <div className="text-xs font-medium">{param.parameter_name}</div>
+                            {param.short_name && param.short_name !== param.parameter_name && (
+                              <div className="text-[10px] text-gray-400">{param.short_name}</div>
+                            )}
+                          </div>
+                          <div className="col-span-3">
+                            <input
+                              type="text"
+                              className="w-full px-2 py-1.5 border rounded text-xs focus:ring-1 focus:ring-purple-400 focus:border-purple-400"
+                              placeholder="Enter value"
+                              value={param.result_value || ''}
+                              onChange={(e) => {
+                                const updated = [...labParamFormData];
+                                updated[idx].result_value = e.target.value;
+                                setLabParamFormData(updated);
+                              }}
+                            />
+                          </div>
+                          <span className="col-span-2 text-xs text-gray-500">{param.unit || '-'}</span>
+                          <span className="col-span-3 text-xs text-gray-500">{param.reference_range || '-'}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <p className="text-gray-500 text-sm">No predefined parameters for this test. Enter result manually:</p>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Result Value</label>
+                          <input type="text" className="w-full px-3 py-2 border rounded text-sm" placeholder="e.g., 110"
+                            value={labUploadForm.reading} onChange={(e) => setLabUploadForm(prev => ({ ...prev, reading: e.target.value }))} />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Unit</label>
+                          <input type="text" className="w-full px-3 py-2 border rounded text-sm" placeholder="e.g., mg/dL"
+                            value={labUploadForm.unit} onChange={(e) => setLabUploadForm(prev => ({ ...prev, unit: e.target.value }))} />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Reference Range</label>
+                          <input type="text" className="w-full px-3 py-2 border rounded text-sm" placeholder="e.g., 70-100"
+                            value={labUploadForm.reference_range} onChange={(e) => setLabUploadForm(prev => ({ ...prev, reference_range: e.target.value }))} />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Date</label>
+                          <input type="date" className="w-full px-3 py-2 border rounded text-sm"
+                            value={labUploadForm.date} onChange={(e) => setLabUploadForm(prev => ({ ...prev, date: e.target.value }))} />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
+                        <textarea className="w-full px-3 py-2 border rounded text-sm" rows={2} placeholder="Optional notes..."
+                          value={labUploadForm.notes} onChange={(e) => setLabUploadForm(prev => ({ ...prev, notes: e.target.value }))} />
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div className="flex justify-between gap-3 p-4 border-t bg-gray-50">
+                  <button type="button" onClick={() => { setLabParamFormTest(null); setLabParamFormData([]); }}
+                    className="px-4 py-2 border rounded hover:bg-gray-100 text-sm">← Back to Tests</button>
+                  <button type="button" disabled={labUploadLoading}
+                    onClick={async () => {
+                      setLabUploadLoading(true);
+                      try {
+                        if (labParamFormData.length > 0) {
+                          // Save each parameter as separate lab result
+                          const filledParams = labParamFormData.filter(p => p.result_value);
+                          for (const p of filledParams) {
+                            await api.post(`/api/labs/${id}`, {
+                              test_name: `${labParamFormTest.test_name} - ${p.parameter_name}`,
+                              result_value: p.result_value,
+                              result_unit: p.unit || '',
+                              reference_range: p.reference_range || '',
+                              result_date: new Date().toISOString().split('T')[0],
+                              notes: `Panel: ${labParamFormTest.test_name}`,
+                              status: 'completed'
+                            });
+                          }
+                          addToast(`${filledParams.length} results added for ${labParamFormTest.test_name}`, 'success');
+                        } else {
+                          await api.post(`/api/labs/${id}`, {
+                            test_name: labParamFormTest.test_name,
+                            result_value: labUploadForm.reading,
+                            result_unit: labUploadForm.unit || labParamFormTest.unit || '',
+                            reference_range: labUploadForm.reference_range || labParamFormTest.reference_range || '',
+                            result_date: labUploadForm.date,
+                            notes: labUploadForm.notes,
+                            status: 'completed'
+                          });
+                          addToast('Lab result added', 'success');
+                        }
+                        setShowLabUploadModal(false);
+                        setLabParamFormTest(null);
+                        setLabParamFormData([]);
+                        setLabUploadForm({ test_name: '', reading: '', unit: '', date: new Date().toISOString().split('T')[0], notes: '', reference_range: '' });
+                        fetchPatientData();
+                      } catch (error) {
+                        console.error('Error adding lab result:', error);
+                        addToast(error.response?.data?.error || 'Failed to add lab result', 'error');
+                      } finally {
+                        setLabUploadLoading(false);
+                      }
+                    }}
+                    className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 text-sm">
+                    {labUploadLoading ? 'Adding...' : 'Save Results'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                {/* Search and Template Selection */}
+                <div className="p-3 border-b space-y-2">
+                  <input type="text" className="w-full px-3 py-2 border rounded text-sm focus:ring-1 focus:ring-purple-400"
+                    placeholder="Search lab tests by name or code..." value={labSearchQuery}
+                    onChange={(e) => setLabSearchQuery(e.target.value)} />
+                  <div className="flex flex-wrap gap-1">
+                    <button type="button" onClick={() => setSelectedLabCategory('')}
+                      className={`px-2 py-0.5 text-[10px] rounded-full border ${!selectedLabCategory ? 'bg-purple-600 text-white' : 'bg-white'}`}>All</button>
+                    {labTemplateCategories.map(cat => (
+                      <button key={cat} type="button" onClick={() => setSelectedLabCategory(cat)}
+                        className={`px-2 py-0.5 text-[10px] rounded-full border ${selectedLabCategory === cat ? 'bg-purple-600 text-white' : 'bg-white'}`}>{cat}</button>
+                    ))}
+                  </div>
+                </div>
+                <div className="overflow-y-auto flex-1 p-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                    {labTemplates
+                      .filter(t => !selectedLabCategory || t.category === selectedLabCategory)
+                      .filter(t => !labSearchQuery || t.test_name.toLowerCase().includes(labSearchQuery.toLowerCase()) || (t.test_code && t.test_code.toLowerCase().includes(labSearchQuery.toLowerCase())))
+                      .slice(0, 150)
+                      .map(t => (
+                        <button key={t.id} type="button"
+                          onClick={async () => {
+                            setLabParamLoading(true);
+                            setLabParamFormTest(t);
+                            setLabUploadForm(prev => ({ ...prev, test_name: t.test_name, unit: t.unit || '', reference_range: t.reference_range || '' }));
+                            try {
+                              const res = await api.get(`/api/lab-templates/${t.id}/parameters`);
+                              const params = res.data.parameters || [];
+                              setLabParamFormData(params.map(p => ({ ...p, result_value: '' })));
+                            } catch (err) {
+                              console.error('Failed to fetch parameters:', err);
+                              setLabParamFormData([]);
+                            }
+                            setLabParamLoading(false);
+                          }}
+                          className="text-left p-2 border rounded text-sm hover:bg-purple-50 hover:border-purple-300 transition"
+                        >
+                          <div className="font-medium text-xs">{t.test_name}</div>
+                          <div className="text-[10px] text-gray-500 mt-0.5">
+                            {t.category && <span className="text-purple-600">{t.category}</span>}
+                            {t.sample_type && <span> · {t.sample_type}</span>}
+                          </div>
+                        </button>
+                      ))}
+                  </div>
+                </div>
+                {/* Manual entry option */}
+                <div className="p-3 border-t bg-gray-50">
+                  <form onSubmit={handleAddLabResult} className="flex items-end gap-2">
+                    <div className="flex-1">
+                      <label className="block text-[10px] font-medium text-gray-500 mb-0.5">Or enter manually:</label>
+                      <input type="text" className="w-full px-2 py-1.5 border rounded text-xs" placeholder="Test name"
+                        value={labUploadForm.test_name} onChange={(e) => setLabUploadForm(prev => ({ ...prev, test_name: e.target.value }))} required />
+                    </div>
+                    <input type="text" className="w-20 px-2 py-1.5 border rounded text-xs" placeholder="Value"
+                      value={labUploadForm.reading} onChange={(e) => setLabUploadForm(prev => ({ ...prev, reading: e.target.value }))} required />
+                    <input type="text" className="w-16 px-2 py-1.5 border rounded text-xs" placeholder="Unit"
+                      value={labUploadForm.unit} onChange={(e) => setLabUploadForm(prev => ({ ...prev, unit: e.target.value }))} />
+                    <button type="submit" disabled={labUploadLoading} className="px-3 py-1.5 bg-green-600 text-white rounded text-xs hover:bg-green-700 disabled:opacity-50">
+                      {labUploadLoading ? '...' : 'Add'}
+                    </button>
+                  </form>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {showUploadRecordModal && (
         <Modal
           isOpen={showUploadRecordModal}

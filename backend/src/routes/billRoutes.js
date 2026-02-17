@@ -21,25 +21,74 @@ const { createBill, updateBill: updateBillSchema, updateBillStatus: updateBillSt
 
 const router = express.Router();
 
-// Get services list (hardcoded for now, can be moved to DB later)
-router.get('/services', (req, res) => {
+// Get services list from database with categories
+router.get('/services', async (req, res) => {
   try {
-    const services = [
-      { name: 'Consultation', price: 500 },
-      { name: 'Follow-up', price: 300 },
-      { name: 'Lab Test', price: 200 },
-      { name: 'X-Ray', price: 800 },
-      { name: 'ECG', price: 400 },
-      { name: 'Ultrasound', price: 1200 },
-      { name: 'Blood Test', price: 300 },
-      { name: 'Vaccination', price: 600 },
-      { name: 'Injection', price: 150 },
-      { name: 'Lab', price: 300 }
-    ];
-    res.json({ success: true, services });
+    const { getDb } = require('../config/db');
+    const db = getDb();
+    const [services] = await db.execute(
+      'SELECT id, service_name as name, category, default_price as price, unit FROM billing_services WHERE is_active = 1 ORDER BY category, sort_order, service_name'
+    );
+    // Group by category
+    const grouped = {};
+    for (const s of services) {
+      if (!grouped[s.category]) grouped[s.category] = [];
+      grouped[s.category].push(s);
+    }
+    res.json({ success: true, services, grouped });
   } catch (error) {
     console.error('Failed to fetch services:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch services' });
+  }
+});
+
+// Add new billing service
+router.post('/services', async (req, res) => {
+  try {
+    const { getDb } = require('../config/db');
+    const db = getDb();
+    const { service_name, category, default_price, unit } = req.body;
+    if (!service_name || !category) {
+      return res.status(400).json({ success: false, error: 'Service name and category are required' });
+    }
+    const [result] = await db.execute(
+      'INSERT INTO billing_services (service_name, category, default_price, unit) VALUES (?, ?, ?, ?)',
+      [service_name, category, parseFloat(default_price) || 0, unit || 'per visit']
+    );
+    res.status(201).json({ success: true, id: result.insertId, message: 'Service added' });
+  } catch (error) {
+    console.error('Failed to add service:', error);
+    res.status(500).json({ success: false, error: 'Failed to add service' });
+  }
+});
+
+// Update billing service
+router.put('/services/:id', async (req, res) => {
+  try {
+    const { getDb } = require('../config/db');
+    const db = getDb();
+    const { service_name, category, default_price, unit } = req.body;
+    await db.execute(
+      'UPDATE billing_services SET service_name = ?, category = ?, default_price = ?, unit = ? WHERE id = ?',
+      [service_name, category, parseFloat(default_price) || 0, unit || 'per visit', req.params.id]
+    );
+    res.json({ success: true, message: 'Service updated' });
+  } catch (error) {
+    console.error('Failed to update service:', error);
+    res.status(500).json({ success: false, error: 'Failed to update service' });
+  }
+});
+
+// Delete billing service
+router.delete('/services/:id', async (req, res) => {
+  try {
+    const { getDb } = require('../config/db');
+    const db = getDb();
+    await db.execute('DELETE FROM billing_services WHERE id = ?', [req.params.id]);
+    res.json({ success: true, message: 'Service deleted' });
+  } catch (error) {
+    console.error('Failed to delete service:', error);
+    res.status(500).json({ success: false, error: 'Failed to delete service' });
   }
 });
 

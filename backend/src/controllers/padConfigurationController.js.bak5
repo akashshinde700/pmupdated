@@ -79,8 +79,6 @@ async function savePadConfiguration(req, res) {
       clinic_details,
       header_content,
       footer_content,
-      header_image,
-      footer_image,
       field_order,
       sections
     } = req.body;
@@ -104,8 +102,6 @@ async function savePadConfiguration(req, res) {
           clinic_details = ?,
           header_content = ?,
           footer_content = ?,
-          header_image = ?,
-          footer_image = ?,
           updated_at = NOW()
         WHERE doctor_id = ?`,
         [
@@ -116,8 +112,6 @@ async function savePadConfiguration(req, res) {
           clinic_details || null,
           header_content || null,
           footer_content || null,
-          header_image || null,
-          footer_image || null,
           doctorId
         ]
       );
@@ -125,8 +119,8 @@ async function savePadConfiguration(req, res) {
       // Insert new
       await db.execute(
         `INSERT INTO pad_configurations
-          (doctor_id, default_font_size, default_font_family, signature_image_url, clinic_name, clinic_details, header_content, footer_content, header_image, footer_image)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          (doctor_id, default_font_size, default_font_family, signature_image_url, clinic_name, clinic_details, header_content, footer_content)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           doctorId,
           default_font_size || 12,
@@ -135,9 +129,7 @@ async function savePadConfiguration(req, res) {
           clinic_name || null,
           clinic_details || null,
           header_content || null,
-          footer_content || null,
-          header_image || null,
-          footer_image || null
+          footer_content || null
         ]
       );
     }

@@ -469,31 +469,14 @@ const updateVipPatient = Joi.object({
 // ---------- Patient Referrals ----------
 const createPatientReferral = Joi.object({
   patient_id: Joi.number().integer().positive().required(),
-  referred_to_doctor_id: Joi.number().integer().positive().allow(null),
-  referred_doctor_name: Joi.string().max(255).allow('', null),
-  referred_doctor_phone: Joi.string().max(20).allow('', null),
-  referred_doctor_email: Joi.string().email().allow('', null),
-  referred_doctor_specialization: Joi.string().max(255).allow('', null),
-  hospital_name: Joi.string().max(255).allow('', null),
-  referral_date: Joi.date().required(),
-  referral_time: Joi.string().allow('', null),
+  referred_to: Joi.string().max(255).required(),
   reason: Joi.string().allow('', null),
-  priority: Joi.string().valid('routine', 'urgent').default('routine'),
   notes: Joi.string().allow('', null)
 });
 const updatePatientReferral = Joi.object({
-  referred_doctor_name: Joi.string().max(255).optional(),
-  referred_doctor_phone: Joi.string().max(20).allow('', null),
-  referred_doctor_email: Joi.string().email().allow('', null),
-  referred_doctor_specialization: Joi.string().max(255).allow('', null),
-  hospital_name: Joi.string().max(255).allow('', null),
-  referral_date: Joi.date().optional(),
-  referral_time: Joi.string().allow('', null),
+  referred_to: Joi.string().max(255).optional(),
   reason: Joi.string().allow('', null),
-  priority: Joi.string().valid('routine', 'urgent').optional(),
-  status: Joi.string().valid('pending', 'accepted', 'declined', 'completed').optional(),
-  notes: Joi.string().allow('', null),
-  outcome: Joi.string().allow('', null)
+  notes: Joi.string().allow('', null)
 });
 
 // ---------- Subscriptions ----------
@@ -542,45 +525,30 @@ const generatePdf = Joi.object({
 // ---------- Family History ----------
 const createFamilyHistory = Joi.object({
   relation: Joi.string().max(255).required(),
-  condition: Joi.string().allow('', null).optional(),
-  condition_name: Joi.string().allow('', null).optional(),
-  medical_condition: Joi.string().allow('', null).optional(), // Support alternative field name
-  icd_code: Joi.string().max(20).allow('', null),
+  condition: Joi.string().required(),
   notes: Joi.string().allow('', null)
-}); // Controller validates that at least one condition field has value
+});
 const updateFamilyHistory = Joi.object({
   relation: Joi.string().max(255).optional(),
   condition: Joi.string().optional(),
-  condition_name: Joi.string().optional(),
-  icd_code: Joi.string().max(20).allow('', null),
   notes: Joi.string().allow('', null)
 });
 
 // ---------- Patient Data (Vitals) ----------
 const addVitals = Joi.object({
-  temp: Joi.alternatives().try(Joi.number(), Joi.string()).allow(null, ''),
-  temperature: Joi.alternatives().try(Joi.number(), Joi.string()).allow(null, ''),
-  height: Joi.alternatives().try(Joi.number(), Joi.string()).allow(null, ''),
-  height_cm: Joi.alternatives().try(Joi.number(), Joi.string()).allow(null, ''),
-  weight: Joi.alternatives().try(Joi.number(), Joi.string()).allow(null, ''),
-  weight_kg: Joi.alternatives().try(Joi.number(), Joi.string()).allow(null, ''),
-  pulse: Joi.alternatives().try(Joi.number(), Joi.string()).allow(null, ''),
-  spo2: Joi.alternatives().try(Joi.number(), Joi.string()).allow(null, ''),
-  blood_pressure: Joi.string().allow('', null),
-  bp_systolic: Joi.alternatives().try(Joi.number(), Joi.string()).allow(null, ''),
-  bp_diastolic: Joi.alternatives().try(Joi.number(), Joi.string()).allow(null, ''),
-  bmi: Joi.alternatives().try(Joi.number(), Joi.string()).allow(null, ''),
-  respiratory_rate: Joi.alternatives().try(Joi.number(), Joi.string()).allow(null, ''),
-  waist_hip_ratio: Joi.alternatives().try(Joi.number(), Joi.string()).allow(null, ''),
-  homa_ir: Joi.alternatives().try(Joi.number(), Joi.string()).allow(null, '')
-}).unknown(true); // Allow any field - controller handles validation
+  temp: Joi.number().precision(1).min(0).max(120).allow(null),
+  height: Joi.number().precision(1).min(0).max(300).allow(null),
+  weight: Joi.number().precision(1).min(0).max(500).allow(null),
+  pulse: Joi.number().integer().min(0).max(300).allow(null),
+  spo2: Joi.number().integer().min(0).max(100).allow(null),
+  blood_pressure: Joi.string().pattern(/^\d{2,3}\/\d{2,3}$/).allow('', null)
+});
 
 // ---------- Patient Data (Lab Records) ----------
 const addLabRecord = Joi.object({
-  name: Joi.string().max(255).required(),
-  reading: Joi.string().max(255).required(),
-  date: Joi.date().allow(null),
-  unit: Joi.string().max(50).allow('', null),
+  test_name: Joi.string().max(255).required(),
+  test_date: Joi.date().required(),
+  result: Joi.string().allow('', null),
   notes: Joi.string().allow('', null)
 });
 

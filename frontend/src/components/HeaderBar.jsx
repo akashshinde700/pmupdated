@@ -550,32 +550,7 @@ export default function HeaderBar({ title = '', clinic: clinicProp, onAddPatient
           </div>
         </div>
       </div>
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-        <input
-          placeholder={t('search') + ' (Ctrl + K)'}
-          className="flex-1 px-3 py-2 border rounded"
-          onKeyDown={(e) => {
-            if (e.ctrlKey && e.key.toLowerCase() === 'k') {
-              e.preventDefault();
-              setShowGlobalSearch(true);
-            }
-          }}
-        />
-        <button 
-          onClick={() => setShowGlobalSearch(true)}
-          className="px-3 py-2 text-sm border rounded w-full sm:w-auto hover:bg-slate-50"
-        >
-          {t('search')}
-        </button>
-        <button 
-          onClick={() => {
-            alert('Filters functionality - can be extended to show filter options');
-          }}
-          className="px-3 py-2 text-sm border rounded w-full sm:w-auto hover:bg-slate-50"
-        >
-          {t('filters')}
-        </button>
-      </div>
+      {/* Search bar removed */}
 
       {/* Clinic Switcher */}
       {showClinicSwitcher && clinics.length > 1 && (

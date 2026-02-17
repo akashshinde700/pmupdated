@@ -906,7 +906,7 @@ async function generatePrescriptionPDF(req, res) {
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader(
       'Content-Disposition',
-      `inline; filename=prescription-${prescriptionId}.pdf`
+      `attachment; filename=prescription-${prescriptionId}.pdf`
     );
 
     res.send(pdfBuffer);

@@ -46,6 +46,14 @@ export default function Receipts() {
     { label: 'Injection', service_name: 'Injection', qty: 1, unit_price: 150 },
     { label: 'Lab Test', service_name: 'Lab Test', qty: 1, unit_price: 800 }
   ]);
+  const [groupedServices, setGroupedServices] = useState({});
+  const [showServicePicker, setShowServicePicker] = useState(false);
+  const [serviceSearchQuery, setServiceSearchQuery] = useState('');
+  const [selectedServiceCategory, setSelectedServiceCategory] = useState('');
+  const [servicePickerTarget, setServicePickerTarget] = useState('create'); // 'create' or 'edit'
+  const [editingService, setEditingService] = useState(null); // service being edited
+  const [showAddServiceForm, setShowAddServiceForm] = useState(false);
+  const [newServiceForm, setNewServiceForm] = useState({ service_name: '', category: '', default_price: 0 });
 
   // Print ref for react-to-print
   const printRef = useRef(null);
@@ -67,7 +75,9 @@ export default function Receipts() {
     payment_method: 'cash',
     payment_id: '',
     notes: '',
-    remarks: ''
+    remarks: '',
+    cash_amount: '',
+    upi_amount: ''
   });
 
   // NEW: Fetch clinic settings
@@ -176,24 +186,23 @@ export default function Receipts() {
 
   const fetchServices = useCallback(async () => {
     try {
-      // Get clinic_id from user context or use default
-      const clinicId = JSON.parse(localStorage.getItem('user'))?.clinic_id || 2;
-      const res = await api.get(`/api/services?clinic_id=${clinicId}`);
-      const services = res.data.services || res.data || [];
-      
+      const res = await api.get('/api/bills/services');
+      const services = res.data.services || [];
+      const grouped = res.data.grouped || {};
+
       if (services.length > 0) {
-        // Map services to template format
         const mappedServices = services.map(service => ({
           label: service.name,
           service_name: service.name,
+          category: service.category || 'Other',
           qty: 1,
           unit_price: parseFloat(service.price) || 0
         }));
         setServiceTemplates(mappedServices);
+        setGroupedServices(grouped);
       }
     } catch (error) {
       console.error('Failed to fetch services:', error);
-      // Keep fallback services if API fails
     }
   }, [api]);
 
@@ -481,9 +490,11 @@ export default function Receipts() {
         additional_discount: parseFloat(receiptForm.additional_discount) || 0,
         total_amount: total,
         payment_method: receiptForm.payment_method,
-        payment_id: receiptForm.payment_id || null, // Include payment_id
+        payment_id: receiptForm.payment_id || null,
         payment_status: 'pending',
-        notes: receiptForm.notes || '', // Include notes (footer content)
+        notes: (receiptForm.payment_method === 'cash+upi' || receiptForm.payment_method === 'cash+card')
+          ? `${receiptForm.notes || ''}${receiptForm.notes ? ' | ' : ''}Split: Cash ₹${receiptForm.cash_amount || 0} + ${receiptForm.payment_method === 'cash+upi' ? 'UPI' : 'Card'} ₹${receiptForm.upi_amount || 0}`
+          : (receiptForm.notes || ''),
         remarks: receiptForm.remarks || '', // Include remarks (header content)
         service_items: receiptForm.services.map(s => ({
           ...s,
@@ -790,12 +801,13 @@ export default function Receipts() {
 
                               // Ensure service_items exists and is properly formatted
                               if (!receiptForEdit.service_items || receiptForEdit.service_items.length === 0) {
+                                const amt = parseFloat(fullBill.total_amount) || parseFloat(fullBill.subtotal) || parseFloat(fullBill.amount) || 0;
                                 receiptForEdit.service_items = [{
                                   service_name: 'Consultation',
                                   qty: 1,
-                                  unit_price: parseFloat(fullBill.amount) || 0,
+                                  unit_price: amt,
                                   discount: 0,
-                                  total: parseFloat(fullBill.amount) || 0
+                                  total: amt
                                 }];
                               } else {
                                 // Ensure all numeric values are parsed
@@ -988,30 +1000,19 @@ export default function Receipts() {
             <div className="flex items-center justify-between mb-2">
               <label className="block text-sm font-medium">Services</label>
               <div className="flex items-center gap-2">
-                <select
-                  className="px-2 py-1 border rounded text-sm"
-                  defaultValue=""
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    if (!val) return;
-                    const tpl = serviceTemplates.find(t => t.label === val);
-                    if (!tpl) return;
-                    const newItem = { service_name: tpl.service_name, qty: tpl.qty, unit_price: tpl.unit_price, discount: 0, total: tpl.qty * tpl.unit_price };
-                    setReceiptForm(prev => ({ ...prev, services: [...prev.services, newItem] }));
-                    e.target.value = '';
-                  }}
+                <button
+                  type="button"
+                  onClick={() => { setServicePickerTarget('create'); setShowServicePicker(true); setServiceSearchQuery(''); setSelectedServiceCategory(''); }}
+                  className="px-3 py-1 text-sm bg-purple-50 text-purple-700 border border-purple-200 rounded hover:bg-purple-100 transition"
                 >
-                  <option value="">Add from template...</option>
-                  {serviceTemplates.map(t => (
-                    <option key={t.label} value={t.label}>{t.label}</option>
-                  ))}
-                </select>
+                  + Add from Templates
+                </button>
                 <button
                   type="button"
                   onClick={addService}
                   className="px-3 py-1 text-sm bg-slate-100 text-slate-700 rounded hover:bg-slate-200 transition active:scale-[0.98]"
                 >
-                  + Add Service
+                  + Add Blank
                 </button>
               </div>
             </div>
@@ -1147,30 +1148,76 @@ export default function Receipts() {
           </div>
 
           {/* Payment Method & Payment ID */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-2">Payment Method</label>
-              <select
-                className="w-full px-3 py-2 border rounded"
-                value={receiptForm.payment_method}
-                onChange={(e) => setReceiptForm({ ...receiptForm, payment_method: e.target.value })}
-              >
-                <option value="cash">Cash</option>
-                <option value="card">Card</option>
-                <option value="upi">UPI</option>
-                <option value="bank_transfer">Bank Transfer</option>
-              </select>
+          <div className="space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-2">Payment Method</label>
+                <select
+                  className="w-full px-3 py-2 border rounded"
+                  value={receiptForm.payment_method}
+                  onChange={(e) => setReceiptForm({ ...receiptForm, payment_method: e.target.value, cash_amount: '', upi_amount: '' })}
+                >
+                  <option value="cash">Cash</option>
+                  <option value="card">Card</option>
+                  <option value="upi">UPI</option>
+                  <option value="bank_transfer">Bank Transfer</option>
+                  <option value="cash+upi">Cash + UPI (Split)</option>
+                  <option value="cash+card">Cash + Card (Split)</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">Payment ID / Transaction Ref</label>
+                <input
+                  type="text"
+                  className="w-full px-3 py-2 border rounded"
+                  placeholder="e.g., TXN123456 or UPI/12345"
+                  value={receiptForm.payment_id}
+                  onChange={(e) => setReceiptForm({ ...receiptForm, payment_id: e.target.value })}
+                />
+              </div>
             </div>
-            <div>
-              <label className="block text-sm font-medium mb-2">Payment ID / Transaction Ref</label>
-              <input
-                type="text"
-                className="w-full px-3 py-2 border rounded"
-                placeholder="e.g., TXN123456 or UPI/12345"
-                value={receiptForm.payment_id}
-                onChange={(e) => setReceiptForm({ ...receiptForm, payment_id: e.target.value })}
-              />
-            </div>
+            {/* Split Payment Fields */}
+            {(receiptForm.payment_method === 'cash+upi' || receiptForm.payment_method === 'cash+card') && (
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <p className="text-xs font-semibold text-blue-700 mb-2">Split Payment Breakdown</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Cash Amount (₹)</label>
+                    <input
+                      type="number"
+                      className="w-full px-3 py-2 border rounded text-sm"
+                      placeholder="0"
+                      min="0"
+                      value={receiptForm.cash_amount}
+                      onChange={(e) => {
+                        const cashAmt = e.target.value;
+                        const { total } = calculateTotals();
+                        const otherAmt = Math.max(0, total - (parseFloat(cashAmt) || 0));
+                        setReceiptForm(prev => ({ ...prev, cash_amount: cashAmt, upi_amount: otherAmt.toFixed(2) }));
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      {receiptForm.payment_method === 'cash+upi' ? 'UPI' : 'Card'} Amount (₹)
+                    </label>
+                    <input
+                      type="number"
+                      className="w-full px-3 py-2 border rounded text-sm"
+                      placeholder="0"
+                      min="0"
+                      value={receiptForm.upi_amount}
+                      onChange={(e) => {
+                        const upiAmt = e.target.value;
+                        const { total } = calculateTotals();
+                        const cashAmt = Math.max(0, total - (parseFloat(upiAmt) || 0));
+                        setReceiptForm(prev => ({ ...prev, upi_amount: upiAmt, cash_amount: cashAmt.toFixed(2) }));
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Remarks */}
@@ -1334,8 +1381,8 @@ export default function Receipts() {
                         <td className="border border-slate-300 px-3 py-2">1</td>
                         <td className="border border-slate-300 px-3 py-2">Consultation</td>
                         <td className="border border-slate-300 px-3 py-2 text-center">1</td>
-                        <td className="border border-slate-300 px-3 py-2 text-right">₹{formatCurrency(selectedReceipt.amount)}</td>
-                        <td className="border border-slate-300 px-3 py-2 text-right">₹{formatCurrency(selectedReceipt.amount)}</td>
+                        <td className="border border-slate-300 px-3 py-2 text-right">₹{formatCurrency(selectedReceipt.total_amount || selectedReceipt.subtotal || selectedReceipt.amount)}</td>
+                        <td className="border border-slate-300 px-3 py-2 text-right">₹{formatCurrency(selectedReceipt.total_amount || selectedReceipt.subtotal || selectedReceipt.amount)}</td>
                       </tr>
                     )}
                   </tbody>
@@ -1346,7 +1393,7 @@ export default function Receipts() {
                   <div className="w-64 space-y-2">
                     <div className="flex justify-between text-sm">
                       <span>Sub-Total:</span>
-                      <span>₹{formatCurrency(selectedReceipt.amount)}</span>
+                      <span>₹{formatCurrency(selectedReceipt.subtotal || selectedReceipt.total_amount || selectedReceipt.amount)}</span>
                     </div>
                     {parseFloat(selectedReceipt.tax) > 0 && (
                       <div className="flex justify-between text-sm">
@@ -1436,21 +1483,22 @@ export default function Receipts() {
 
                     // Ensure service_items exists and is properly formatted
                     if (!receiptForEdit.service_items || receiptForEdit.service_items.length === 0) {
+                      const amt = parseFloat(selectedReceipt.total_amount) || parseFloat(selectedReceipt.subtotal) || parseFloat(selectedReceipt.amount) || 0;
                       receiptForEdit.service_items = [{
-                        service: 'Consultation',
+                        service_name: 'Consultation',
                         qty: 1,
-                        amount: parseFloat(selectedReceipt.amount) || 0,
+                        unit_price: amt,
                         discount: 0,
-                        total: parseFloat(selectedReceipt.amount) || 0
+                        total: amt
                       }];
                     } else {
                       // Ensure all numeric values are parsed
                       receiptForEdit.service_items = receiptForEdit.service_items.map(item => ({
                         service_name: item.service_name || item.service || 'Service',
-                        qty: parseFloat(item.qty) || 1,
-                        amount: parseFloat(item.amount) || 0,
-                        discount: parseFloat(item.discount) || 0,
-                        total: parseFloat(item.total) || 0
+                        qty: parseFloat(item.quantity) || parseFloat(item.qty) || 1,
+                        unit_price: parseFloat(item.unit_price) || parseFloat(item.amount) || 0,
+                        discount: parseFloat(item.discount_amount) || parseFloat(item.discount) || 0,
+                        total: parseFloat(item.total_price) || parseFloat(item.total) || 0
                       }));
                     }
 
@@ -1775,12 +1823,13 @@ export default function Receipts() {
 
                                 // Ensure service_items exists and is properly formatted
                                 if (!receiptForEdit.service_items || receiptForEdit.service_items.length === 0) {
+                                  const amt = parseFloat(fullBill.total_amount) || parseFloat(fullBill.subtotal) || parseFloat(fullBill.amount) || 0;
                                   receiptForEdit.service_items = [{
                                     service_name: 'Consultation',
                                     qty: 1,
-                                    unit_price: parseFloat(fullBill.amount) || 0,
+                                    unit_price: amt,
                                     discount: 0,
-                                    total: parseFloat(fullBill.amount) || 0
+                                    total: amt
                                   }];
                                 } else {
                                   // Ensure all numeric values are parsed
@@ -1948,26 +1997,13 @@ export default function Receipts() {
               <div className="flex items-center justify-between mb-2">
                 <label className="block text-sm font-medium">Services</label>
                 <div className="flex items-center gap-2">
-                  <select
-                    className="px-2 py-1 border rounded text-sm"
-                    defaultValue=""
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (!val) return;
-                      const tpl = serviceTemplates.find(t => t.label === val);
-                      if (!tpl) return;
-                      const updatedReceipt = { ...editingReceipt };
-                      if (!updatedReceipt.service_items) updatedReceipt.service_items = [];
-                      updatedReceipt.service_items.push({ service_name: tpl.service_name || tpl.service, qty: tpl.qty, unit_price: tpl.unit_price || tpl.amount, discount: 0, total: tpl.qty * (tpl.unit_price || tpl.amount) });
-                      setEditingReceipt(updatedReceipt);
-                      e.target.value = '';
-                    }}
+                  <button
+                    type="button"
+                    onClick={() => { setServicePickerTarget('edit'); setShowServicePicker(true); setServiceSearchQuery(''); setSelectedServiceCategory(''); }}
+                    className="px-3 py-1 text-sm bg-purple-50 text-purple-700 border border-purple-200 rounded hover:bg-purple-100 transition"
                   >
-                    <option value="">Add from template...</option>
-                    {serviceTemplates.map(t => (
-                      <option key={t.label} value={t.label}>{t.label}</option>
-                    ))}
-                  </select>
+                    + Add from Templates
+                  </button>
                   <button
                     onClick={() => {
                       const updatedReceipt = { ...editingReceipt };
@@ -1977,7 +2013,7 @@ export default function Receipts() {
                     }}
                     className="px-3 py-1 text-sm bg-slate-100 text-slate-700 rounded hover:bg-slate-200"
                   >
-                    + Add Service
+                    + Add Blank
                   </button>
                 </div>
               </div>
@@ -2159,30 +2195,67 @@ export default function Receipts() {
             </div>
 
             {/* Payment Method & Payment ID */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium mb-2">Payment Method</label>
-                <select
-                  className="w-full px-3 py-2 border rounded"
-                  value={editingReceipt.payment_method || 'cash'}
-                  onChange={(e) => setEditingReceipt({ ...editingReceipt, payment_method: e.target.value })}
-                >
-                  <option value="cash">Cash</option>
-                  <option value="card">Card</option>
-                  <option value="upi">UPI</option>
-                  <option value="bank_transfer">Bank Transfer</option>
-                </select>
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium mb-2">Payment Method</label>
+                  <select
+                    className="w-full px-3 py-2 border rounded"
+                    value={editingReceipt.payment_method || 'cash'}
+                    onChange={(e) => setEditingReceipt({ ...editingReceipt, payment_method: e.target.value })}
+                  >
+                    <option value="cash">Cash</option>
+                    <option value="card">Card</option>
+                    <option value="upi">UPI</option>
+                    <option value="bank_transfer">Bank Transfer</option>
+                    <option value="cash+upi">Cash + UPI (Split)</option>
+                    <option value="cash+card">Cash + Card (Split)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-2">Payment ID / Transaction Ref</label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border rounded"
+                    placeholder="e.g., TXN123456 or UPI/12345"
+                    value={editingReceipt.payment_id || ''}
+                    onChange={(e) => setEditingReceipt({ ...editingReceipt, payment_id: e.target.value })}
+                  />
+                </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium mb-2">Payment ID / Transaction Ref</label>
-                <input
-                  type="text"
-                  className="w-full px-3 py-2 border rounded"
-                  placeholder="e.g., TXN123456 or UPI/12345"
-                  value={editingReceipt.payment_id || ''}
-                  onChange={(e) => setEditingReceipt({ ...editingReceipt, payment_id: e.target.value })}
-                />
-              </div>
+              {(editingReceipt.payment_method === 'cash+upi' || editingReceipt.payment_method === 'cash+card') && (
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <p className="text-xs font-semibold text-blue-700 mb-2">Split Payment Breakdown</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Cash Amount (₹)</label>
+                      <input type="number" className="w-full px-3 py-2 border rounded text-sm" placeholder="0" min="0"
+                        value={editingReceipt.cash_amount || ''}
+                        onChange={(e) => {
+                          const cashAmt = e.target.value;
+                          const totalAmt = parseFloat(editingReceipt.total_amount) || 0;
+                          const otherAmt = Math.max(0, totalAmt - (parseFloat(cashAmt) || 0));
+                          setEditingReceipt(prev => ({ ...prev, cash_amount: cashAmt, upi_amount: otherAmt.toFixed(2) }));
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">
+                        {editingReceipt.payment_method === 'cash+upi' ? 'UPI' : 'Card'} Amount (₹)
+                      </label>
+                      <input type="number" className="w-full px-3 py-2 border rounded text-sm" placeholder="0" min="0"
+                        value={editingReceipt.upi_amount || ''}
+                        onChange={(e) => {
+                          const upiAmt = e.target.value;
+                          const totalAmt = parseFloat(editingReceipt.total_amount) || 0;
+                          const cashAmt = Math.max(0, totalAmt - (parseFloat(upiAmt) || 0));
+                          setEditingReceipt(prev => ({ ...prev, upi_amount: upiAmt, cash_amount: cashAmt.toFixed(2) }));
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Payment Status */}
@@ -2354,6 +2427,199 @@ export default function Receipts() {
         )}
       </Modal>
 
+      {/* Service Picker Modal - Grouped, Searchable with CRUD */}
+      {showServicePicker && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[85vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h2 className="text-lg font-semibold">Select Services</h2>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setShowAddServiceForm(true); setNewServiceForm({ service_name: '', category: Object.keys(groupedServices)[0] || 'Other', default_price: 0 }); }}
+                  className="px-3 py-1.5 text-xs bg-green-50 text-green-700 border border-green-200 rounded hover:bg-green-100"
+                >
+                  + New Service
+                </button>
+                <button onClick={() => { setShowServicePicker(false); setEditingService(null); setShowAddServiceForm(false); }} className="p-1 hover:bg-gray-100 rounded text-gray-500">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+              </div>
+            </div>
+
+            {/* Add New Service Form */}
+            {showAddServiceForm && (
+              <div className="p-3 border-b bg-green-50">
+                <p className="text-xs font-semibold text-green-800 mb-2">Add New Service</p>
+                <div className="flex items-end gap-2">
+                  <div className="flex-1">
+                    <label className="block text-[10px] text-gray-500 mb-0.5">Name</label>
+                    <input type="text" className="w-full px-2 py-1.5 border rounded text-xs" placeholder="Service name"
+                      value={newServiceForm.service_name} onChange={(e) => setNewServiceForm(prev => ({ ...prev, service_name: e.target.value }))} />
+                  </div>
+                  <div className="w-32">
+                    <label className="block text-[10px] text-gray-500 mb-0.5">Category</label>
+                    <select className="w-full px-2 py-1.5 border rounded text-xs" value={newServiceForm.category}
+                      onChange={(e) => setNewServiceForm(prev => ({ ...prev, category: e.target.value }))}>
+                      {Object.keys(groupedServices).map(cat => (
+                        <option key={cat} value={cat}>{cat}</option>
+                      ))}
+                      <option value="__new">+ New Category</option>
+                    </select>
+                  </div>
+                  {newServiceForm.category === '__new' && (
+                    <div className="w-28">
+                      <label className="block text-[10px] text-gray-500 mb-0.5">New Category</label>
+                      <input type="text" className="w-full px-2 py-1.5 border rounded text-xs" placeholder="Category"
+                        onChange={(e) => setNewServiceForm(prev => ({ ...prev, category: e.target.value }))} />
+                    </div>
+                  )}
+                  <div className="w-24">
+                    <label className="block text-[10px] text-gray-500 mb-0.5">Price (₹)</label>
+                    <input type="number" className="w-full px-2 py-1.5 border rounded text-xs" min="0"
+                      value={newServiceForm.default_price} onChange={(e) => setNewServiceForm(prev => ({ ...prev, default_price: e.target.value }))} />
+                  </div>
+                  <button type="button" onClick={async () => {
+                    if (!newServiceForm.service_name.trim() || !newServiceForm.category.trim()) { addToast('Name and category required', 'error'); return; }
+                    try {
+                      await api.post('/api/bills/services', newServiceForm);
+                      addToast('Service added!', 'success');
+                      setShowAddServiceForm(false);
+                      fetchServices();
+                    } catch (err) { addToast('Failed to add service', 'error'); }
+                  }} className="px-3 py-1.5 bg-green-600 text-white rounded text-xs hover:bg-green-700">Add</button>
+                  <button type="button" onClick={() => setShowAddServiceForm(false)} className="px-2 py-1.5 border rounded text-xs hover:bg-gray-100">Cancel</button>
+                </div>
+              </div>
+            )}
+
+            {/* Search */}
+            <div className="p-3 border-b space-y-2">
+              <input type="text" className="w-full px-3 py-2 border rounded text-sm focus:ring-1 focus:ring-purple-400"
+                placeholder="Search services..." value={serviceSearchQuery}
+                onChange={(e) => setServiceSearchQuery(e.target.value)} autoFocus />
+              <div className="flex flex-wrap gap-1">
+                <button type="button" onClick={() => setSelectedServiceCategory('')}
+                  className={`px-2.5 py-1 text-xs rounded-full border transition ${!selectedServiceCategory ? 'bg-purple-600 text-white border-purple-600' : 'hover:bg-purple-50 border-gray-300'}`}>All</button>
+                {Object.keys(groupedServices).map(cat => (
+                  <button key={cat} type="button" onClick={() => setSelectedServiceCategory(cat)}
+                    className={`px-2.5 py-1 text-xs rounded-full border transition ${selectedServiceCategory === cat ? 'bg-purple-600 text-white border-purple-600' : 'hover:bg-purple-50 border-gray-300'}`}>
+                    {cat} ({groupedServices[cat].length})
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Services List */}
+            <div className="overflow-y-auto flex-1 p-4">
+              {(selectedServiceCategory ? [selectedServiceCategory] : Object.keys(groupedServices)).map(category => {
+                const services = (groupedServices[category] || []).filter(s =>
+                  !serviceSearchQuery || s.name.toLowerCase().includes(serviceSearchQuery.toLowerCase())
+                );
+                if (services.length === 0) return null;
+                return (
+                  <div key={category} className="mb-4">
+                    <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 px-1">{category}</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-1.5">
+                      {services.map(s => (
+                        <div key={s.id || s.name} className="relative group">
+                          {/* Edit mode for this service */}
+                          {editingService && editingService.id === s.id ? (
+                            <div className="p-2 border-2 border-purple-400 rounded bg-purple-50 space-y-1">
+                              <input type="text" className="w-full px-2 py-1 border rounded text-xs" value={editingService.name}
+                                onChange={(e) => setEditingService(prev => ({ ...prev, name: e.target.value }))} />
+                              <div className="flex gap-1">
+                                <input type="number" className="w-20 px-2 py-1 border rounded text-xs" min="0" value={editingService.price}
+                                  onChange={(e) => setEditingService(prev => ({ ...prev, price: e.target.value }))} />
+                                <select className="flex-1 px-1 py-1 border rounded text-xs" value={editingService.category}
+                                  onChange={(e) => setEditingService(prev => ({ ...prev, category: e.target.value }))}>
+                                  {Object.keys(groupedServices).map(c => <option key={c} value={c}>{c}</option>)}
+                                </select>
+                              </div>
+                              <div className="flex gap-1">
+                                <button type="button" onClick={async () => {
+                                  try {
+                                    await api.put(`/api/bills/services/${editingService.id}`, {
+                                      service_name: editingService.name, category: editingService.category,
+                                      default_price: parseFloat(editingService.price) || 0
+                                    });
+                                    addToast('Service updated', 'success');
+                                    setEditingService(null);
+                                    fetchServices();
+                                  } catch (err) { addToast('Failed to update', 'error'); }
+                                }} className="px-2 py-0.5 bg-purple-600 text-white rounded text-[10px]">Save</button>
+                                <button type="button" onClick={() => setEditingService(null)}
+                                  className="px-2 py-0.5 border rounded text-[10px]">Cancel</button>
+                              </div>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const newItem = { service_name: s.name, qty: 1, unit_price: parseFloat(s.price) || 0, discount: 0, total: parseFloat(s.price) || 0 };
+                                if (servicePickerTarget === 'edit') {
+                                  const updatedReceipt = { ...editingReceipt };
+                                  if (!updatedReceipt.service_items) updatedReceipt.service_items = [];
+                                  // Replace empty default row if it exists
+                                  const hasOnlyEmptyRow = updatedReceipt.service_items.length === 1 && !updatedReceipt.service_items[0].service_name && parseFloat(updatedReceipt.service_items[0].unit_price || 0) === 0;
+                                  if (hasOnlyEmptyRow) {
+                                    updatedReceipt.service_items = [newItem];
+                                  } else {
+                                    updatedReceipt.service_items.push(newItem);
+                                  }
+                                  setEditingReceipt(updatedReceipt);
+                                } else {
+                                  setReceiptForm(prev => {
+                                    // Replace empty default row if it exists
+                                    const hasOnlyEmptyRow = prev.services.length === 1 && !prev.services[0].service_name && parseFloat(prev.services[0].unit_price || 0) === 0;
+                                    if (hasOnlyEmptyRow) {
+                                      return { ...prev, services: [newItem] };
+                                    }
+                                    return { ...prev, services: [...prev.services, newItem] };
+                                  });
+                                }
+                                addToast(`${s.name} added`, 'success');
+                              }}
+                              className="w-full flex items-center justify-between p-2 border rounded text-sm hover:bg-purple-50 hover:border-purple-300 transition text-left"
+                            >
+                              <span className="font-medium text-xs">{s.name}</span>
+                              <span className="text-xs text-gray-500 ml-2">₹{parseFloat(s.price || 0).toFixed(0)}</span>
+                            </button>
+                          )}
+                          {/* Edit/Delete icons on hover */}
+                          {!editingService && (
+                            <div className="absolute top-0 right-0 hidden group-hover:flex gap-0.5 bg-white rounded-bl shadow-sm border p-0.5">
+                              <button type="button" title="Edit" onClick={(e) => { e.stopPropagation(); setEditingService({ ...s }); }}
+                                className="p-0.5 text-gray-400 hover:text-blue-600">
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                              </button>
+                              <button type="button" title="Delete" onClick={async (e) => {
+                                e.stopPropagation();
+                                if (!confirm(`Delete "${s.name}"?`)) return;
+                                try {
+                                  await api.delete(`/api/bills/services/${s.id}`);
+                                  addToast('Service deleted', 'success');
+                                  fetchServices();
+                                } catch (err) { addToast('Failed to delete', 'error'); }
+                              }} className="p-0.5 text-gray-400 hover:text-red-600">
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="flex justify-end p-3 border-t bg-gray-50">
+              <button onClick={() => { setShowServicePicker(false); setEditingService(null); setShowAddServiceForm(false); }}
+                className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 text-sm">Done</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

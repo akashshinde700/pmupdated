@@ -163,9 +163,27 @@ async function deleteLabTemplate(req, res) {
   }
 }
 
+async function getLabTemplateParameters(req, res) {
+  try {
+    const { id } = req.params;
+    const db = getDb();
+
+    const [parameters] = await db.execute(
+      'SELECT * FROM lab_template_parameters WHERE lab_template_id = ? ORDER BY sequence_order, parameter_name',
+      [id]
+    );
+
+    res.json({ parameters });
+  } catch (error) {
+    console.error('Get lab template parameters error:', error);
+    res.status(500).json({ error: 'Failed to fetch lab template parameters' });
+  }
+}
+
 module.exports = {
   listLabTemplates,
   getLabTemplate,
+  getLabTemplateParameters,
   createLabTemplate,
   updateLabTemplate,
   deleteLabTemplate

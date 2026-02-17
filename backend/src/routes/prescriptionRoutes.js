@@ -21,14 +21,6 @@ const {
   listDrafts
 } = require('../controllers/prescriptionDraftController');
 
-// Prescription Sharing Controller
-const {
-  sharePrescription,
-  getShareOptions,
-  generatePrescriptionQR,
-  viewSharedPrescription
-} = require('../controllers/prescriptionShareController');
-
 // ✅ SAHI IMPORT - Destructuring se authenticateToken le rahe hain
 const { authenticateToken } = require('../middleware/auth');
 const { validateId } = require('../middleware/validator');
@@ -39,18 +31,8 @@ const { createPrescription, updatePrescription, saveDiagnoses } = require('../va
 
 const router = express.Router();
 
-// =====================================================
-// PUBLIC ROUTES (no auth required for sharing)
-// =====================================================
-
-// Generate prescription PDF (public for link sharing)
+// Public routes (no auth required)
 router.get('/pdf/:prescriptionId', generatePrescriptionPDF);
-
-// View shared prescription (public for patients)
-router.get('/view/:prescriptionId', viewSharedPrescription);
-
-// Get prescription QR code as image
-router.get('/:prescriptionId/qr', generatePrescriptionQR);
 
 // All other routes require authentication
 router.use(authenticateToken);
@@ -85,15 +67,5 @@ router.post('/', joiValidate(createPrescription), auditLogger('PRESCRIPTION'), a
 
 // End patient visit without prescription
 router.post('/end-visit', auditLogger('PRESCRIPTION'), endVisit);
-
-// =====================================================
-// PRESCRIPTION SHARING ROUTES
-// =====================================================
-
-// Share prescription via WhatsApp/Email/Link/QR
-router.post('/:prescriptionId/share', validateId('prescriptionId'), sharePrescription);
-
-// Get all share options for a prescription
-router.get('/:prescriptionId/share-options', validateId('prescriptionId'), getShareOptions);
 
 module.exports = router;

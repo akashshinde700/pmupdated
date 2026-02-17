@@ -122,9 +122,10 @@ async function listBills(req, res) {
 
     // Trim fields for list view to reduce payload
     const [bills] = await db.execute(`
-      SELECT 
+      SELECT
         b.id,
         b.patient_id,
+        b.appointment_id,
         b.bill_number,
         b.total_amount,
         b.amount_paid,
@@ -363,26 +364,7 @@ async function addBill(req, res) {
       return res.status(400).json({ error: 'Patient ID is required' });
     }
 
-    // Check for existing bill to prevent duplicates
-    let existingBillCheck = '';
-    let checkParams = [patient_id];
-    
-    if (appointment_id) {
-      existingBillCheck = ' AND appointment_id = ?';
-      checkParams.push(appointment_id);
-    }
-    
-    const [existingBills] = await db.execute(
-      `SELECT id FROM bills WHERE patient_id = ?${existingBillCheck} ORDER BY created_at DESC LIMIT 1`,
-      checkParams
-    );
-    
-    if (existingBills.length > 0) {
-      return res.status(409).json({ 
-        error: 'Bill already exists for this appointment',
-        existing_bill_id: existingBills[0].id
-      });
-    }
+    // Allow multiple bills per patient - no duplicate check
 
     // Detect whether bills table has appointment_id column (for backward-compatible schemas)
     let hasAppointmentId = false;
@@ -913,7 +895,7 @@ async function generateReceiptPDF(req, res) {
   }
 }
 
-// Send bill via WhatsApp (placeholder)
+// Send bill via WhatsApp
 async function sendBillWhatsApp(req, res) {
   try {
     const { id } = req.params;
@@ -937,49 +919,39 @@ async function sendBillWhatsApp(req, res) {
 
     const bill = bills[0];
 
-    // Format date nicely
-    const formatDate = (dateStr) => {
-      if (!dateStr) return null;
-      const date = new Date(dateStr);
-      return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-    };
+    // Build public PDF URL (no auth required)
+    const host = req.get('host');
+    const protocol = req.protocol;
+    const pdfUrl = `${protocol}://${host}/api/pdf/bill/${id}`;
 
-    // Get bill/receipt number with fallback
-    const billNumber = bill.bill_number || bill.receipt_number || `REC${String(bill.id).padStart(4, '0')}`;
-    const billDate = formatDate(bill.bill_date || bill.created_at) || formatDate(new Date());
-    const dueDate = bill.due_date ? formatDate(bill.due_date) : null;
-
-    // PDF link
-    const pdfLink = `https://drjaju.com/api/pdf/bill/${id}`;
-
-    // Generate WhatsApp message with better format
-    let message = `🏥 *${bill.clinic_name || 'Om Clinic And Diagnostic Center'}*
-
-Dear *${bill.patient_name}*,
-
-Your receipt is ready.
-
-📋 *Receipt No:* ${billNumber}
-📅 *Date:* ${billDate}
-💰 *Amount:* ₹${Number(bill.total_amount || 0).toFixed(2)}`;
-
-    if (dueDate) {
-      message += `\n⏰ *Due Date:* ${dueDate}`;
+    // Build items list
+    const [items] = await db.execute('SELECT service_name, quantity, unit_price, total_price FROM bill_items WHERE bill_id = ? ORDER BY sort_order', [id]);
+    let itemsList = '';
+    if (items.length > 0) {
+      itemsList = items.map(it => `  • ${it.service_name} x${it.quantity} = ₹${Number(it.total_price || 0).toFixed(0)}`).join('\n');
     }
 
-    message += `
+    const message = `Hello ${bill.patient_name || ''},
 
-📄 *Download Receipt:*
-${pdfLink}
+Your receipt from *${bill.clinic_name || 'Our Clinic'}* is ready.
 
-Thank you for visiting us! 🙏`;
+🧾 *Bill #${bill.bill_number || bill.id}*
+📅 Date: ${bill.bill_date ? new Date(bill.bill_date).toLocaleDateString('en-IN') : 'Today'}
+${itemsList ? `\n📋 *Services:*\n${itemsList}\n` : ''}
+💰 *Total: ₹${Number(bill.total_amount || 0).toFixed(2)}*
+💳 Status: ${bill.payment_status || 'Pending'}
+
+📄 *View/Download Receipt:*
+${pdfUrl}
+
+Thank you for visiting us!`;
 
     res.json({
       success: true,
       message: 'WhatsApp message prepared successfully',
       patient_phone: bill.patient_phone,
       whatsapp_message: message,
-      pdf_url: pdfLink
+      pdf_url: pdfUrl
     });
   } catch (error) {
     console.error('Send bill WhatsApp error:', error);
