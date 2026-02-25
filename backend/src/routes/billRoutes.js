@@ -100,43 +100,75 @@ router.get('/summary', async (req, res) => {
   try {
     const { getDb } = require('../config/db');
     const db = getDb();
+
+    // Auto-migrate: add cash_component / other_component columns if they don't exist
+    try {
+      const [cols] = await db.execute(
+        "SELECT column_name FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'bills' AND column_name IN ('cash_component','other_component')"
+      );
+      const existing = (cols || []).map(c => c.column_name || c.COLUMN_NAME);
+      if (!existing.includes('cash_component')) {
+        await db.execute("ALTER TABLE bills ADD COLUMN cash_component DECIMAL(10,2) DEFAULT NULL");
+      }
+      if (!existing.includes('other_component')) {
+        await db.execute("ALTER TABLE bills ADD COLUMN other_component DECIMAL(10,2) DEFAULT NULL");
+      }
+    } catch (_migErr) { /* ignore migration errors — columns may already exist */ }
+
     const [summary] = await db.execute(`
       SELECT
         COUNT(*) as total_bills,
-        SUM(total_amount) as total_revenue,
-        SUM(amount_paid) as total_collected,
-        SUM(balance_due) as total_outstanding,
-        SUM(CASE WHEN payment_status = 'paid' THEN 1 ELSE 0 END) as paid_count,
+        SUM(total_amount)  as total_revenue,
+        SUM(amount_paid)   as total_collected,
+        SUM(balance_due)   as total_outstanding,
+
+        -- Status counts (all time)
+        SUM(CASE WHEN payment_status = 'paid'    THEN 1 ELSE 0 END) as paid_count,
         SUM(CASE WHEN payment_status = 'pending' THEN 1 ELSE 0 END) as pending_count,
-        SUM(CASE WHEN payment_status = 'partial' THEN 1 ELSE 0 END) as partial_count
+        SUM(CASE WHEN payment_status = 'partial' THEN 1 ELSE 0 END) as partial_count,
+
+        -- Status amounts (all time)
+        SUM(CASE WHEN payment_status = 'paid'    THEN amount_paid   ELSE 0 END) as paid_amount,
+        SUM(CASE WHEN payment_status = 'pending' THEN total_amount  ELSE 0 END) as pending_amount,
+        SUM(CASE WHEN payment_status = 'partial' THEN balance_due   ELSE 0 END) as partial_balance,
+
+        -- Today counts & amounts
+        SUM(CASE WHEN DATE(IFNULL(bill_date, created_at)) = CURDATE() THEN 1 ELSE 0 END) as today_count,
+        SUM(CASE WHEN DATE(IFNULL(bill_date, created_at)) = CURDATE() THEN amount_paid ELSE 0 END) as today_collected,
+
+        SUM(CASE WHEN DATE(IFNULL(bill_date, created_at)) = CURDATE() AND payment_status = 'paid'    THEN 1 ELSE 0 END) as today_paid_count,
+        SUM(CASE WHEN DATE(IFNULL(bill_date, created_at)) = CURDATE() AND payment_status = 'pending' THEN 1 ELSE 0 END) as today_pending_count,
+        SUM(CASE WHEN DATE(IFNULL(bill_date, created_at)) = CURDATE() AND payment_status = 'partial' THEN 1 ELSE 0 END) as today_partial_count,
+
+        SUM(CASE WHEN DATE(IFNULL(bill_date, created_at)) = CURDATE() AND payment_status = 'paid'    THEN amount_paid  ELSE 0 END) as today_paid_amount,
+        SUM(CASE WHEN DATE(IFNULL(bill_date, created_at)) = CURDATE() AND payment_status = 'pending' THEN total_amount ELSE 0 END) as today_pending_amount,
+        SUM(CASE WHEN DATE(IFNULL(bill_date, created_at)) = CURDATE() AND payment_status = 'partial' THEN balance_due  ELSE 0 END) as today_partial_balance,
+
+        -- Payment method breakdown (split payments use cash_component / other_component)
+        SUM(CASE
+          WHEN payment_method = 'cash'                               THEN amount_paid
+          WHEN payment_method IN ('cash+upi','cash+card')            THEN IFNULL(cash_component, 0)
+          ELSE 0 END) as cash_amount,
+        SUM(CASE
+          WHEN payment_method IN ('upi','gpay')                      THEN amount_paid
+          WHEN payment_method = 'cash+upi'                           THEN IFNULL(other_component, 0)
+          ELSE 0 END) as upi_amount,
+        SUM(CASE
+          WHEN payment_method IN ('debit_card','credit_card','card') THEN amount_paid
+          WHEN payment_method = 'cash+card'                          THEN IFNULL(other_component, 0)
+          ELSE 0 END) as card_amount,
+        SUM(CASE WHEN payment_method = 'bank_transfer'               THEN amount_paid ELSE 0 END) as bank_amount,
+        SUM(CASE
+          WHEN payment_method NOT IN ('cash','upi','gpay','debit_card','credit_card','card','bank_transfer','cash+upi','cash+card')
+            OR payment_method IS NULL                                THEN amount_paid
+          ELSE 0 END) as other_amount
       FROM bills
     `);
 
-    // Optional: unbilled visits count (only if bills has appointment_id column)
-    let unbilled_visits = 0;
-    try {
-      const [cols] = await db.execute(
-        "SELECT column_name FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'bills' AND column_name = 'appointment_id' LIMIT 1"
-      );
-      const hasAppointmentId = Array.isArray(cols) && cols.length > 0;
-      if (hasAppointmentId) {
-        const [r] = await db.execute(
-          `SELECT COUNT(*) AS cnt
-           FROM appointments a
-           WHERE (a.status = 'completed' OR a.status = 'pending')
-             AND a.id NOT IN (SELECT DISTINCT b.appointment_id FROM bills b WHERE b.appointment_id IS NOT NULL AND b.appointment_id != '')`
-        );
-        unbilled_visits = r[0]?.cnt || 0;
-      }
-    } catch (_e) {
-      unbilled_visits = 0;
-    }
-
     res.json({
       ...(summary[0] || {}),
-      unbilled_visits,
-      // Backward-compatible aliases some frontend code expects
-      paid_bills: summary[0]?.paid_count || 0,
+      // Backward-compatible aliases
+      paid_bills:    summary[0]?.paid_count    || 0,
       pending_bills: summary[0]?.pending_count || 0
     });
   } catch (error) {
@@ -195,9 +227,21 @@ router.patch('/:id/payment', joiValidate(updateBillPaymentSchema), async (req, r
       'UPDATE bills SET amount_paid = ?, payment_status = ?, balance_due = ? WHERE id = ?',
       [newPaidAmount, newStatus, remainingAmount, id]
     );
-    
-    res.json({ 
-      success: true, 
+
+      // Sync appointment payment_status only. Do NOT auto-complete queue on payment.
+    try {
+      const [billRows] = await db.execute('SELECT appointment_id FROM bills WHERE id = ?', [id]);
+      const appointmentId = billRows[0]?.appointment_id;
+      if (appointmentId) {
+        await db.execute('UPDATE appointments SET payment_status = ?, updated_at = NOW() WHERE id = ?', [newStatus, appointmentId]);
+        // IMPORTANT: Previously we auto-marked the queue entry as 'completed' when payment became 'paid'.
+        // That removed patients from the active queue prematurely. Keep the patient in the queue until
+        // an explicit queue status change (e.g., via /api/queue/:id/status) sets them to 'completed'.
+      }
+    } catch (_e) { /* sync is best-effort */ }
+
+    res.json({
+      success: true,
       paid_amount: newPaidAmount,
       remaining_amount: remainingAmount,
       payment_status: newStatus

@@ -1,8 +1,16 @@
 import React from 'react';
 
 // Printable A4 letterhead wrapper. Renders header/footer and a content slot for the prescription body.
-// Now supports dynamic templates from receipt_templates table
-export default function Letterhead({ children, template = null }) {
+// showLetterhead=false renders the A4 page with ONLY the content (no clinic header/footer)
+export default function Letterhead({ children, template = null, showLetterhead = true }) {
+  if (!showLetterhead) {
+    return (
+      <div style={{ width: '210mm', minHeight: '297mm', background: 'white', fontFamily: 'Arial, sans-serif', padding: '20mm 15mm' }}>
+        {children}
+      </div>
+    );
+  }
+
   return (
     <div className="rx-letterhead">
       <style>{`

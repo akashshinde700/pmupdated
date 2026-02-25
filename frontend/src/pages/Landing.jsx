@@ -111,16 +111,15 @@ const patientStories = [
   },
 ];
 
-// Hospital affiliations
-const hospitals = [
+// Default hospital affiliations (fallback)
+const defaultHospitals = [
+  { name: 'Om Hospital', location: 'City Vista, Kharadi' },
   { name: 'Manipal Hospital', location: 'Kharadi' },
   { name: 'Venkatesh Hospital', location: 'Wagholi' },
   { name: 'Ojas Hospital', location: 'Wagholi' },
-  { name: 'Om Hospital', location: 'City Vista, Kharadi' },
 ];
 
-const whatsappNumber = '+91 85303 45858';
-const whatsappLink = 'https://wa.me/918530345858';
+// WhatsApp number/link now computed dynamically from doctorInfo state
 
 const LandingPage = () => {
   const { addToast } = useToast();
@@ -157,6 +156,11 @@ const LandingPage = () => {
   const [googleRating, setGoogleRating] = useState(null);
   const [loadingReviews, setLoadingReviews] = useState(false);
   const [showAllReviews, setShowAllReviews] = useState(false);
+  const [hospitals, setHospitals] = useState(defaultHospitals);
+  const [doctorInfo, setDoctorInfo] = useState({ name: 'Dr. Gopal Jaju', phone: '8530345858', specialization: 'General Practice' });
+  const [clinicInfo, setClinicInfo] = useState({ name: 'Om Hospital', address: 'City Vista, Kharadi, Pune', phone: '8530345858' });
+  const whatsappNumber = '+91 ' + (doctorInfo.phone || '85303 45858').replace(/(\d{5})(\d{5})/, '$1 $2');
+  const whatsappLink = 'https://wa.me/91' + (doctorInfo.phone || '8530345858');
 
   // Initialize API client
   const api = useApiClient();
@@ -172,6 +176,37 @@ const LandingPage = () => {
         setShowBookingModal(true);
       }
     } catch {}
+  }, []);
+
+  // Fetch landing page data (doctor, clinic, affiliations)
+  useEffect(() => {
+    const fetchLandingData = async () => {
+      try {
+        const res = await api.get('/api/doctors/2/landing');
+        const data = res.data;
+        if (data.doctor) {
+          setDoctorInfo({
+            name: 'Dr. ' + (data.doctor.name || 'Gopal Jaju'),
+            phone: data.doctor.phone || '8530345858',
+            specialization: data.doctor.specialization || 'General Practice',
+            qualification: data.doctor.qualification || ''
+          });
+        }
+        if (data.clinic) {
+          setClinicInfo({
+            name: data.clinic.name || 'Om Hospital',
+            address: [data.clinic.address, data.clinic.city].filter(Boolean).join(', ') || 'City Vista, Kharadi, Pune',
+            phone: data.clinic.phone || data.doctor?.phone || '8530345858'
+          });
+        }
+        if (data.affiliations && data.affiliations.length > 0) {
+          setHospitals(data.affiliations);
+        }
+      } catch (err) {
+        console.log('Using default landing page data');
+      }
+    };
+    fetchLandingData();
   }, []);
 
   // Fetch Google Reviews
@@ -333,8 +368,8 @@ const LandingPage = () => {
               Om
             </div>
             <div>
-              <p className="font-bold text-gray-900 text-base">Om Hospital</p>
-              <p className="text-xs text-blue-600 font-medium">Dr. Gopal Jaju</p>
+              <p className="font-bold text-gray-900 text-base">{clinicInfo.name}</p>
+              <p className="text-xs text-blue-600 font-medium">{doctorInfo.name}</p>
             </div>
           </div>
 
@@ -371,14 +406,14 @@ const LandingPage = () => {
               ✨ TRUSTED HEALTHCARE PROVIDER
             </p>
             <h1 className="text-5xl sm:text-6xl lg:text-7xl font-black leading-tight mb-6 text-white drop-shadow-lg">
-              Dr. Gopal Jaju<br />
+              {doctorInfo.name}<br />
               <span className="bg-gradient-to-r from-blue-200 via-blue-100 to-white bg-clip-text text-transparent">Expert Medical Care</span>
             </h1>
             <p className="text-blue-50 mb-3 text-lg lg:text-xl font-semibold">
               🏥 MD Medicine | Consultant Physician
             </p>
             <p className="text-blue-100 mb-8 text-base lg:text-lg leading-relaxed max-w-2xl font-medium">
-              Specialist in Diabetes, Cardiology, and Internal Medicine with over 10 years of experience. Known for accurate diagnosis, ethical practice, and personalized treatment plans focused on long-term health.
+              Specialist in Diabetes, Cardiology, and Internal Medicine with over 15 years of experience. Known for accurate diagnosis, ethical practice, and personalized treatment plans focused on long-term health.
             </p>
 
             <div className="flex flex-wrap gap-4 mb-12">
@@ -389,10 +424,10 @@ const LandingPage = () => {
                 <span className="text-xl">📅</span> Book Appointment
               </button>
               <a
-                href={`tel:+918530345858`}
+                href={`tel:+91${doctorInfo.phone}`}
                 className="px-8 py-4 rounded-xl bg-gradient-to-r from-blue-400/40 to-blue-500/40 hover:from-blue-400/60 hover:to-blue-500/60 text-white font-bold text-base border-2 border-white/60 transition flex items-center gap-2 hover:shadow-lg transform hover:-translate-y-1 backdrop-blur-sm"
               >
-                <span className="text-2xl">📞</span> 8530345858
+                <span className="text-2xl">📞</span> {doctorInfo.phone}
               </a>
             </div>
 
@@ -401,7 +436,7 @@ const LandingPage = () => {
               <div className="flex items-center gap-3 bg-white/10 backdrop-blur-sm px-5 py-3 rounded-lg border border-white/20 hover:bg-white/15 transition">
                 <div className="text-4xl">👨‍⚕️</div>
                 <div>
-                  <p className="text-3xl font-black text-white">10+</p>
+                  <p className="text-3xl font-black text-white">15+</p>
                   <p className="text-blue-200 text-xs font-semibold">Years Exp.</p>
                 </div>
               </div>
@@ -435,7 +470,7 @@ const LandingPage = () => {
                 
                 <img
                   src="/dr-gopal-jaju.jpg"
-                  alt="Dr. Gopal Jaju"
+                  alt={doctorInfo.name}
                   className="w-full h-full object-cover object-top hover:scale-105 transition duration-500"
                   onError={(e) => {
                     e.target.style.display = 'none';
@@ -553,7 +588,7 @@ const LandingPage = () => {
                   <div className="w-64 h-72 rounded-2xl overflow-hidden shadow-2xl border-4 border-white/10">
                     <img
                       src="/dr-gopal-jaju.jpg"
-                      alt="Dr. Gopal Jaju"
+                      alt={doctorInfo.name}
                       className="w-full h-full object-cover object-top"
                       onError={(e) => {
                         e.target.parentElement.innerHTML = '<div class="w-full h-full bg-gradient-to-br from-blue-700 to-blue-900 flex items-center justify-center text-white/50"><svg class="w-24 h-24" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd" /></svg></div>';
@@ -564,17 +599,17 @@ const LandingPage = () => {
 
                 {/* Doctor Info */}
                 <div>
-                  <h2 className="text-3xl lg:text-4xl font-bold mb-2">Dr. Gopal Jaju</h2>
+                  <h2 className="text-3xl lg:text-4xl font-bold mb-2">{doctorInfo.name}</h2>
                   <p className="text-blue-400 font-medium text-lg mb-4">MD Medicine | Consultant Physician</p>
 
                   <p className="text-gray-300 mb-6 leading-relaxed">
-                    Specialist in Diabetes, Cardiology, and Internal Medicine with over 10 years of experience.
+                    Specialist in Diabetes, Cardiology, and Internal Medicine with over 15 years of experience.
                     Known for accurate diagnosis, ethical practice, and personalized treatment plans focused on long-term health.
                   </p>
 
                   <div className="grid grid-cols-3 gap-4 mb-6">
                     <div className="text-center bg-white/5 rounded-xl p-3">
-                      <p className="text-2xl font-bold text-blue-400">10+</p>
+                      <p className="text-2xl font-bold text-blue-400">15+</p>
                       <p className="text-xs text-gray-400">Years Exp.</p>
                     </div>
                     <div className="text-center bg-white/5 rounded-xl p-3">
@@ -598,7 +633,7 @@ const LandingPage = () => {
                       href={`tel:${whatsappNumber.replace(/\s/g, '')}`}
                       className="px-6 py-3 bg-white/10 hover:bg-white/20 text-white font-semibold rounded-xl transition flex items-center gap-2"
                     >
-                      <FaPhoneAlt /> 8530345858
+                      <FaPhoneAlt /> {doctorInfo.phone}
                     </a>
                   </div>
                 </div>
@@ -642,7 +677,7 @@ const LandingPage = () => {
               <p className="text-blue-600 font-semibold text-sm uppercase tracking-wider mb-2">REVIEWS</p>
               <h2 className="text-3xl lg:text-4xl font-bold text-gray-900">Patient Experiences</h2>
               <p className="mt-3 text-gray-600 max-w-2xl mx-auto">
-                What our patients say about their experience with Dr. Gopal Jaju
+                What our patients say about their experience with {doctorInfo.name}
               </p>
 
               {/* Google Rating Badge */}
@@ -770,7 +805,7 @@ const LandingPage = () => {
                   <FaPhoneAlt className="text-xl text-blue-700" />
                 </div>
                 <h3 className="font-semibold text-gray-900 mb-1">Call Us</h3>
-                <p className="text-blue-600 font-bold">+91 85303 45858</p>
+                <p className="text-blue-600 font-bold">{whatsappNumber}</p>
               </a>
 
               {/* WhatsApp */}
@@ -793,7 +828,7 @@ const LandingPage = () => {
                   <FaMapMarkerAlt className="text-xl text-amber-700" />
                 </div>
                 <h3 className="font-semibold text-gray-900 mb-1">Visit Us</h3>
-                <p className="text-gray-600 text-sm font-medium">City Vista, Kharadi, Pune</p>
+                <p className="text-gray-600 text-sm font-medium">{clinicInfo.address}</p>
               </div>
             </div>
 
@@ -878,8 +913,8 @@ const LandingPage = () => {
               <div className="flex items-center gap-3 mb-4">
                 <div className="h-12 w-12 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-bold text-lg shadow-lg">🏥</div>
                 <div>
-                  <p className="font-bold text-white text-lg">Om Hospital</p>
-                  <p className="text-xs text-blue-300">Dr. Gopal Jaju</p>
+                  <p className="font-bold text-white text-lg">{clinicInfo.name}</p>
+                  <p className="text-xs text-blue-300">{doctorInfo.name}</p>
                 </div>
               </div>
               <p className="text-sm text-gray-400 leading-relaxed">Expert care for Diabetes, Heart Disease, and Lifestyle disorders. Your health is our priority.</p>
@@ -928,11 +963,11 @@ const LandingPage = () => {
                 Contact
               </h4>
               <div className="space-y-3 text-sm">
-                <a href="tel:+918530345858" className="block text-gray-400 hover:text-blue-300 transition font-medium">
-                  📱 +91 85303 45858
+                <a href={`tel:+91${doctorInfo.phone}`} className="block text-gray-400 hover:text-blue-300 transition font-medium">
+                  📱 {whatsappNumber}
                 </a>
                 <p className="text-gray-400 font-medium">
-                  📍 City Vista, Kharadi, Pune
+                  📍 {clinicInfo.address}
                 </p>
                 <a href="mailto:drjajugopal@gmail.com" className="block text-gray-400 hover:text-blue-300 transition font-medium">
                   ✉️ drjajugopal@gmail.com
@@ -947,12 +982,12 @@ const LandingPage = () => {
           {/* Bottom Section */}
           <div className="flex flex-col md:flex-row items-center justify-between gap-6">
             <p className="text-sm text-gray-500 text-center md:text-left">
-              &copy; 2025 Om Hospital And Diagnostic Center. All rights reserved.
+              &copy; {new Date().getFullYear()} {clinicInfo.name}. All rights reserved.
             </p>
             
             {/* WhatsApp CTA */}
             <a
-              href={`https://wa.me/918530345858?text=${encodeURIComponent('Hello, I would like to book an appointment at Om Hospital.')}`}
+              href={`${whatsappLink}?text=${encodeURIComponent('Hello, I would like to book an appointment at ' + clinicInfo.name + '.')}`}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 px-5 py-2 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-full font-semibold hover:shadow-lg hover:from-green-600 hover:to-green-700 transition-all duration-200 transform hover:scale-105"

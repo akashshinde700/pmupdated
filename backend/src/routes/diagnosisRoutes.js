@@ -113,9 +113,38 @@ router.get('/search', authenticateToken, async (req, res) => {
       total = countResult[0]?.total || 0;
     }
 
+    // Also search doctor's custom diagnoses (highest priority)
+    let doctorDiagnoses = [];
+    try {
+      const doctorId = req.user?.doctorId || req.user?.id || null;
+      if (doctorId) {
+        const [rows] = await db.query(
+          `SELECT diagnosis_name, icd_code, usage_count
+           FROM doctor_diagnoses
+           WHERE doctor_id = ? AND LOWER(diagnosis_name) LIKE ?
+           ORDER BY usage_count DESC
+           LIMIT 10`,
+          [doctorId, searchTerm]
+        );
+        doctorDiagnoses = rows;
+      }
+    } catch (e) { /* table may not exist */ }
+
+    // Prepend doctor's custom diagnoses
+    const customItems = doctorDiagnoses.map(d => ({
+      code: d.icd_code || 'CUSTOM',
+      diagnosis_name: d.diagnosis_name,
+      description: 'Custom diagnosis',
+      version: 'custom',
+      usage_count: d.usage_count
+    }));
+    // Dedup: remove from diagnoses if already in custom
+    const customNames = new Set(customItems.map(c => c.diagnosis_name.toLowerCase()));
+    const filteredDiagnoses = diagnoses.filter(d => !customNames.has((d.diagnosis_name || '').toLowerCase()));
+
     res.json({
-      diagnoses,
-      total,
+      diagnoses: [...customItems, ...filteredDiagnoses],
+      total: total + customItems.length,
       limit: limitNum,
       offset: offsetNum,
       hasMore: offsetNum + limitNum < total
@@ -420,6 +449,33 @@ router.get('/:icd_code', authenticateToken, async (req, res) => {
       error: 'Failed to get diagnosis',
       details: error.message
     });
+  }
+});
+
+/**
+ * Save a custom diagnosis for future suggestions
+ * POST /api/diagnoses
+ */
+router.post('/', authenticateToken, async (req, res) => {
+  try {
+    const { diagnosis_name, icd_code } = req.body;
+    if (!diagnosis_name || !diagnosis_name.trim()) {
+      return res.status(400).json({ error: 'Diagnosis name is required' });
+    }
+    const doctorId = req.user?.doctorId || req.user?.id;
+    if (!doctorId) return res.status(401).json({ error: 'Doctor ID not found' });
+
+    const db = getDb();
+    await db.query(
+      `INSERT INTO doctor_diagnoses (doctor_id, diagnosis_name, icd_code, usage_count)
+       VALUES (?, ?, ?, 1)
+       ON DUPLICATE KEY UPDATE usage_count = usage_count + 1, icd_code = COALESCE(VALUES(icd_code), icd_code)`,
+      [doctorId, diagnosis_name.trim(), icd_code || null]
+    );
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Save diagnosis error:', error);
+    res.status(500).json({ error: 'Failed to save diagnosis' });
   }
 });
 

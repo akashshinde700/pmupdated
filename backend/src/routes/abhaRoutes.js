@@ -14,9 +14,7 @@ const {
 
   // Legacy endpoints
   enroll,
-  link,
-  unlink,
-  status
+  link
 } = require('../controllers/abhaController');
 const { authenticateToken } = require('../middleware/auth');
 const joiValidate = require('../middleware/joiValidate');
@@ -49,6 +47,5 @@ router.post('/unlink', authenticateToken, joiValidate(unlinkAbhaSchema), unlinkA
 // Legacy endpoints (for backward compatibility - deprecated)
 router.post('/enroll', authenticateToken, enroll);
 router.post('/link', authenticateToken, link);
-router.get('/status/:patientId', authenticateToken, status);
 
 module.exports = router;

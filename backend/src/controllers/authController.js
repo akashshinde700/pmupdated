@@ -333,5 +333,27 @@ async function logout(req, res) {
   }
 }
 
-module.exports = { login, register, verifyToken, refreshToken, logout, verifyCredentials };
+// Get current user profile
+async function getMe(req, res) {
+  try {
+    const user = req.user;
+    if (!user) {
+      return res.status(401).json({ success: false, error: 'Not authenticated' });
+    }
+    const db = getDb();
+    const [rows] = await db.execute(
+      'SELECT id, name, email, phone, role, clinic_id FROM users WHERE id = ?',
+      [user.id]
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+    res.json({ success: true, data: rows[0] });
+  } catch (error) {
+    console.error('getMe error:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch user profile' });
+  }
+}
+
+module.exports = { login, register, verifyToken, refreshToken, logout, verifyCredentials, getMe };
 

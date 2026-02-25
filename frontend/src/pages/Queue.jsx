@@ -1,4 +1,5 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import HeaderBar from '../components/HeaderBar';
 import { useApiClient } from '../api/client';
@@ -47,6 +48,7 @@ export default function Queue() {
   const [limit] = useState(10);
   const [pagination, setPagination] = useState({ total: 0, pages: 1 });
   const [openMenuId, setOpenMenuId] = useState(null);
+  const [menuPos, setMenuPos] = useState({ top: 0, left: 0 });
   const [quickName, setQuickName] = useState('');
   const [quickPhone, setQuickPhone] = useState('');
   const [quickAbha, setQuickAbha] = useState('');
@@ -64,6 +66,19 @@ export default function Queue() {
   const [quickSearchResults, setQuickSearchResults] = useState([]);
   const [quickSearchLoading, setQuickSearchLoading] = useState(false);
   const [showMergeModal, setShowMergeModal] = useState(false);
+  const [completedRange, setCompletedRange] = useState('today'); // 'today' | 'before' | 'all'
+  const [completedMenuOpen, setCompletedMenuOpen] = useState(false);
+
+  // Close completed menu when clicking outside the card
+  useEffect(() => {
+    function handleDocClick(e) {
+      if (!completedMenuOpen) return;
+      if (e.target.closest('[data-completed-card]')) return; // inside card, ignore
+      setCompletedMenuOpen(false);
+    }
+    document.addEventListener('click', handleDocClick);
+    return () => document.removeEventListener('click', handleDocClick);
+  }, [completedMenuOpen]);
 
   // Safely resolve patient DB primary key from multiple possible fields
   const resolvePatientDbId = useCallback((apt) => {
@@ -101,18 +116,33 @@ export default function Queue() {
       ]);
       
       const appointmentsData = appointmentsRes.data.data?.appointments || [];
+      const today = new Date().toISOString().split('T')[0];
       const queueData = queueRes.data || [];
       
       // Combine appointments and queue entries
       const combinedData = [];
-      
+
       // Add appointments
       appointmentsData.forEach(apt => {
-        combinedData.push({
-          ...apt,
-          source: 'appointment',
-          in_queue: queueData.some(q => q.appointment_id === apt.id)
-        });
+        const inQueue = queueData.some(q => q.appointment_id === apt.id);
+        const aptDate = apt.appointment_date || (apt.check_in_time ? apt.check_in_time.split('T')[0] : null);
+
+        // If caller requested completed status, include appointments that are completed
+        if (extraParams && extraParams.status === 'completed') {
+          if (apt.status === 'completed') {
+            combinedData.push({ ...apt, source: 'appointment', in_queue: inQueue });
+          }
+          return;
+        }
+
+        // Default: include if appointment is in today's queue or scheduled for today
+        if (inQueue || aptDate === today) {
+          combinedData.push({
+            ...apt,
+            source: 'appointment',
+            in_queue: inQueue
+          });
+        }
       });
       
       // Add walk-in patients from queue (those without appointments)
@@ -138,10 +168,14 @@ export default function Queue() {
         }
       });
       
-      // Sort by check-in time and appointment time
+      // Sort: incomplete / not-completed first, completed last; within groups sort by check-in/appointment time
       combinedData.sort((a, b) => {
-        const timeA = a.check_in_time || `${a.appointment_date} ${a.appointment_time}`;
-        const timeB = b.check_in_time || `${b.appointment_date} ${b.appointment_time}`;
+        const aCompleted = (a.status === 'completed');
+        const bCompleted = (b.status === 'completed');
+        if (aCompleted !== bCompleted) return aCompleted ? 1 : -1; // completed go after
+
+        const timeA = a.check_in_time || `${a.appointment_date || today} ${a.appointment_time || ''}`;
+        const timeB = b.check_in_time || `${b.appointment_date || today} ${b.appointment_time || ''}`;
         return new Date(timeA) - new Date(timeB);
       });
       
@@ -381,6 +415,12 @@ export default function Queue() {
       );
 
       addToast(`Payment status updated to ${newPaymentStatus}`, 'success');
+      
+      // Refresh queue data to reflect changes
+      setTimeout(() => {
+        fetchAppointments();
+        addToast('Queue refreshed', 'info');
+      }, 1000);
     } catch (err) {
       console.error('Update payment status error:', err);
       // Show user-friendly message for NO_BILL_FOUND
@@ -926,7 +966,6 @@ Thank you!`;
     try {
       // First create the patient
       const patientResponse = await api.post('/api/patients', {
-        patient_id: `P${Date.now()}${Math.floor(Math.random() * 1000)}`,
         name: quickRegisterForm.name,
         phone: quickRegisterForm.phone,
         gender: 'U', // Unknown by default
@@ -1086,6 +1125,7 @@ Thank you!`;
         {stats.map((card) => (
           <div 
             key={card.key} 
+            data-completed-card={card.key === 'completed' ? '1' : undefined}
             className={`p-3 bg-white rounded shadow-sm border relative group cursor-pointer hover:shadow-md transition ${
               filters.status === card.key ? 'ring-2 ring-primary' : ''
             }`}
@@ -1093,11 +1133,8 @@ Thank you!`;
               if (card.key === 'today') {
                 handleQuickDateFilter('today');
               } else if (card.key === 'completed') {
-                // Show today's completed appointments
-                const today = new Date().toISOString().split('T')[0];
-                setFilters(prev => ({ ...prev, status: 'completed', isFollowUp: false, month: '', year: '', dateRange: '' }));
-                fetchAppointments({ date: today, status: 'completed' });
-                setPage(1);
+                // Open the completed range menu
+                setCompletedMenuOpen(prev => !prev);
               } else if (card.key === 'upcoming') {
                 handleQuickDateFilter('upcoming');
               } else if (card.key === 'followups') {
@@ -1116,7 +1153,14 @@ Thank you!`;
             }}
           >
             <div className="flex items-center justify-between">
-              <p className="text-xs text-slate-500">{card.label}</p>
+              <div>
+                <p className="text-xs text-slate-500">{card.label}</p>
+                {card.key === 'completed' && (
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    {completedRange === 'today' ? 'Today' : (completedRange === 'before' ? 'Before Today' : 'All')}
+                  </p>
+                )}
+              </div>
               <button
                 type="button"
                 onClick={(e) => {
@@ -1131,6 +1175,55 @@ Thank you!`;
                 </svg>
               </button>
             </div>
+            {card.key === 'completed' && completedMenuOpen && (
+              <div className="absolute top-full left-3 mt-2 w-44 bg-white border rounded shadow z-50 p-1">
+                <button
+                  type="button"
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 rounded"
+                  onClick={() => {
+                    const todayStr = new Date().toISOString().split('T')[0];
+                    setCompletedRange('today');
+                    setFilters(prev => ({ ...prev, status: 'completed', isFollowUp: false }));
+                    fetchAppointments({ status: 'completed', start_date: todayStr, end_date: todayStr });
+                    setPage(1);
+                    setCompletedMenuOpen(false);
+                    addToast('Showing completed appointments: Today', 'info');
+                  }}
+                >
+                  Today
+                </button>
+                <button
+                  type="button"
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 rounded"
+                  onClick={() => {
+                    const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
+                    const yesterdayStr = yesterday.toISOString().split('T')[0];
+                    setCompletedRange('before');
+                    setFilters(prev => ({ ...prev, status: 'completed', isFollowUp: false }));
+                    fetchAppointments({ status: 'completed', end_date: yesterdayStr });
+                    setPage(1);
+                    setCompletedMenuOpen(false);
+                    addToast('Showing completed appointments: Before today', 'info');
+                  }}
+                >
+                  Before Today
+                </button>
+                <button
+                  type="button"
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 rounded"
+                  onClick={() => {
+                    setCompletedRange('all');
+                    setFilters(prev => ({ ...prev, status: 'completed', isFollowUp: false }));
+                    fetchAppointments({ status: 'completed' });
+                    setPage(1);
+                    setCompletedMenuOpen(false);
+                    addToast('Showing all completed appointments', 'info');
+                  }}
+                >
+                  All
+                </button>
+              </div>
+            )}
             <p className="text-2xl font-semibold mt-1">{card.count}</p>
           </div>
         ))}
@@ -1183,23 +1276,7 @@ Thank you!`;
                 Add Patient
               </button>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setFilters(prev => ({
-                    ...prev,
-                    payment_status: 'pending',
-                    status: ''
-                  }));
-                  setPage(1);
-                }}
-                className="px-3 py-2 text-sm bg-orange-500 text-white rounded hover:bg-orange-600 flex items-center gap-1 transition active:scale-[0.98]"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
-                </svg>
-                Payment Pending
-              </button>
+              {/* Payment Pending button removed */}
               
               <button
                 type="button"
@@ -1762,7 +1839,17 @@ Thank you!`;
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    setOpenMenuId(openMenuId === apt.id ? null : apt.id);
+                                    if (openMenuId === apt.id) {
+                                      setOpenMenuId(null);
+                                    } else {
+                                      const rect = e.currentTarget.getBoundingClientRect();
+                                      const spaceBelow = window.innerHeight - rect.bottom;
+                                      const menuHeight = 340;
+                                      const top = spaceBelow < menuHeight ? rect.top - menuHeight : rect.bottom + 4;
+                                      const left = Math.min(rect.right - 208, window.innerWidth - 220);
+                                      setMenuPos({ top, left });
+                                      setOpenMenuId(apt.id);
+                                    }
                                   }}
                                   className="p-2 text-slate-400 hover:bg-slate-100 rounded-lg transition"
                                 >
@@ -1770,19 +1857,19 @@ Thank you!`;
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
                                   </svg>
                                 </button>
-                                {openMenuId === apt.id && (
+                                {openMenuId === apt.id && createPortal(
                                   <div
                                     onClick={(e) => e.stopPropagation()}
-                                    className="absolute right-0 top-full mt-1 w-48 bg-white border border-slate-200 rounded-lg shadow-xl z-50"
+                                    style={{ position: 'fixed', top: menuPos.top, left: menuPos.left, zIndex: 9999 }}
+                                    className="w-52 bg-white border border-slate-200 rounded-lg shadow-xl max-h-80 overflow-y-auto"
                                   >
+                                    {/* View Patient */}
                                     <button
                                       onClick={() => {
                                         setOpenMenuId(null);
-                                        {
-                                          const pid = resolvePatientDbId(apt);
-                                          if (!pid) return;
-                                          navigate(`/patient-overview/${pid}`);
-                                        }
+                                        const pid = resolvePatientDbId(apt);
+                                        if (!pid) return;
+                                        navigate(`/patient-overview/${pid}`);
                                       }}
                                       className="w-full px-4 py-2.5 text-left text-sm hover:bg-blue-50 hover:text-blue-700 flex items-center gap-3 rounded-t-lg transition-colors border-b border-slate-100"
                                     >
@@ -1791,20 +1878,56 @@ Thank you!`;
                                       </svg>
                                       <span className="font-medium">View Patient</span>
                                     </button>
+                                    {/* Remove from Queue */}
+                                    <button
+                                      onClick={async () => {
+                                        setOpenMenuId(null);
+                                        try {
+                                          // prefer queue_id for removal; fallback to appointment id
+                                          const queueId = apt.queue_id || apt.id || apt.appointment_id;
+                                          if (!queueId) {
+                                            addToast('Unable to determine queue id for removal', 'error');
+                                            return;
+                                          }
+
+                                          if (apt.source === 'walkin' || apt.queue_id) {
+                                            await api.delete(`/api/queue/${queueId}`);
+                                          } else {
+                                            // try deleting appointment first, else fallback to queue
+                                            try {
+                                              await api.delete(`/api/appointments/${queueId}`);
+                                            } catch (err) {
+                                              await api.delete(`/api/queue/${queueId}`);
+                                            }
+                                          }
+
+                                          addToast('Removed from queue', 'success');
+                                          // refresh
+                                          setTimeout(() => fetchAppointments(), 300);
+                                        } catch (err) {
+                                          console.error('Failed to remove from queue', err);
+                                          addToast(err.response?.data?.error || 'Failed to remove from queue', 'error');
+                                        }
+                                      }}
+                                      className="w-full px-4 py-2.5 text-left text-sm hover:bg-rose-50 hover:text-rose-700 flex items-center gap-3 transition-colors border-b border-slate-100"
+                                    >
+                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                      </svg>
+                                      <span className="font-medium">Remove from Queue</span>
+                                    </button>
+                                    {/* New Prescription */}
                                     <button
                                       onClick={() => {
                                         setOpenMenuId(null);
-                                        // Store appointment context for prescription page
-                                        {
-                                          const pid = resolvePatientDbId(apt);
-                                          if (!pid) return;
-                                          sessionStorage.setItem('currentAppointment', JSON.stringify({
-                                            appointmentId: apt.id,
-                                            patientId: pid,
-                                            patientName: apt.patient_name
-                                          }));
-                                          navigate(`/orders/${pid}`);
-                                        }
+                                        const pid = resolvePatientDbId(apt);
+                                        if (!pid) return;
+                                        sessionStorage.setItem('currentAppointment', JSON.stringify({
+                                          appointmentId: apt.id,
+                                          patientId: pid,
+                                          patientName: apt.patient_name
+                                        }));
+                                        navigate(`/orders/${pid}`);
                                       }}
                                       className="w-full px-4 py-2.5 text-left text-sm hover:bg-green-50 hover:text-green-700 flex items-center gap-3 transition-colors border-b border-slate-100"
                                     >
@@ -1813,23 +1936,181 @@ Thank you!`;
                                       </svg>
                                       <span className="font-medium">New Prescription</span>
                                     </button>
+                                    {/* View Prescription PDF */}
+                                    <button
+                                      onClick={async () => {
+                                        setOpenMenuId(null);
+                                        try {
+                                          const pid = resolvePatientDbId(apt);
+                                          if (!pid) return;
+                                          const res = await api.get(`/api/prescriptions?patient_id=${pid}&limit=1`);
+                                          const rx = res.data?.data?.prescriptions?.[0] || res.data?.prescriptions?.[0];
+                                          if (rx) {
+                                            window.open(`/api/pdf/prescription/${rx.id}`, '_blank');
+                                          } else {
+                                            addToast('No prescription found for this patient', 'info');
+                                          }
+                                        } catch { addToast('Failed to find prescription', 'error'); }
+                                      }}
+                                      className="w-full px-4 py-2.5 text-left text-sm hover:bg-indigo-50 hover:text-indigo-700 flex items-center gap-3 transition-colors border-b border-slate-100"
+                                    >
+                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                      </svg>
+                                      <span className="font-medium">View Prescription</span>
+                                    </button>
+                                    {/* Create Bill */}
                                     <button
                                       onClick={() => {
                                         setOpenMenuId(null);
-                                        {
-                                          const pid = resolvePatientDbId(apt);
-                                          if (!pid) return;
-                                          navigate(`/receipts?patient=${pid}&appointment=${apt.id}&quick=true&amount=0`);
-                                        }
+                                        const pid = resolvePatientDbId(apt);
+                                        if (!pid) return;
+                                        navigate(`/receipts?patient=${pid}&appointment=${apt.id}&quick=true&amount=0`);
                                       }}
-                                      className="w-full px-4 py-2.5 text-left text-sm hover:bg-purple-50 hover:text-purple-700 flex items-center gap-3 rounded-b-lg transition-colors"
+                                      className="w-full px-4 py-2.5 text-left text-sm hover:bg-purple-50 hover:text-purple-700 flex items-center gap-3 transition-colors border-b border-slate-100"
                                     >
                                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
                                       </svg>
                                       <span className="font-medium">Create Bill</span>
                                     </button>
-                                  </div>
+                                    <button
+                                      onClick={async () => {
+                                        setOpenMenuId(null);
+                                        try {
+                                          const pid = resolvePatientDbId(apt);
+                                          if (!pid) return;
+                                          const res = await api.get(`/api/bills?patient_id=${pid}&limit=1`);
+                                          const bill = res.data?.data?.bills?.[0] || res.data?.bills?.[0];
+                                          if (bill) {
+                                            navigate(`/receipts?receipt=${bill.id}`);
+                                          } else {
+                                            addToast('No bill found for this patient', 'info');
+                                          }
+                                        } catch { addToast('Failed to find bill', 'error'); }
+                                      }}
+                                      className="w-full px-4 py-2.5 text-left text-sm hover:bg-blue-50 hover:text-blue-700 flex items-center gap-3 transition-colors border-b border-slate-100"
+                                    >
+                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                      </svg>
+                                      <span className="font-medium">View Bill</span>
+                                    </button>
+                                    {/* Send Prescription on WhatsApp */}
+                                    <button
+                                      onClick={async () => {
+                                        setOpenMenuId(null);
+                                        try {
+                                          const pid = resolvePatientDbId(apt);
+                                          if (!pid) return;
+                                          const res = await api.get(`/api/prescriptions?patient_id=${pid}&limit=1`);
+                                          const rx = res.data?.data?.prescriptions?.[0] || res.data?.prescriptions?.[0];
+                                          if (rx) {
+                                            const phone = apt.patient_phone || apt.phone || '';
+                                            const cleanPhone = phone.replace(/\D/g, '');
+                                            const pdfUrl = window.location.origin + '/api/pdf/prescription/' + rx.id;
+                                            const msg = encodeURIComponent(
+                                              'Hello ' + (apt.patient_name || '') + ',\n\n' +
+                                              'Your prescription from ' + (rx.clinic_name || 'our clinic') + ':\n\n' +
+                                              'View/Download Prescription:\n' + pdfUrl
+                                            );
+                                            window.open('https://wa.me/' + (cleanPhone.startsWith('91') ? cleanPhone : '91' + cleanPhone) + '?text=' + msg, '_blank');
+                                          } else {
+                                            addToast('No prescription found to send', 'info');
+                                          }
+                                        } catch { addToast('Failed to send prescription', 'error'); }
+                                      }}
+                                      className="w-full px-4 py-2.5 text-left text-sm hover:bg-green-50 hover:text-green-700 flex items-center gap-3 transition-colors border-b border-slate-100"
+                                    >
+                                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                                        <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
+                                        <path d="M12 2C6.477 2 2 6.477 2 12c0 1.89.525 3.66 1.438 5.168L2 22l4.832-1.438A9.955 9.955 0 0012 22c5.523 0 10-4.477 10-10S17.523 2 12 2zm0 18a8 8 0 01-4.264-1.227l-.306-.182-2.87.852.852-2.87-.182-.306A8 8 0 1112 20z"/>
+                                      </svg>
+                                      <span className="font-medium">Send Prescription (WhatsApp)</span>
+                                    </button>
+                                    {/* Print Bill PDF */}
+                                    <button
+                                      onClick={async () => {
+                                        setOpenMenuId(null);
+                                        try {
+                                          const pid = resolvePatientDbId(apt);
+                                          if (!pid) return;
+                                          const res = await api.get(`/api/bills?patient_id=${pid}&limit=1`);
+                                          const bill = res.data?.data?.bills?.[0] || res.data?.bills?.[0];
+                                          if (bill) {
+                                            window.open(`/api/pdf/bill/${bill.id}`, '_blank');
+                                          } else {
+                                            addToast('No bill found for this patient', 'info');
+                                          }
+                                        } catch { addToast('Failed to find bill', 'error'); }
+                                      }}
+                                      className="w-full px-4 py-2.5 text-left text-sm hover:bg-orange-50 hover:text-orange-700 flex items-center gap-3 transition-colors border-b border-slate-100"
+                                    >
+                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                                      </svg>
+                                      <span className="font-medium">Print Bill</span>
+                                    </button>
+                                    {/* Edit Bill */}
+                                    <button
+                                      onClick={async () => {
+                                        setOpenMenuId(null);
+                                        try {
+                                          const pid = resolvePatientDbId(apt);
+                                          if (!pid) return;
+                                          const res = await api.get(`/api/bills?patient_id=${pid}&limit=1`);
+                                          const bill = res.data?.data?.bills?.[0] || res.data?.bills?.[0];
+                                          if (bill) {
+                                            navigate(`/receipts?edit=true&billId=${bill.id}`);
+                                          } else {
+                                            addToast('No bill found to edit', 'info');
+                                          }
+                                        } catch { addToast('Failed to find bill', 'error'); }
+                                      }}
+                                      className="w-full px-4 py-2.5 text-left text-sm hover:bg-yellow-50 hover:text-yellow-700 flex items-center gap-3 transition-colors border-b border-slate-100"
+                                    >
+                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                      </svg>
+                                      <span className="font-medium">Edit Bill</span>
+                                    </button>
+                                    {/* Send Bill on WhatsApp */}
+                                    <button
+                                      onClick={async () => {
+                                        setOpenMenuId(null);
+                                        try {
+                                          const pid = resolvePatientDbId(apt);
+                                          if (!pid) return;
+                                          const res = await api.get(`/api/bills?patient_id=${pid}&limit=1`);
+                                          const bill = res.data?.data?.bills?.[0] || res.data?.bills?.[0];
+                                          if (bill) {
+                                            const phone = apt.patient_phone || apt.phone || '';
+                                            const cleanPhone = phone.replace(/\D/g, '');
+                                            const pdfUrl = window.location.origin + '/api/pdf/bill/' + bill.id;
+                                            const msg = encodeURIComponent(
+                                              'Hello ' + (apt.patient_name || '') + ',\n\n' +
+                                              'Your bill from ' + (bill.clinic_name || 'our clinic') + ':\n' +
+                                              'Bill #: ' + (bill.bill_number || bill.id) + '\n' +
+                                              'Amount: Rs.' + (parseFloat(bill.total_amount) || 0).toFixed(2) + '\n\n' +
+                                              'View/Download Receipt:\n' + pdfUrl
+                                            );
+                                            window.open('https://wa.me/' + (cleanPhone.startsWith('91') ? cleanPhone : '91' + cleanPhone) + '?text=' + msg, '_blank');
+                                          } else {
+                                            addToast('No bill found to send', 'info');
+                                          }
+                                        } catch { addToast('Failed to send bill', 'error'); }
+                                      }}
+                                      className="w-full px-4 py-2.5 text-left text-sm hover:bg-green-50 hover:text-green-700 flex items-center gap-3 rounded-b-lg transition-colors"
+                                    >
+                                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                                        <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
+                                        <path d="M12 2C6.477 2 2 6.477 2 12c0 1.89.525 3.66 1.438 5.168L2 22l4.832-1.438A9.955 9.955 0 0012 22c5.523 0 10-4.477 10-10S17.523 2 12 2zm0 18a8 8 0 01-4.264-1.227l-.306-.182-2.87.852.852-2.87-.182-.306A8 8 0 1112 20z"/>
+                                      </svg>
+                                      <span className="font-medium">Send Bill (WhatsApp)</span>
+                                    </button>
+                                  </div>,
+                                  document.body
                                 )}
                               </div>
                             </div>

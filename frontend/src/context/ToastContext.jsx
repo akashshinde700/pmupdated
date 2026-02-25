@@ -1,8 +1,13 @@
-import { createContext, useMemo, useState, useCallback, useRef } from 'react';
+import { createContext, useMemo, useState, useCallback, useRef, useContext } from 'react';
 
 const ToastContext = createContext();
 
 export { ToastContext };
+
+// Convenience hook to consume the toast context
+export function useToast() {
+  return useContext(ToastContext);
+}
 
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([]);

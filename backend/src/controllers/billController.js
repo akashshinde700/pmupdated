@@ -2,6 +2,14 @@ const { getDb } = require('../config/db');
 const { sendSuccess, sendError } = require('../utils/responseHelper');
 const PDFDocument = require('pdfkit');
 
+// Generate bill number based on service name
+function generateBillNumber(serviceName) {
+  const date = new Date();
+  const dateStr = date.toISOString().split('T')[0].replace(/-/g, '');
+  const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+  return `${serviceName || 'CONSULT'}${dateStr}${random}`;
+}
+
 async function hasBillsColumn(db, columnName) {
   try {
     const [cols] = await db.execute(
@@ -62,14 +70,15 @@ async function getClinicSettings(req, res) {
 async function listBills(req, res) {
   try {
     console.log('🔍 listBills called with query:', req.query);
-    const { 
-      page = 1, 
-      limit = 50, 
-      search, 
-      name, 
-      uhid, 
-      phone, 
-      payment_status, 
+    const {
+      page = 1,
+      limit = 50,
+      search,
+      name,
+      uhid,
+      phone,
+      patient_id,
+      payment_status,
       start_date,
       end_date
     } = req.query;
@@ -82,6 +91,12 @@ async function listBills(req, res) {
     // Build WHERE clause
     let whereSql = 'WHERE 1=1';
     const params = [];
+
+    // Patient ID filter (for queue actions)
+    if (patient_id) {
+      whereSql += ' AND b.patient_id = ?';
+      params.push(patient_id);
+    }
 
     // Payment status filter
     if (payment_status) {
@@ -129,12 +144,16 @@ async function listBills(req, res) {
         b.bill_number,
         b.total_amount,
         b.amount_paid,
+        b.balance_due,
         b.payment_status,
+        b.payment_method,
         b.bill_date,
         b.created_at,
-        p.patient_id as uhid,
+        p.patient_id as patient_uhid,
         p.name as patient_name,
-        p.phone as patient_phone
+        p.phone as patient_phone,
+        (SELECT bi.service_name FROM bill_items bi
+         WHERE bi.bill_id = b.id ORDER BY bi.id LIMIT 1) as service_name
       FROM bills b
       LEFT JOIN patients p ON b.patient_id = p.id
       ${whereSql}
@@ -322,7 +341,13 @@ async function addBill(req, res) {
     const appointment_id = body.appointment_id || body.appointmentId || null;
     const clinic_id = body.clinic_id || req.user?.clinic_id || null;
     const doctor_id = body.doctor_id || null;
-    const bill_number = body.bill_number || null;
+    
+    // Generate bill number based on first service name
+    const itemsArray = Array.isArray(body.items) ? body.items : [];
+    const serviceItemsArray = Array.isArray(body.service_items) ? body.service_items : [];
+    const allItems = itemsArray.length > 0 ? itemsArray : serviceItemsArray;
+    const firstService = allItems.length > 0 ? (allItems[0].service_name || allItems[0].service || allItems[0].name || allItems[0].item_name) : null;
+    const bill_number = body.bill_number || generateBillNumber(firstService);
     const template_id = body.template_id || null;
     const subtotal = body.subtotal || body.amount || 0;
     const discount_percent = body.discount_percent || 0;
@@ -335,6 +360,8 @@ async function addBill(req, res) {
     const payment_method = body.payment_method || 'cash';
     const payment_reference = body.payment_reference || body.payment_id || null;
     const payment_status = body.payment_status || 'pending';
+    const cash_component = body.cash_component != null ? parseFloat(body.cash_component) : null;
+    const other_component = body.other_component != null ? parseFloat(body.other_component) : null;
     // Bill line items (support both shapes used across frontend/pages)
     // - items: internal/legacy shape
     // - service_items: receipts page shape
@@ -364,6 +391,20 @@ async function addBill(req, res) {
       return res.status(400).json({ error: 'Patient ID is required' });
     }
 
+    // Validate appointment_id if provided — avoid FK constraint failure
+    let validAppointmentId = appointment_id;
+    if (appointment_id) {
+      try {
+        const [apptRows] = await db.execute('SELECT id FROM appointments WHERE id = ?', [appointment_id]);
+        if (apptRows.length === 0) {
+          console.warn(`Bill creation: appointment ${appointment_id} not found, creating bill without appointment link`);
+          validAppointmentId = null;
+        }
+      } catch (_e) {
+        validAppointmentId = null;
+      }
+    }
+
     // Allow multiple bills per patient - no duplicate check
 
     // Detect whether bills table has appointment_id column (for backward-compatible schemas)
@@ -377,39 +418,58 @@ async function addBill(req, res) {
       hasAppointmentId = false;
     }
 
+    // Ensure split-payment tracking columns exist (auto-migrate once per process)
+    let hasSplitCols = false;
+    try {
+      const [splitColRows] = await db.execute(
+        "SELECT column_name FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'bills' AND column_name IN ('cash_component','other_component')"
+      );
+      const existingCols = (splitColRows || []).map(c => c.column_name || c.COLUMN_NAME);
+      if (!existingCols.includes('cash_component')) {
+        await db.execute("ALTER TABLE bills ADD COLUMN cash_component DECIMAL(10,2) DEFAULT NULL");
+      }
+      if (!existingCols.includes('other_component')) {
+        await db.execute("ALTER TABLE bills ADD COLUMN other_component DECIMAL(10,2) DEFAULT NULL");
+      }
+      hasSplitCols = true;
+    } catch (_e) { hasSplitCols = false; }
+
+    // Build INSERT SQL dynamically (include split columns when available)
+    const splitColSql = hasSplitCols ? ', cash_component, other_component' : '';
+    const splitPhSql  = hasSplitCols ? ', ?, ?' : '';
+    const splitVals   = hasSplitCols ? [cash_component, other_component] : [];
+
     // Create bill
     const insertSql = hasAppointmentId
-      ? `
-        INSERT INTO bills (
+      ? `INSERT INTO bills (
           patient_id, appointment_id, clinic_id, doctor_id, bill_number, template_id,
           subtotal, discount_percent, discount_amount, tax_percent, tax_amount,
           total_amount, amount_paid, balance_due, payment_method, payment_reference,
-          payment_status, bill_date, due_date, notes, created_by
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `
-      : `
-        INSERT INTO bills (
+          payment_status, bill_date, due_date, notes, created_by${splitColSql}
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${splitPhSql})`
+      : `INSERT INTO bills (
           patient_id, clinic_id, doctor_id, bill_number, template_id,
           subtotal, discount_percent, discount_amount, tax_percent, tax_amount,
           total_amount, amount_paid, balance_due, payment_method, payment_reference,
-          payment_status, bill_date, due_date, notes, created_by
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `;
+          payment_status, bill_date, due_date, notes, created_by${splitColSql}
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${splitPhSql})`;
 
     const insertParams = hasAppointmentId
       ? [
-          patient_id, appointment_id,
+          patient_id, validAppointmentId,
           clinic_id, doctor_id, bill_number, template_id,
           subtotal, discount_percent, discount_amount, tax_percent, tax_amount,
           total_amount, amount_paid, balance_due, payment_method, payment_reference,
-          final_payment_status, bill_date, due_date, notes, req.user.id
+          final_payment_status, bill_date, due_date, notes, req.user.id,
+          ...splitVals
         ]
       : [
           patient_id,
           clinic_id, doctor_id, bill_number, template_id,
           subtotal, discount_percent, discount_amount, tax_percent, tax_amount,
           total_amount, amount_paid, balance_due, payment_method, payment_reference,
-          final_payment_status, bill_date, due_date, notes, req.user.id
+          final_payment_status, bill_date, due_date, notes, req.user.id,
+          ...splitVals
         ];
 
     const [result] = await db.execute(insertSql, insertParams);
@@ -481,8 +541,10 @@ async function addBill(req, res) {
       console.log('⚠️ DEBUG: No normalized items to insert');
     }
 
-    // Update patient statistics
-    await db.execute('CALL sp_update_patient_stats(?)', [patient_id]);
+    // Update patient statistics (best-effort — don't fail bill creation if SP is missing)
+    try {
+      await db.execute('CALL sp_update_patient_stats(?)', [patient_id]);
+    } catch (_spErr) { /* stored procedure may not exist in all environments */ }
 
     // Fetch the complete bill with items to return to frontend
     const [billData] = await db.execute(
@@ -541,6 +603,28 @@ async function updateBill(req, res) {
     delete updates.items;
     delete updates.service_items;
 
+    // Normalize payment_status: map legacy values to DB ENUM values
+    if (updates.payment_status) {
+      const statusMap = { 'completed': 'paid', 'failed': 'cancelled', 'success': 'paid' };
+      updates.payment_status = statusMap[updates.payment_status] || updates.payment_status;
+    }
+
+    // Auto-calculate balance_due and normalize payment_status based on amount_paid
+    if (updates.amount_paid !== undefined || updates.total_amount !== undefined) {
+      const [currentBill] = await db.execute('SELECT total_amount, amount_paid FROM bills WHERE id = ?', [id]);
+      if (currentBill.length > 0) {
+        const total = parseFloat(updates.total_amount ?? currentBill[0].total_amount) || 0;
+        const paid = parseFloat(updates.amount_paid ?? currentBill[0].amount_paid) || 0;
+        updates.balance_due = Math.max(0, total - paid);
+        // Auto-determine status from amounts if not explicitly overridden
+        if (updates.amount_paid !== undefined && !updates.payment_status) {
+          if (paid >= total && total > 0) updates.payment_status = 'paid';
+          else if (paid > 0) updates.payment_status = 'partial';
+          else updates.payment_status = 'pending';
+        }
+      }
+    }
+
     // Map frontend field names to database column names
     const fieldMapping = {
       'amount': 'subtotal',
@@ -563,7 +647,7 @@ async function updateBill(req, res) {
       'template_id', 'subtotal', 'discount_percent', 'discount_amount',
       'tax_percent', 'tax_amount', 'total_amount', 'amount_paid', 'balance_due',
       'payment_method', 'payment_reference', 'payment_status', 'bill_date',
-      'due_date', 'notes'
+      'due_date', 'notes', 'cash_component', 'other_component'
     ];
 
     // Filter to only valid columns
@@ -599,6 +683,30 @@ async function updateBill(req, res) {
     `;
 
     await db.execute(updateQuery, [...updateParams, req.user.id, id]);
+
+    // Sync payment_status to linked appointment and queue
+    if (updates.payment_status) {
+      try {
+        const hasAppointmentId = await hasBillsColumn(db, 'appointment_id');
+        if (hasAppointmentId) {
+          const [rows] = await db.execute('SELECT appointment_id FROM bills WHERE id = ? LIMIT 1', [id]);
+          const appointmentId = rows && rows[0] && rows[0].appointment_id;
+          if (appointmentId) {
+            await db.execute(
+              'UPDATE appointments SET payment_status = ?, updated_at = NOW() WHERE id = ?',
+              [updates.payment_status, appointmentId]
+            ).catch(() => {});
+            // Mark queue billed when paid
+            if (updates.payment_status === 'paid') {
+              await db.execute(
+                "UPDATE queue SET visit_status = 'billed', completed_at = IFNULL(completed_at, NOW()) WHERE appointment_id = ?",
+                [appointmentId]
+              ).catch(() => {});
+            }
+          }
+        }
+      } catch (_e) { /* ignore sync errors */ }
+    }
 
     // Update bill items if provided (support both items and service_items)
     const hasItems = Array.isArray(itemsArray);

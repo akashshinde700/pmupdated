@@ -12,6 +12,7 @@ async function getAllReferrals(req, res) {
     let query = `
       SELECT pr.*,
              p.name as patient_name, p.patient_id as uhid, p.phone as patient_phone,
+             p.age_years as patient_age, p.gender as patient_gender,
              u1.name as referring_doctor_name,
              u2.name as referred_to_doctor_name
       FROM patient_referrals pr
@@ -313,14 +314,14 @@ async function addToNetwork(req, res) {
     `, [
       userId,
       network_doctor_name,
-      network_doctor_phone,
-      network_doctor_email,
-      specialization,
-      hospital_name,
-      hospital_address,
-      city,
-      state,
-      notes,
+      network_doctor_phone || null,
+      network_doctor_email || null,
+      specialization || null,
+      hospital_name || null,
+      hospital_address || null,
+      city || null,
+      state || null,
+      notes || null,
       is_preferred || 0
     ]);
 

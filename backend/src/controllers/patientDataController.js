@@ -192,11 +192,13 @@ async function listVitals(req, res) {
         Temperature: v.temp,
         Height: v.height_cm,
         Weight: v.weight_kg,
-        BMI: v.bmi, // Use BMI from database
+        BMI: v.bmi,
         'Pulse Rate': v.pulse,
+        'Blood Pressure': v.blood_pressure,
+        'SpO2': v.spo2,
         'HOMA-IR': null,
         'Waist Hip Ratio': null,
-        date: v.recorded_at ? new Date(v.recorded_at).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10)
+        date: v.date ? new Date(v.date).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10)
       };
     });
     

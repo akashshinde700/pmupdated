@@ -24,6 +24,12 @@ async function listPrescriptions(req, res) {
          p.doctor_id,
          p.chief_complaint,
          p.diagnosis,
+         p.advice,
+         p.follow_up_days,
+         p.follow_up_date,
+         p.patient_notes,
+         p.prescribed_date,
+         p.lab_advice,
          p.created_at,
          p.updated_at,
          u.name AS doctor_name,
@@ -50,17 +56,39 @@ async function listPrescriptions(req, res) {
       const placeholders = prescriptionIds.map(() => '?').join(',');
       const [allItems] = await db.execute(
         `SELECT
+           pi.id,
            pi.prescription_id,
+           pi.medicine_name,
            m.name AS medication_name,
+           m.generic_name,
            pi.dosage,
            pi.frequency,
            pi.duration,
-           pi.notes AS instructions
+           pi.timing,
+           pi.quantity,
+           pi.notes AS instructions,
+           pi.is_tapering
          FROM prescription_items pi
          LEFT JOIN medicines m ON m.id = pi.medicine_id
-         WHERE pi.prescription_id IN (${placeholders})`,
+         WHERE pi.prescription_id IN (${placeholders})
+         ORDER BY pi.sort_order ASC, pi.id ASC`,
         prescriptionIds
       );
+
+      // Load tapering schedules for tapering items
+      for (const item of allItems) {
+        item.medication_name = item.medication_name || item.medicine_name;
+        if (item.is_tapering) {
+          const [steps] = await db.execute(
+            `SELECT step_number, dose, frequency, duration_days
+             FROM tapering_schedules WHERE prescription_item_id = ? ORDER BY step_number ASC`,
+            [item.id]
+          );
+          item.tapering_schedule = steps;
+        } else {
+          item.tapering_schedule = [];
+        }
+      }
 
       // Group items by prescription_id
       const itemsByPrescriptionId = {};
@@ -248,7 +276,9 @@ async function addPrescription(req, res) {
       follow_up_days = null,
       follow_up_date = null,
       patient_notes = '',
-      private_notes = ''
+      private_notes = '',
+      lab_advice = '',
+      lab_remarks = ''
     } = req.body;
 
     // Request body logged (remove for production if needed)
@@ -389,6 +419,21 @@ async function addPrescription(req, res) {
       // Log but don't block on validation errors
     }
 
+    // Validate appointment_id if provided (must happen before any inserts that reference it)
+    let validAppointmentId = null;
+    if (appointment_id) {
+      const [appointment] = await db.execute(
+        'SELECT id FROM appointments WHERE id = ?',
+        [appointment_id]
+      );
+      if (appointment.length === 0) {
+        console.warn(`Appointment ${appointment_id} not found, creating prescription without appointment link`);
+        validAppointmentId = null;
+      } else {
+        validAppointmentId = appointment_id;
+      }
+    }
+
     // 2.5) Vitals-first enforcement (policy via env REQUIRE_VITALS_BEFORE_DIAGNOSIS)
     const requireVitals = (process.env.REQUIRE_VITALS_BEFORE_DIAGNOSIS || 'false').toLowerCase() === 'true';
     if (requireVitals) {
@@ -399,7 +444,7 @@ async function addPrescription(req, res) {
            AND (appointment_id = ? OR DATE(recorded_at) = CURDATE())
          ORDER BY recorded_at DESC
          LIMIT 1`,
-        [patient_id, appointment_id || null]
+        [patient_id, validAppointmentId]
       );
       if (vitalsRows.length === 0) {
         return res.status(400).json({ error: 'Vitals required before diagnosis/prescription' });
@@ -413,14 +458,14 @@ async function addPrescription(req, res) {
       if (vitals.height && vitals.weight) {
         bmi = (vitals.weight / ((vitals.height / 100) ** 2)).toFixed(2);
       }
-      
+
       await db.execute(
-        `INSERT INTO patient_vitals 
+        `INSERT INTO patient_vitals
            (patient_id, appointment_id, height_cm, weight_kg, bmi, blood_pressure, pulse, temperature, spo2)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           patient_id,
-          appointment_id || null,
+          validAppointmentId,
           vitals.height || null,
           vitals.weight || null,
           bmi,
@@ -435,21 +480,6 @@ async function addPrescription(req, res) {
     // 3) Main prescription row (first medication summary + combined instructions)
     const firstMed = medications[0];
     const combinedInstructions = [advice, patient_notes].filter(Boolean).join('\n');
-
-    // Validate appointment_id if provided
-    let validAppointmentId = null;
-    if (appointment_id) {
-      const [appointment] = await db.execute(
-        'SELECT id FROM appointments WHERE id = ?',
-        [appointment_id]
-      );
-      if (appointment.length === 0) {
-        console.warn(`Appointment ${appointment_id} not found, creating prescription without appointment link`);
-        validAppointmentId = null;
-      } else {
-        validAppointmentId = appointment_id;
-      }
-    }
 
     // Get clinic_id from doctor record
     let clinicId = null;
@@ -478,8 +508,8 @@ async function addPrescription(req, res) {
     const [rxResult] = await db.execute(
       `INSERT INTO prescriptions (
          patient_id, doctor_id, clinic_id, appointment_id, template_id,
-         chief_complaint, diagnosis, advice, follow_up_date, follow_up_days, patient_notes, private_notes, prescribed_date, status
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), 'active')`,
+         chief_complaint, diagnosis, advice, follow_up_date, follow_up_days, patient_notes, private_notes, lab_advice, lab_remarks, prescribed_date, status
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), 'active')`,
       [
         patient_id,
         finalDoctorId,
@@ -492,7 +522,9 @@ async function addPrescription(req, res) {
         follow_up_date || null,
         follow_up_days !== null && follow_up_days !== undefined ? parseInt(follow_up_days, 10) : null,
         patient_notes || null,
-        private_notes || null
+        private_notes || null,
+        lab_advice || null,
+        lab_remarks || null
       ]
     );
 
@@ -549,10 +581,10 @@ async function addPrescription(req, res) {
         }
       }
 
-      await db.execute(
+      const [itemResult] = await db.execute(
         `INSERT INTO prescription_items (
-           prescription_id, medicine_id, medicine_name, dosage, frequency, duration, timing, quantity, notes
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           prescription_id, medicine_id, medicine_name, dosage, frequency, duration, timing, quantity, notes, is_tapering
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           prescriptionId,
           medicineId,
@@ -562,9 +594,28 @@ async function addPrescription(req, res) {
           med.duration || '',
           med.timing || null,
           med.quantity || 0,
-          med.instructions || med.remarks || ''
+          med.instructions || med.remarks || '',
+          med.is_tapering ? 1 : 0
         ]
       );
+
+      // Save tapering schedule if present
+      if (med.is_tapering && Array.isArray(med.tapering_schedule) && med.tapering_schedule.length > 0) {
+        const itemId = itemResult.insertId;
+        for (const step of med.tapering_schedule) {
+          await db.execute(
+            `INSERT INTO tapering_schedules (prescription_item_id, step_number, dose, frequency, duration_days)
+             VALUES (?, ?, ?, ?, ?)`,
+            [
+              itemId,
+              step.step_number || 1,
+              step.dose || '',
+              step.frequency || '',
+              step.duration_days || 1
+            ]
+          );
+        }
+      }
     }
 
     // 5) Update appointment notes / reason from symptoms / diagnosis
@@ -598,7 +649,7 @@ async function addPrescription(req, res) {
          VALUES (?, ?, ?, ?, ?, ?)`,
         [
           patient_id,
-          appointment_id || null,
+          validAppointmentId,
           advice || null,
           follow_up_days !== null && follow_up_days !== undefined ? parseInt(follow_up_days, 10) : null,
           nextVisit ? new Date(nextVisit.getTime() - nextVisit.getTimezoneOffset() * 60000).toISOString().slice(0, 10) : null,
@@ -608,13 +659,13 @@ async function addPrescription(req, res) {
     }
 
     // 6) Follow-up creation (if date + appointment provided)
-    if (follow_up_date && appointment_id) {
+    if (follow_up_date && validAppointmentId) {
       // Creating follow-up appointment
       await db.execute(
         `INSERT INTO appointment_followups (
            appointment_id, followup_date, reason, status, created_at
          ) VALUES (?, ?, ?, 'pending', NOW())`,
-        [appointment_id, follow_up_date, 'Follow-up visit']
+        [validAppointmentId, follow_up_date, 'Follow-up visit']
       );
       // Logging removed for production
     } else {
@@ -709,7 +760,7 @@ async function getPrescription(req, res) {
 
     // Medications
     const [items] = await db.execute(
-      `SELECT 
+      `SELECT
          pi.*,
          m.name AS medication_name,
          m.generic_name
@@ -718,6 +769,23 @@ async function getPrescription(req, res) {
        WHERE pi.prescription_id = ?`,
       [id]
     );
+
+    // Load tapering schedules for tapering medications
+    for (const item of items) {
+      if (item.is_tapering) {
+        const [steps] = await db.execute(
+          `SELECT step_number, dose, frequency, duration_days
+           FROM tapering_schedules
+           WHERE prescription_item_id = ?
+           ORDER BY step_number ASC`,
+          [item.id]
+        );
+        item.tapering_schedule = steps;
+      } else {
+        item.tapering_schedule = [];
+      }
+    }
+
     rx.medications = items;
 
     // Vitals (from appointment, if any)
@@ -968,6 +1036,18 @@ async function getLastPrescription(req, res) {
       [prescription.id]
     );
 
+    // Load tapering schedules
+    for (const med of medications) {
+      if (med.is_tapering) {
+        const [steps] = await db.execute(
+          `SELECT step_number, dose, frequency, duration_days
+           FROM tapering_schedules WHERE prescription_item_id = ? ORDER BY step_number ASC`,
+          [med.id]
+        );
+        med.tapering_schedule = steps;
+      }
+    }
+
     prescription.medications = medications.map(med => ({
       medication_name: med.medication_name,
       generic_name: med.generic_name,
@@ -975,7 +1055,9 @@ async function getLastPrescription(req, res) {
       dosage: med.dosage,
       frequency: med.frequency,
       duration: med.duration,
-      instructions: med.notes
+      instructions: med.notes,
+      is_tapering: med.is_tapering || 0,
+      tapering_schedule: med.tapering_schedule || []
     }));
 
     // Get vitals if available
@@ -1186,43 +1268,74 @@ async function searchPrescriptions(req, res) {
       start_date,
       end_date,
       status,
+      patient_id,
       q,
       page = 1,
       limit = 20
     } = req.query;
 
-    const p = [];
+    const db = getDb();
+    const params = [];
     const where = [];
 
-    // Date range filter (default to today if not provided)
+    // Patient ID filter (for queue actions)
+    if (patient_id) {
+      where.push('p.patient_id = ?');
+      params.push(patient_id);
+    }
+
+    // Date range filter
     if (start_date && end_date) {
       where.push('p.prescribed_date BETWEEN ? AND ?');
-      p.push(start_date, end_date);
-    } else {
-      // default: today
-      where.push('p.prescribed_date = CURDATE()');
+      params.push(start_date, end_date);
     }
 
     if (status) {
       where.push('p.status = ?');
-      p.push(status);
+      params.push(status);
     }
 
     if (q) {
       where.push('(pt.name LIKE ? OR pt.patient_id LIKE ? OR u.name LIKE ?)');
       const like = `%${q}%`;
-      p.push(like, like, like);
+      params.push(like, like, like);
     }
 
     const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
 
     const pageNum = Math.max(parseInt(page, 10) || 1, 1);
-    const lim = Math.max(parseInt(limit, 10) || 20, 1);
+    const lim = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 100);
     const off = (pageNum - 1) * lim;
 
+    const [prescriptions] = await db.execute(
+      `SELECT p.id, p.patient_id, p.doctor_id, p.prescribed_date, p.status,
+              p.chief_complaint, p.diagnosis, p.advice,
+              pt.name AS patient_name, pt.patient_id AS uhid,
+              u.name AS doctor_name
+       FROM prescriptions p
+       LEFT JOIN patients pt ON p.patient_id = pt.id
+       LEFT JOIN doctors d ON p.doctor_id = d.id
+       LEFT JOIN users u ON d.user_id = u.id
+       ${whereSql}
+       ORDER BY p.created_at DESC
+       LIMIT ${lim} OFFSET ${off}`,
+      params
+    );
+
+    const countParams = [...params];
+    const [countResult] = await db.execute(
+      `SELECT COUNT(*) as total FROM prescriptions p
+       LEFT JOIN patients pt ON p.patient_id = pt.id
+       LEFT JOIN doctors d ON p.doctor_id = d.id
+       LEFT JOIN users u ON d.user_id = u.id
+       ${whereSql}`,
+      countParams
+    );
+    const total = countResult[0].total;
+
     sendSuccess(res, {
-      prescriptions: [{id:1,patient_id:1,doctor_id:1,prescribed_date:new Date(),status:'active'}],
-      pagination: { page: 1, limit: 1, total: 1, pages: 1 }
+      prescriptions,
+      pagination: { page: pageNum, limit: lim, total, pages: Math.ceil(total / lim) }
     }, 'Prescriptions retrieved successfully');
   } catch (error) {
     console.error('Prescriptions search error:', error);

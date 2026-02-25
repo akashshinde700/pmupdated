@@ -1,15 +1,13 @@
 const { getDb } = require('../config/db');
 const { sendValidationError, sendConflict, sendCreated, sendSuccess, sendError, sendNotFound } = require('../utils/responseHelper');
+const { generateUHID } = require('../utils/uhidHelper');
 
-async function generateExternalPatientId(db) {
-  // Try a few times to generate a unique external patient_id
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const candidate = `PAT${String(Date.now()).slice(-8)}${Math.floor(Math.random() * 9000 + 1000)}`;
-    const [rows] = await db.execute('SELECT id FROM patients WHERE patient_id = ? LIMIT 1', [candidate]);
-    if (rows.length === 0) return candidate;
-    // small delay could be added here if needed
+async function generateExternalPatientId(db, doctorId) {
+  try {
+    return await generateUHID(db, doctorId);
+  } catch {
+    return 'DRA' + Date.now();
   }
-  throw new Error('Unable to generate unique patient_id');
 }
 
 async function addAppointmentIntent(req, res) {
@@ -75,7 +73,7 @@ async function addAppointmentIntent(req, res) {
       } else {
         // Create new patient
         // Generate a safe unique external patient_id
-        const externalPatientId = await generateExternalPatientId(db);
+        const externalPatientId = await generateExternalPatientId(db, doctorId);
 
         const [patientResult] = await db.execute(
           `INSERT INTO patients (patient_id, name, phone, email, gender, clinic_id, primary_doctor_id, created_at)

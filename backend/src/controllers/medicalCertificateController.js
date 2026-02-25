@@ -2,11 +2,82 @@
 const { getDb } = require('../config/db');
 
 /**
+ * Ensure medical_certificates table exists with all required columns
+ */
+async function ensureMedicalCertTableExists(db) {
+  try {
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS medical_certificates (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        patient_id INT NOT NULL,
+        doctor_name VARCHAR(255) NOT NULL,
+        doctor_registration_no VARCHAR(100) DEFAULT NULL,
+        doctor_qualification VARCHAR(255) DEFAULT NULL,
+        type_id INT DEFAULT NULL,
+        certificate_title VARCHAR(255) NOT NULL,
+        diagnosis TEXT DEFAULT NULL,
+        certificate_content MEDIUMTEXT NOT NULL,
+        issued_date DATE NOT NULL,
+        valid_from DATE DEFAULT NULL,
+        valid_until DATE DEFAULT NULL,
+        resume_date DATE DEFAULT NULL,
+        notes TEXT DEFAULT NULL,
+        header_image MEDIUMTEXT DEFAULT NULL,
+        footer_image MEDIUMTEXT DEFAULT NULL,
+        clinic_id INT DEFAULT NULL,
+        created_by INT DEFAULT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    `);
+    // Add any missing columns for existing tables (covers old schema upgrades)
+    const [cols] = await db.execute(
+      "SELECT column_name FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'medical_certificates'"
+    );
+    const existingCols = cols.map(c => (c.column_name || c.COLUMN_NAME).toLowerCase());
+    const toAdd = [
+      ['doctor_name',           "VARCHAR(255) NOT NULL DEFAULT ''"],
+      ['doctor_registration_no','VARCHAR(100) DEFAULT NULL'],
+      ['doctor_qualification',  'VARCHAR(255) DEFAULT NULL'],
+      ['type_id',               'INT DEFAULT NULL'],
+      ['certificate_title',     "VARCHAR(255) NOT NULL DEFAULT ''"],
+      ['diagnosis',             'TEXT DEFAULT NULL'],
+      ['certificate_content',   'MEDIUMTEXT DEFAULT NULL'],
+      ['issued_date',           'DATE DEFAULT NULL'],
+      ['valid_from',            'DATE DEFAULT NULL'],
+      ['valid_until',           'DATE DEFAULT NULL'],
+      ['resume_date',           'DATE DEFAULT NULL'],
+      ['notes',                 'TEXT DEFAULT NULL'],
+      ['header_image',          'MEDIUMTEXT DEFAULT NULL'],
+      ['footer_image',          'MEDIUMTEXT DEFAULT NULL'],
+      ['clinic_id',             'INT DEFAULT NULL'],
+      ['created_by',            'INT DEFAULT NULL'],
+    ];
+    for (const [colName, colDef] of toAdd) {
+      if (!existingCols.includes(colName)) {
+        await db.execute(`ALTER TABLE medical_certificates ADD COLUMN ${colName} ${colDef}`);
+      }
+    }
+    // Ensure nullable columns truly allow NULL (old tables may have NOT NULL constraints)
+    const nullableFixes = ['clinic_id', 'created_by', 'type_id', 'valid_from', 'valid_until', 'resume_date'];
+    for (const col of nullableFixes) {
+      if (existingCols.includes(col)) {
+        try {
+          await db.execute(`ALTER TABLE medical_certificates MODIFY COLUMN ${col} INT DEFAULT NULL`);
+        } catch (_) { /* ignore — column may be a different type or already nullable */ }
+      }
+    }
+  } catch (err) {
+    console.error('medical_certificates migration error:', err.message);
+  }
+}
+
+/**
  * List all medical certificates with patient info
  */
 async function listMedicalCertificates(req, res) {
   try {
-    const { patient_id, certificate_type, from_date, to_date, page = 1, limit = 20 } = req.query;
+    const { patient_id, type_id, from_date, to_date, page = 1, limit = 20 } = req.query;
     const db = getDb();
 
     let where = 'WHERE 1=1';
@@ -17,9 +88,9 @@ async function listMedicalCertificates(req, res) {
       params.push(patient_id);
     }
 
-    if (certificate_type) {
-      where += ' AND mc.certificate_type = ?';
-      params.push(certificate_type);
+    if (type_id) {
+      where += ' AND mc.type_id = ?';
+      params.push(type_id);
     }
 
     if (from_date) {
@@ -40,6 +111,7 @@ async function listMedicalCertificates(req, res) {
     const dataSql = `
       SELECT
         mc.*,
+        ct.name as certificate_type_name,
         p.name as patient_name,
         p.patient_id as patient_identifier,
         p.dob,
@@ -48,6 +120,7 @@ async function listMedicalCertificates(req, res) {
         c.name as clinic_name,
         u.name as created_by_username
       FROM medical_certificates mc
+      LEFT JOIN certificate_types ct ON mc.type_id = ct.id
       LEFT JOIN patients p ON mc.patient_id = p.id
       LEFT JOIN clinics c ON mc.clinic_id = c.id
       LEFT JOIN users u ON mc.created_by = u.id
@@ -82,6 +155,7 @@ async function getMedicalCertificate(req, res) {
     const [rows] = await db.execute(
       `SELECT
         mc.*,
+        ct.name as certificate_type_name,
         p.name as patient_name,
         p.patient_id as patient_identifier,
         p.dob,
@@ -94,6 +168,7 @@ async function getMedicalCertificate(req, res) {
         c.phone as clinic_phone,
         u.name as created_by_username
       FROM medical_certificates mc
+      LEFT JOIN certificate_types ct ON mc.type_id = ct.id
       LEFT JOIN patients p ON mc.patient_id = p.id
       LEFT JOIN clinics c ON mc.clinic_id = c.id
       LEFT JOIN users u ON mc.created_by = u.id
@@ -122,47 +197,67 @@ async function createMedicalCertificate(req, res) {
       doctor_name,
       doctor_registration_no,
       doctor_qualification,
-      certificate_type,
+      type_id,
       certificate_title,
       diagnosis,
       certificate_content,
       issued_date,
       valid_from,
       valid_until,
+      resume_date,
       notes,
+      header_image,
+      footer_image,
       clinic_id
     } = req.body;
 
-    if (!patient_id || !doctor_name || !certificate_type || !certificate_title || !certificate_content || !issued_date) {
+    if (!patient_id || !doctor_name || !type_id || !certificate_title || !issued_date) {
       return res.status(400).json({
-        error: 'patient_id, doctor_name, certificate_type, certificate_title, certificate_content, and issued_date are required'
+        error: 'patient_id, doctor_name, type_id, certificate_title, and issued_date are required'
       });
     }
 
     const db = getDb();
+    // Ensure table + all columns exist before inserting
+    await ensureMedicalCertTableExists(db);
     const created_by = req.user?.id || null;
+
+    // Resolve clinic_id: use request value, or look up from user record
+    let resolvedClinicId = clinic_id || null;
+    if (!resolvedClinicId && created_by) {
+      try {
+        const [userRows] = await db.execute(
+          'SELECT clinic_id FROM users WHERE id = ?', [created_by]
+        );
+        resolvedClinicId = userRows[0]?.clinic_id || null;
+      } catch (_) { /* clinic_id remains null — column will be nullable after migration */ }
+    }
 
     const [result] = await db.execute(
       `INSERT INTO medical_certificates (
         patient_id, doctor_name, doctor_registration_no, doctor_qualification,
-        certificate_type, certificate_title, diagnosis, certificate_content,
-        issued_date, valid_from, valid_until, notes, created_by, clinic_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        type_id, certificate_title, diagnosis, certificate_content,
+        issued_date, valid_from, valid_until, resume_date,
+        notes, header_image, footer_image, created_by, clinic_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         patient_id,
         doctor_name,
         doctor_registration_no || null,
         doctor_qualification || null,
-        certificate_type,
+        type_id,
         certificate_title,
         diagnosis || null,
-        certificate_content,
+        certificate_content || '',
         issued_date,
         valid_from || null,
         valid_until || null,
+        resume_date || null,
         notes || null,
+        header_image || null,
+        footer_image || null,
         created_by,
-        clinic_id || null
+        resolvedClinicId
       ]
     );
 
@@ -187,7 +282,7 @@ async function updateMedicalCertificate(req, res) {
       doctor_name,
       doctor_registration_no,
       doctor_qualification,
-      certificate_type,
+      type_id,
       certificate_title,
       diagnosis,
       certificate_content,
@@ -210,7 +305,7 @@ async function updateMedicalCertificate(req, res) {
         doctor_name = ?,
         doctor_registration_no = ?,
         doctor_qualification = ?,
-        certificate_type = ?,
+        type_id = ?,
         certificate_title = ?,
         diagnosis = ?,
         certificate_content = ?,
@@ -223,7 +318,7 @@ async function updateMedicalCertificate(req, res) {
         doctor_name,
         doctor_registration_no || null,
         doctor_qualification || null,
-        certificate_type,
+        type_id,
         certificate_title,
         diagnosis || null,
         certificate_content,
@@ -274,15 +369,15 @@ async function deleteMedicalCertificate(req, res) {
  */
 async function listCertificateTemplates(req, res) {
   try {
-    const { certificate_type, clinic_id } = req.query;
+    const { type_id, clinic_id } = req.query;
     const db = getDb();
 
     let where = 'WHERE 1=1';
     const params = [];
 
-    if (certificate_type) {
-      where += ' AND certificate_type = ?';
-      params.push(certificate_type);
+    if (type_id) {
+      where += ' AND type_id = ?';
+      params.push(type_id);
     }
 
     if (clinic_id) {
@@ -333,7 +428,7 @@ async function createCertificateTemplate(req, res) {
   try {
     const {
       template_name,
-      certificate_type,
+      type_id,
       template_content,
       header_image,
       footer_image,
@@ -341,9 +436,9 @@ async function createCertificateTemplate(req, res) {
       is_default = false
     } = req.body;
 
-    if (!template_name || !certificate_type || !template_content) {
+    if (!template_name || !type_id || !template_content) {
       return res.status(400).json({
-        error: 'template_name, certificate_type, and template_content are required'
+        error: 'template_name, type_id, and template_content are required'
       });
     }
 
@@ -353,24 +448,24 @@ async function createCertificateTemplate(req, res) {
     if (is_default) {
       if (clinic_id) {
         await db.execute(
-          'UPDATE medical_certificate_templates SET is_default = 0 WHERE certificate_type = ? AND clinic_id = ?',
-          [certificate_type, clinic_id]
+          'UPDATE medical_certificate_templates SET is_default = 0 WHERE type_id = ? AND clinic_id = ?',
+          [type_id, clinic_id]
         );
       } else {
         await db.execute(
-          'UPDATE medical_certificate_templates SET is_default = 0 WHERE certificate_type = ? AND clinic_id IS NULL',
-          [certificate_type]
+          'UPDATE medical_certificate_templates SET is_default = 0 WHERE type_id = ? AND clinic_id IS NULL',
+          [type_id]
         );
       }
     }
 
     const [result] = await db.execute(
       `INSERT INTO medical_certificate_templates (
-        template_name, certificate_type, template_content, header_image, footer_image, clinic_id, is_default
+        template_name, type_id, template_content, header_image, footer_image, clinic_id, is_default
       ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [
         template_name,
-        certificate_type,
+        type_id,
         template_content,
         header_image || null,
         footer_image || null,
@@ -398,7 +493,7 @@ async function updateCertificateTemplate(req, res) {
     const { id } = req.params;
     const {
       template_name,
-      certificate_type,
+      type_id,
       template_content,
       header_image,
       footer_image,
@@ -422,13 +517,13 @@ async function updateCertificateTemplate(req, res) {
       const clinic_id = existing[0].clinic_id;
       if (clinic_id) {
         await db.execute(
-          'UPDATE medical_certificate_templates SET is_default = 0 WHERE certificate_type = ? AND clinic_id = ? AND id != ?',
-          [certificate_type, clinic_id, id]
+          'UPDATE medical_certificate_templates SET is_default = 0 WHERE type_id = ? AND clinic_id = ? AND id != ?',
+          [type_id, clinic_id, id]
         );
       } else {
         await db.execute(
-          'UPDATE medical_certificate_templates SET is_default = 0 WHERE certificate_type = ? AND clinic_id IS NULL AND id != ?',
-          [certificate_type, id]
+          'UPDATE medical_certificate_templates SET is_default = 0 WHERE type_id = ? AND clinic_id IS NULL AND id != ?',
+          [type_id, id]
         );
       }
     }
@@ -436,7 +531,7 @@ async function updateCertificateTemplate(req, res) {
     await db.execute(
       `UPDATE medical_certificate_templates SET
         template_name = ?,
-        certificate_type = ?,
+        type_id = ?,
         template_content = ?,
         header_image = ?,
         footer_image = ?,
@@ -444,7 +539,7 @@ async function updateCertificateTemplate(req, res) {
       WHERE id = ?`,
       [
         template_name,
-        certificate_type,
+        type_id,
         template_content,
         header_image || null,
         footer_image || null,

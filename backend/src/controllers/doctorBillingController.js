@@ -1,4 +1,14 @@
 const { getDb } = require('../config/db');
+const { sendSuccess, sendError } = require('../utils/responseHelper');
+const PDFDocument = require('pdfkit');
+
+// Generate bill number based on service name
+function generateBillNumber(serviceName) {
+  const date = new Date();
+  const dateStr = date.toISOString().split('T')[0].replace(/-/g, '');
+  const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+  return `${serviceName || 'CONSULT'}${dateStr}${random}`;
+}
 
 // Get doctor's billing dashboard
 exports.getDoctorBillingDashboard = async (req, res) => {
@@ -149,7 +159,10 @@ exports.createBillFromVisit = async (req, res) => {
     }
     
     const v = visit[0];
-    const billNumber = `BILL${Date.now()}`;
+    
+    // Generate bill number based on first service name
+    const firstService = services.length > 0 ? (services[0].service_name || services[0].name) : null;
+    const billNumber = generateBillNumber(firstService);
     const subtotal = services.reduce((sum, s) => sum + (parseFloat(s.total) || 0), 0);
     
     // Create bill with transaction to prevent race conditions
@@ -177,7 +190,7 @@ exports.createBillFromVisit = async (req, res) => {
         INSERT INTO bills (
           patient_id, appointment_id, clinic_id, doctor_id, bill_number,
           subtotal, total_amount, balance_due, payment_status, bill_date, created_by
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, [
         v.patient_id, v.appointment_id, v.clinic_id, v.doctor_id, billNumber,
         subtotal, subtotal, subtotal, 'pending', new Date(), req.user.id

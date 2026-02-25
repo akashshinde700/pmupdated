@@ -407,17 +407,58 @@ const updateReceiptTemplate = Joi.object({
 // ---------- Medical Certificates ----------
 const createMedicalCertificate = Joi.object({
   patient_id: Joi.number().integer().positive().required(),
-  doctor_id: Joi.number().integer().positive().required(),
-  template_id: Joi.number().integer().positive().allow(null),
+  doctor_name: Joi.string().max(255).required(),
+  doctor_registration_no: Joi.string().max(255).allow('', null),
+  doctor_qualification: Joi.string().max(255).allow('', null),
+  type_id: Joi.number().integer().positive().required(),
+  certificate_title: Joi.string().max(255).required(),
   diagnosis: Joi.string().allow('', null),
-  advice: Joi.string().allow('', null),
-  certificate_date: Joi.date().required()
+  certificate_content: Joi.string().allow('', null),
+  issued_date: Joi.date().required(),
+  valid_from: Joi.date().allow('', null),
+  valid_until: Joi.date().allow('', null),
+  resume_date: Joi.date().allow('', null),
+  notes: Joi.string().allow('', null),
+  header_image: Joi.string().allow('', null),
+  footer_image: Joi.string().allow('', null),
+  clinic_id: Joi.number().integer().positive().allow(null)
 });
 const updateMedicalCertificate = Joi.object({
-  template_id: Joi.number().integer().positive().allow(null),
+  doctor_name: Joi.string().max(255).optional(),
+  doctor_registration_no: Joi.string().max(255).allow('', null),
+  doctor_qualification: Joi.string().max(255).allow('', null),
+  type_id: Joi.number().integer().positive().optional(),
+  certificate_title: Joi.string().max(255).optional(),
   diagnosis: Joi.string().allow('', null),
-  advice: Joi.string().allow('', null),
-  certificate_date: Joi.date().optional()
+  certificate_content: Joi.string().allow('', null).optional(),
+  issued_date: Joi.date().optional(),
+  valid_from: Joi.date().allow('', null),
+  valid_until: Joi.date().allow('', null),
+  resume_date: Joi.date().allow('', null),
+  notes: Joi.string().allow('', null),
+  header_image: Joi.string().allow('', null),
+  footer_image: Joi.string().allow('', null),
+  clinic_id: Joi.number().integer().positive().allow(null)
+});
+
+// ---------- Certificate Templates ----------
+const createCertificateTemplate = Joi.object({
+  template_name: Joi.string().max(255).required(),
+  type_id: Joi.number().integer().positive().required(),
+  template_content: Joi.string().required(),
+  header_image: Joi.string().allow('', null),
+  footer_image: Joi.string().allow('', null),
+  clinic_id: Joi.number().integer().positive().allow(null),
+  is_default: Joi.boolean().optional()
+});
+const updateCertificateTemplate = Joi.object({
+  template_name: Joi.string().max(255).optional(),
+  type_id: Joi.number().integer().positive().optional(),
+  template_content: Joi.string().optional(),
+  header_image: Joi.string().allow('', null),
+  footer_image: Joi.string().allow('', null),
+  is_default: Joi.boolean().optional(),
+  clinic_id: Joi.number().integer().positive().allow(null)
 });
 
 // ---------- Insurance ----------

@@ -137,10 +137,11 @@ const PrescriptionA5Format = forwardRef(({ prescriptionData, patientData, doctor
               <thead>
                 <tr className="border-b border-gray-300">
                   <th className="text-left py-1 pr-2" style={{ width: '5%' }}>#</th>
-                  <th className="text-left py-1 pr-2" style={{ width: '35%' }}>Medicine</th>
-                  <th className="text-left py-1 pr-2" style={{ width: '25%' }}>Dosage</th>
+                  <th className="text-left py-1 pr-2" style={{ width: '25%' }}>Medicine</th>
+                  <th className="text-left py-1 pr-2" style={{ width: '15%' }}>Frequency</th>
                   <th className="text-left py-1 pr-2" style={{ width: '20%' }}>Timing</th>
-                  <th className="text-left py-1" style={{ width: '15%' }}>Duration</th>
+                  <th className="text-left py-1 pr-2" style={{ width: '15%' }}>Duration</th>
+                  <th className="text-left py-1" style={{ width: '10%' }}>Qty</th>
                 </tr>
               </thead>
               <tbody>
@@ -151,9 +152,10 @@ const PrescriptionA5Format = forwardRef(({ prescriptionData, patientData, doctor
                       <div className="font-medium">{med.name}</div>
                       {med.brand && <div className="text-xs text-gray-600">({med.brand})</div>}
                     </td>
-                    <td className="py-1 pr-2">{med.dosage || '-'}</td>
                     <td className="py-1 pr-2">{med.frequency || '-'}</td>
-                    <td className="py-1">{med.duration || '-'}</td>
+                    <td className="py-1 pr-2">{med.timing || '-'}</td>
+                    <td className="py-1 pr-2">{med.duration || '-'}</td>
+                    <td className="py-1">{med.qty || '-'}</td>
                   </tr>
                 ))}
               </tbody>

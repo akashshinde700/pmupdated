@@ -7,7 +7,7 @@ import useDragAndDrop from '../hooks/useDragAndDrop';
 import StatCard from '../components/StatCard';
 import ActionButton from '../components/ActionButton';
 import QueueColumn from '../components/QueueColumn';
-import MyGenieWidget from '../components/MyGenieWidget';
+// MyGenieWidget removed from dashboard
 
 export default function DoctorDashboard() {
   const navigate = useNavigate();
@@ -168,7 +168,7 @@ export default function DoctorDashboard() {
       await api.patch(`/api/queue/${nextPatient.id}/status`, { status: 'in_progress' });
       if (typeof showToast === 'function') showToast('Patient called', 'success');
       fetchQueue();
-      navigate(`/prescription-pad/${nextPatient.patient_id}`);
+      navigate(`/orders/${nextPatient.patient_id}`);
     } catch (error) {
       console.error('Failed to start patient:', error);
       if (typeof showToast === 'function') showToast('Failed to call patient', 'error');
@@ -267,18 +267,6 @@ export default function DoctorDashboard() {
           description="Find existing patient"
           onClick={handleQuickRx}
           variant="secondary"
-        />
-      </div>
-
-      {/* My Genie Quick Widget */}
-      <div className="mb-8">
-        <MyGenieWidget
-          symptoms={[]}
-          patientId={null}
-          age={null}
-          gender={null}
-          language="en"
-          onApply={() => { /* optional: handle suggestion apply */ }}
         />
       </div>
 

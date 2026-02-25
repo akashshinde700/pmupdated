@@ -32,7 +32,7 @@ export default function PrescriptionPreview() {
     try {
       // Fetch latest prescription for the patient
       const res = await api.get(`/api/prescriptions/${patientId}`);
-      const prescriptions = res.data.prescriptions || [];
+      const prescriptions = res.data?.data?.prescriptions || res.data?.prescriptions || [];
       if (prescriptions.length > 0) {
         const latestPrescription = prescriptions[0];
         setPrescription(latestPrescription);
@@ -49,14 +49,13 @@ export default function PrescriptionPreview() {
                 const clinicRes = await api.get(`/api/clinics/${doctorRes.data.clinic_id}`);
                 setClinic(clinicRes.data);
               } catch (clinicErr) {
-                console.warn('Clinic fetch failed, continuing without clinic data:', clinicErr);
+                console.warn('Clinic fetch failed:', clinicErr);
               }
             }
           } catch (err) {
-            console.warn('Doctor fetch failed (403 or access denied), using prescription data instead:', err);
-            // Try to get doctor info from prescription itself if available
+            console.warn('Doctor fetch failed:', err);
             if (latestPrescription.doctor_name) {
-              setDoctor({ name: latestPrescription.doctor_name, clinic_name: latestPrescription.clinic_name || '' });
+              setDoctor({ name: latestPrescription.doctor_name, specialization: latestPrescription.specialization || '' });
             }
           }
         }
@@ -77,22 +76,29 @@ export default function PrescriptionPreview() {
     fetchPrescriptionData();
   }, [fetchPrescriptionData, patientId]);
 
+  // Helper to calculate age
+  const calcAge = (dob) => {
+    if (!dob) return null;
+    const diff = Date.now() - new Date(dob).getTime();
+    return Math.floor(diff / (365.25 * 24 * 60 * 60 * 1000));
+  };
+
+  // Parse symptoms from chief_complaint string
+  const getSymptoms = () => {
+    if (!prescription?.chief_complaint) return [];
+    return prescription.chief_complaint.split(',').map(s => s.trim()).filter(Boolean);
+  };
+
+  // Parse diagnosis from diagnosis string
+  const getDiagnoses = () => {
+    if (!prescription?.diagnosis) return [];
+    return prescription.diagnosis.split(',').map(d => d.trim()).filter(Boolean);
+  };
+
   const handleSend = async (method) => {
     try {
-      if (method === 'email' && notify.email) {
-        await api.post('/api/notify/email', {
-          to: notify.email,
-          subject: 'Prescription',
-          text: 'Your prescription is ready.',
-          attachment: 'prescription.pdf' // Would need to generate PDF
-        });
-        addToast('Prescription emailed successfully', 'success');
-      }
       if (method === 'whatsapp') {
-        if (!patient?.phone) {
-          addToast('Patient phone number not available', 'error');
-          return;
-        }
+        if (!patient?.phone) { addToast('Patient phone number not available', 'error'); return; }
         const message = generatePrescriptionMessage({
           patientName: patient.name,
           doctorName: prescription?.doctor_name || doctor?.name || 'Doctor',
@@ -101,23 +107,10 @@ export default function PrescriptionPreview() {
         openWhatsApp(patient.phone, message);
         addToast('Opening WhatsApp...', 'success');
       }
-      if (method === 'attachment') {
-        // Generate and download PDF
-        handlePrint();
-        addToast('Prescription downloaded', 'success');
-      }
+      if (method === 'attachment') { handlePrint(); }
       if (method === 'pdf') {
-        // Download PDF from backend
-        if (!prescription?.id) {
-          addToast('No prescription found to download', 'error');
-          return;
-        }
-
-        const response = await api.get(`/api/prescriptions/pdf/${prescription.id}`, {
-          responseType: 'blob'
-        });
-
-        // Create download link
+        if (!prescription?.id) { addToast('No prescription found', 'error'); return; }
+        const response = await api.get(`/api/prescriptions/pdf/${prescription.id}`, { responseType: 'blob' });
         const url = window.URL.createObjectURL(new Blob([response.data]));
         const link = document.createElement('a');
         link.href = url;
@@ -126,8 +119,7 @@ export default function PrescriptionPreview() {
         link.click();
         link.remove();
         window.URL.revokeObjectURL(url);
-
-        addToast('Prescription PDF downloaded successfully', 'success');
+        addToast('PDF downloaded', 'success');
       }
     } catch (error) {
       console.error('Send error:', error);
@@ -136,32 +128,9 @@ export default function PrescriptionPreview() {
   };
 
   const handleBillPatient = () => {
-    if (!patientId) {
-      addToast('Patient information not available', 'error');
-      return;
-    }
-    // Navigate to billing page with patient ID and prescription ID
-    const queryParams = new URLSearchParams({
-      patientId: patientId,
-      ...(prescription?.id && { prescriptionId: prescription.id })
-    });
+    if (!patientId) { addToast('Patient info not available', 'error'); return; }
+    const queryParams = new URLSearchParams({ patientId, ...(prescription?.id && { prescriptionId: prescription.id }) });
     navigate(`/billing?${queryParams.toString()}`);
-    addToast('Redirecting to billing...', 'info');
-  };
-
-  const handleRequestVitals = () => {
-    addToast('Vitals request sent to patient', 'success');
-    // Would send vitals request via WhatsApp/email
-  };
-
-  const handleSaveTemplate = () => {
-    if (!templateName.trim()) {
-      addToast('Please enter a template name', 'warning');
-      return;
-    }
-    addToast(`Template "${templateName}" saved successfully`, 'success');
-    setTemplateName('');
-    setShowTemplateSection(false);
   };
 
   if (loading) {
@@ -182,6 +151,13 @@ export default function PrescriptionPreview() {
     );
   }
 
+  const symptoms = getSymptoms();
+  const diagnoses = getDiagnoses();
+  const vitals = prescription?.vitals || {};
+  const hasVitals = Object.keys(vitals).some(k => vitals[k]);
+  const medications = prescription?.medications || [];
+  const patientAge = patient?.dob ? calcAge(patient.dob) : (patient?.age_years || 'N/A');
+
   return (
     <div className="space-y-4">
       <HeaderBar title="Prescription Preview" />
@@ -191,30 +167,33 @@ export default function PrescriptionPreview() {
         <div className="p-6 space-y-6">
           {/* Doctor Header */}
           <div className="text-center border-b pb-4">
-            <h1 className="text-2xl font-bold text-slate-800">Dr. {prescription?.doctor_name || doctor?.name || 'Doctor Name'}</h1>
-            <p className="text-slate-600">{doctor?.qualification || 'MBBS, MD'}</p>
-            <p className="text-slate-500">{doctor?.specialization || prescription?.specialization || 'General Physician'}</p>
+            <h1 className="text-2xl font-bold text-slate-800">
+              Dr. {prescription?.doctor_name || doctor?.name || 'N/A'}
+            </h1>
+            {(doctor?.qualification || prescription?.qualification) && (
+              <p className="text-slate-600">{doctor?.qualification || prescription?.qualification}</p>
+            )}
+            {(doctor?.specialization || prescription?.specialization) && (
+              <p className="text-slate-500">{doctor?.specialization || prescription?.specialization}</p>
+            )}
             {doctor?.registration_number && (
-              <p className="text-sm text-slate-500 mt-2">Registration No: {doctor.registration_number}</p>
+              <p className="text-sm text-slate-500 mt-2">Reg No: {doctor.registration_number}</p>
             )}
           </div>
 
           {/* Clinic Details */}
-          <div className="text-center">
-            <h2 className="text-xl font-semibold text-slate-800">{clinic?.name || 'Medical Center'}</h2>
-            <p className="text-slate-600">{clinic?.address || '123 Healthcare Street'}</p>
-            <p className="text-slate-600">{clinic?.city || 'City'}, {clinic?.state || 'State'} - {clinic?.pincode || '123456'}</p>
-            <p className="text-slate-600">
-              {clinic?.phone && `Phone: ${clinic.phone}`}
-              {clinic?.phone && clinic?.email && ' | '}
-              {clinic?.email && `Email: ${clinic.email}`}
-            </p>
-          </div>
+          {(clinic?.name || prescription?.clinic_name) && (
+            <div className="text-center">
+              <h2 className="text-xl font-semibold text-slate-800">{clinic?.name || prescription?.clinic_name}</h2>
+              {(clinic?.address) && <p className="text-slate-600">{clinic.address}</p>}
+              {clinic?.phone && <p className="text-slate-600">Phone: {clinic.phone}</p>}
+            </div>
+          )}
 
           {/* Date and Time */}
           <div className="flex justify-between items-center text-sm text-slate-600">
-            <span>Date: {new Date().toLocaleDateString('en-IN')}</span>
-            <span>Time: {new Date().toLocaleTimeString('en-IN')}</span>
+            <span>Date: {prescription?.created_at ? new Date(prescription.created_at).toLocaleDateString('en-IN') : new Date().toLocaleDateString('en-IN')}</span>
+            <span>Time: {prescription?.created_at ? new Date(prescription.created_at).toLocaleTimeString('en-IN') : ''}</span>
           </div>
 
           {/* Patient Details */}
@@ -227,7 +206,7 @@ export default function PrescriptionPreview() {
               </div>
               <div>
                 <span className="font-medium">Age/Gender:</span>
-                <p>{patient?.dob ? new Date().getFullYear() - new Date(patient.dob).getFullYear() : 'N/A'} Years / {patient?.gender || 'N/A'}</p>
+                <p>{patientAge} Years / {patient?.gender || 'N/A'}</p>
               </div>
               <div>
                 <span className="font-medium">UHID:</span>
@@ -237,72 +216,60 @@ export default function PrescriptionPreview() {
                 <span className="font-medium">Phone:</span>
                 <p>{patient?.phone || 'N/A'}</p>
               </div>
-              <div>
-                <span className="font-medium">Address:</span>
-                <p>{patient?.address || 'N/A'}</p>
-              </div>
-              <div>
-                <span className="font-medium">Blood Group:</span>
-                <p>{patient?.blood_group || 'N/A'}</p>
-              </div>
-              <div>
-                <span className="font-medium">Emergency Contact:</span>
-                <p>{patient?.emergency_contact || 'N/A'}</p>
-              </div>
-              <div>
-                <span className="font-medium">Emergency Phone:</span>
-                <p>{patient?.emergency_phone || 'N/A'}</p>
-              </div>
+              {patient?.address && (
+                <div>
+                  <span className="font-medium">Address:</span>
+                  <p>{patient.address}</p>
+                </div>
+              )}
+              {patient?.blood_group && (
+                <div>
+                  <span className="font-medium">Blood Group:</span>
+                  <p>{patient.blood_group}</p>
+                </div>
+              )}
             </div>
           </div>
 
           {/* Vitals */}
           <div className="border rounded p-4">
             <h3 className="font-semibold text-slate-800 mb-3">Vitals</h3>
-            {prescription?.vitals && Object.keys(prescription.vitals).some(k => prescription.vitals[k]) ? (
+            {hasVitals ? (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                {prescription.vitals.temp && (
-                  <div className="text-center">
-                    <span className="font-medium">Temperature:</span>
-                    <p className="text-lg font-semibold text-blue-600">{prescription.vitals.temp}°F</p>
+                {vitals.temp && (
+                  <div className="text-center p-2 bg-red-50 rounded">
+                    <span className="text-xs text-slate-500">Temperature</span>
+                    <p className="text-lg font-semibold text-red-600">{vitals.temp}°F</p>
                   </div>
                 )}
-                {prescription.vitals.height && (
-                  <div className="text-center">
-                    <span className="font-medium">Height:</span>
-                    <p className="text-lg font-semibold text-green-600">{prescription.vitals.height} cm</p>
+                {vitals.blood_pressure && (
+                  <div className="text-center p-2 bg-blue-50 rounded">
+                    <span className="text-xs text-slate-500">Blood Pressure</span>
+                    <p className="text-lg font-semibold text-blue-600">{vitals.blood_pressure}</p>
                   </div>
                 )}
-                {prescription.vitals.weight && (
-                  <div className="text-center">
-                    <span className="font-medium">Weight:</span>
-                    <p className="text-lg font-semibold text-orange-600">{prescription.vitals.weight} kg</p>
+                {vitals.pulse && (
+                  <div className="text-center p-2 bg-orange-50 rounded">
+                    <span className="text-xs text-slate-500">Pulse Rate</span>
+                    <p className="text-lg font-semibold text-orange-600">{vitals.pulse} bpm</p>
                   </div>
                 )}
-                {prescription.vitals.weight && prescription.vitals.height && (
-                  <div className="text-center">
-                    <span className="font-medium">BMI:</span>
-                    <p className="text-lg font-semibold text-purple-600">
-                      {(prescription.vitals.weight / ((prescription.vitals.height / 100) ** 2)).toFixed(1)}
-                    </p>
+                {vitals.weight && (
+                  <div className="text-center p-2 bg-green-50 rounded">
+                    <span className="text-xs text-slate-500">Weight</span>
+                    <p className="text-lg font-semibold text-green-600">{vitals.weight} kg</p>
                   </div>
                 )}
-                {prescription.vitals.pulse && (
-                  <div className="text-center">
-                    <span className="font-medium">Pulse Rate:</span>
-                    <p className="text-lg font-semibold text-red-600">{prescription.vitals.pulse} bpm</p>
+                {vitals.height && (
+                  <div className="text-center p-2 bg-purple-50 rounded">
+                    <span className="text-xs text-slate-500">Height</span>
+                    <p className="text-lg font-semibold text-purple-600">{vitals.height} cm</p>
                   </div>
                 )}
-                {prescription.vitals.blood_pressure && (
-                  <div className="text-center">
-                    <span className="font-medium">Blood Pressure:</span>
-                    <p className="text-lg font-semibold text-indigo-600">{prescription.vitals.blood_pressure}</p>
-                  </div>
-                )}
-                {prescription.vitals.spo2 && (
-                  <div className="text-center">
-                    <span className="font-medium">SpO2:</span>
-                    <p className="text-lg font-semibold text-cyan-600">{prescription.vitals.spo2}%</p>
+                {vitals.spo2 && (
+                  <div className="text-center p-2 bg-cyan-50 rounded">
+                    <span className="text-xs text-slate-500">SpO2</span>
+                    <p className="text-lg font-semibold text-cyan-600">{vitals.spo2}%</p>
                   </div>
                 )}
               </div>
@@ -313,71 +280,67 @@ export default function PrescriptionPreview() {
             )}
           </div>
 
-          {/* Chief Complaints */}
-          <div className="border rounded p-4">
-            <h3 className="font-semibold text-slate-800 mb-3">Chief Complaints</h3>
-            <div className="space-y-2">
-              <div className="flex justify-between items-center p-3 bg-red-50 rounded">
-                <div>
-                  <span className="font-medium">Fever</span>
-                  <p className="text-sm text-slate-600">Duration: 3 days | Severity: High | Note: Intermittent fever</p>
-                </div>
-                <span className="text-xs bg-red-100 text-red-800 px-2 py-1 rounded">Acute</span>
-              </div>
-              <div className="flex justify-between items-center p-3 bg-yellow-50 rounded">
-                <div>
-                  <span className="font-medium">Headache</span>
-                  <p className="text-sm text-slate-600">Duration: 2 days | Severity: Moderate | Note: Throbbing pain</p>
-                </div>
-                <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded">Moderate</span>
+          {/* Chief Complaints / Symptoms */}
+          {symptoms.length > 0 && (
+            <div className="border rounded p-4">
+              <h3 className="font-semibold text-slate-800 mb-3">Chief Complaints</h3>
+              <div className="flex flex-wrap gap-2">
+                {symptoms.map((s, idx) => (
+                  <span key={idx} className="px-3 py-1.5 bg-yellow-50 border border-yellow-200 text-yellow-800 rounded-full text-sm">
+                    {s}
+                  </span>
+                ))}
               </div>
             </div>
-          </div>
+          )}
 
           {/* Diagnosis */}
-          <div className="border rounded p-4">
-            <h3 className="font-semibold text-slate-800 mb-3">Diagnosis</h3>
-            <div className="space-y-2">
-              <div className="p-3 bg-blue-50 rounded">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <span className="font-medium">Viral Fever</span>
-                    <p className="text-sm text-slate-600 mt-1">Since: 3 days | Body temperature: 101°F | Status: Improving | Severity: Moderate | Pattern: Intermittent</p>
-                  </div>
-                  <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">Primary</span>
-                </div>
+          {diagnoses.length > 0 && (
+            <div className="border rounded p-4">
+              <h3 className="font-semibold text-slate-800 mb-3">Diagnosis</h3>
+              <div className="flex flex-wrap gap-2">
+                {diagnoses.map((d, idx) => (
+                  <span key={idx} className="px-3 py-1.5 bg-blue-50 border border-blue-200 text-blue-800 rounded-full text-sm">
+                    {d}
+                  </span>
+                ))}
               </div>
             </div>
-          </div>
+          )}
 
           {/* Prescription Table */}
           <div className="border rounded p-4">
-            <h3 className="font-semibold text-slate-800 mb-3">Prescription</h3>
+            <h3 className="font-semibold text-slate-800 mb-3">Prescription (Rx)</h3>
             <table className="w-full border-collapse">
               <thead>
                 <tr className="bg-slate-100">
+                  <th className="border px-3 py-2 text-left text-sm font-medium w-8">#</th>
                   <th className="border px-3 py-2 text-left text-sm font-medium">Medicine</th>
                   <th className="border px-3 py-2 text-center text-sm font-medium">Frequency</th>
                   <th className="border px-3 py-2 text-center text-sm font-medium">Timing</th>
                   <th className="border px-3 py-2 text-center text-sm font-medium">Duration</th>
                   <th className="border px-3 py-2 text-left text-sm font-medium">Instructions</th>
-                  <th className="border px-3 py-2 text-center text-sm font-medium">Quantity</th>
+                  <th className="border px-3 py-2 text-center text-sm font-medium">Qty</th>
                 </tr>
               </thead>
               <tbody>
-                {prescription?.medications?.map((med, index) => (
+                {medications.map((med, index) => (
                   <tr key={index} className="hover:bg-slate-50">
-                    <td className="border px-3 py-2 text-sm font-medium">{med.medication_name}</td>
-                    <td className="border px-3 py-2 text-sm text-center">{med.frequency}</td>
-                    <td className="border px-3 py-2 text-sm text-center">{med.timing || 'After meals'}</td>
-                    <td className="border px-3 py-2 text-sm text-center">{med.duration}</td>
-                    <td className="border px-3 py-2 text-sm">{med.instructions}</td>
-                    <td className="border px-3 py-2 text-sm text-center">10 tablets</td>
+                    <td className="border px-3 py-2 text-sm text-center">{index + 1}</td>
+                    <td className="border px-3 py-2 text-sm">
+                      <div className="font-medium">{med.medication_name || med.medicine_name || med.name || '-'}</div>
+                      {med.generic_name && <div className="text-xs text-slate-500">{med.generic_name}</div>}
+                    </td>
+                    <td className="border px-3 py-2 text-sm text-center">{med.frequency || '-'}</td>
+                    <td className="border px-3 py-2 text-sm text-center">{med.timing || '-'}</td>
+                    <td className="border px-3 py-2 text-sm text-center">{med.duration || '-'}</td>
+                    <td className="border px-3 py-2 text-sm">{med.instructions || '-'}</td>
+                    <td className="border px-3 py-2 text-sm text-center">{med.quantity || '-'}</td>
                   </tr>
                 ))}
-                {(!prescription?.medications || prescription.medications.length === 0) && (
+                {medications.length === 0 && (
                   <tr>
-                    <td colSpan="6" className="border px-3 py-4 text-center text-slate-500 text-sm">
+                    <td colSpan="7" className="border px-3 py-4 text-center text-slate-500 text-sm">
                       No medications prescribed
                     </td>
                   </tr>
@@ -387,179 +350,77 @@ export default function PrescriptionPreview() {
           </div>
 
           {/* Advice Section */}
-          <div className="border rounded p-4">
-            <h3 className="font-semibold text-slate-800 mb-3">Advice</h3>
-            <div className="space-y-3">
-              <div>
-                <h4 className="font-medium text-slate-700 mb-2">English</h4>
-                <ul className="list-disc list-inside text-sm text-slate-600 space-y-1">
-                  <li>Take adequate rest and drink plenty of fluids</li>
-                  <li>Avoid cold drinks and outside food</li>
-                  <li>Monitor temperature regularly</li>
-                  <li>Return if fever persists beyond 5 days</li>
-                </ul>
-              </div>
-              <div>
-                <h4 className="font-medium text-slate-700 mb-2">हिंदी (Hindi)</h4>
-                <ul className="list-disc list-inside text-sm text-slate-600 space-y-1">
-                  <li>पर्याप्त आराम लें और भरपूर तरल पदार्थ पिएं</li>
-                  <li>ठंडे पेय और बाहर का खाना避 करें</li>
-                  <li>तापमान नियमित रूप से मॉनिटर करें</li>
-                  <li>यदि बुखार 5 दिनों से अधिक बना रहे तो वापस आएं</li>
-                </ul>
+          {prescription?.advice && (
+            <div className="border rounded p-4">
+              <h3 className="font-semibold text-slate-800 mb-3">Advice</h3>
+              <div className="text-sm text-slate-700 whitespace-pre-wrap bg-blue-50 p-3 rounded">
+                {prescription.advice}
               </div>
             </div>
-          </div>
+          )}
+
+          {/* Lab Advice */}
+          {prescription?.lab_advice && (
+            <div className="border rounded p-4">
+              <h3 className="font-semibold text-slate-800 mb-3">Investigations</h3>
+              <div className="text-sm text-slate-700 whitespace-pre-wrap bg-amber-50 p-3 rounded">
+                {prescription.lab_advice}
+              </div>
+            </div>
+          )}
 
           {/* Follow-up */}
-          <div className="border rounded p-4 bg-green-50">
-            <h3 className="font-semibold text-slate-800 mb-3">Follow Up</h3>
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
-                <span className="font-medium">Date:</span>
-                <span className="bg-white px-3 py-1 rounded border">{new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toLocaleDateString('en-IN')}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="font-medium">After:</span>
-                <span className="bg-white px-3 py-1 rounded border">7 days</span>
+          {(prescription?.follow_up_date || prescription?.follow_up_days) && (
+            <div className="border rounded p-4 bg-green-50">
+              <h3 className="font-semibold text-slate-800 mb-3">Follow Up</h3>
+              <div className="flex items-center gap-4 text-sm">
+                {prescription.follow_up_date && (
+                  <div>
+                    <span className="font-medium">Date: </span>
+                    <span className="bg-white px-3 py-1 rounded border">
+                      {new Date(prescription.follow_up_date).toLocaleDateString('en-IN')}
+                    </span>
+                  </div>
+                )}
+                {prescription.follow_up_days && (
+                  <div>
+                    <span className="font-medium">After: </span>
+                    <span className="bg-white px-3 py-1 rounded border">{prescription.follow_up_days} days</span>
+                  </div>
+                )}
               </div>
             </div>
-            <p className="text-sm text-slate-600 mt-2">Auto fill from Rx: Review response to treatment</p>
-          </div>
+          )}
 
           {/* Doctor Signature */}
           <div className="text-right pt-6 border-t">
-            <p className="font-medium">Dr. {prescription?.doctor_name || 'Doctor Name'}</p>
-            <p className="text-sm text-slate-600">MBBS, MD (Medicine)</p>
-            <p className="text-sm text-slate-600">Registration No: 12345</p>
+            <p className="font-medium">Dr. {prescription?.doctor_name || doctor?.name || 'N/A'}</p>
+            {(doctor?.qualification || prescription?.qualification) && (
+              <p className="text-sm text-slate-600">{doctor?.qualification || prescription?.qualification}</p>
+            )}
+            {doctor?.registration_number && (
+              <p className="text-sm text-slate-600">Reg No: {doctor.registration_number}</p>
+            )}
           </div>
         </div>
       </div>
-
-      {/* Template Section */}
-      {showTemplateSection && (
-        <div className="bg-white border rounded shadow-sm p-4">
-          <h3 className="font-semibold mb-3">Save as Template</h3>
-          <div className="flex gap-3">
-            <input
-              className="flex-1 px-3 py-2 border rounded"
-              placeholder="Enter template name"
-              value={templateName}
-              onChange={(e) => setTemplateName(e.target.value)}
-            />
-            <button
-              className="px-4 py-2 bg-primary text-white rounded hover:bg-primary/90"
-              onClick={handleSaveTemplate}
-            >
-              Save Template
-            </button>
-            <button
-              className="px-4 py-2 border rounded hover:bg-slate-50"
-              onClick={() => setShowTemplateSection(false)}
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Action Buttons */}
       <div className="flex flex-wrap gap-3">
-        <button
-          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-2"
-          onClick={() => handleSend('attachment')}
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
-          Send Attachment
+        <button className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm" onClick={() => handleSend('attachment')}>
+          Print
         </button>
-
-        <button
-          className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 flex items-center gap-2"
-          onClick={() => handleSend('download')}
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
-          Download
-        </button>
-
-        <button
-          className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 flex items-center gap-2"
-          onClick={() => handleSend('pdf')}
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
+        <button className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 text-sm" onClick={() => handleSend('pdf')}>
           Download PDF
         </button>
-
-        <button
-          className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 flex items-center gap-2"
-          onClick={() => handleSend('whatsapp')}
-        >
-          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893A11.821 11.821 0 0020.885 3.488"/>
-          </svg>
-          Send via WhatsApp
+        <button className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm" onClick={() => handleSend('whatsapp')}>
+          WhatsApp
         </button>
-
-        <button
-          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-2"
-          onClick={() => handleSend('payment')}
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
-          </svg>
-          Send Payment Link
-        </button>
-
-        <button
-          className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 flex items-center gap-2"
-          onClick={handleBillPatient}
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-          </svg>
+        <button className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 text-sm" onClick={handleBillPatient}>
           Bill Patient
         </button>
-
         <button
-          className="px-4 py-2 bg-yellow-600 text-white rounded hover:bg-yellow-700 flex items-center gap-2"
-          onClick={() => handleSend('review')}
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
-          </svg>
-          Request Google Review
-        </button>
-
-        <button
-          className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 flex items-center gap-2"
-          onClick={handleRequestVitals}
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-          </svg>
-          Request Vitals
-        </button>
-
-        <button
-          className="px-4 py-2 bg-slate-600 text-white rounded hover:bg-slate-700 flex items-center gap-2"
-          onClick={() => setShowTemplateSection(!showTemplateSection)}
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
-          {showTemplateSection ? 'Cancel Template' : 'Save as Template'}
-        </button>
-      </div>
-
-      {/* Quick Share */}
-      <div className="flex flex-wrap gap-3 items-center bg-slate-50 p-4 rounded">
-        <button
-          className="px-4 py-2 border rounded hover:bg-slate-100"
+          className="px-4 py-2 border rounded hover:bg-slate-50 text-sm"
           onClick={() => {
             if (!prescription?.id) return;
             const link = `${apiBase.replace(/\/$/, '')}/api/prescriptions/pdf/${prescription.id}`;
@@ -569,7 +430,7 @@ export default function PrescriptionPreview() {
           Copy PDF Link
         </button>
         <button
-          className="px-4 py-2 border rounded hover:bg-slate-100"
+          className="px-4 py-2 border rounded hover:bg-slate-50 text-sm"
           onClick={() => {
             if (!prescription?.id) return;
             const link = `${apiBase.replace(/\/$/, '')}/api/prescriptions/pdf/${prescription.id}`;
@@ -580,35 +441,6 @@ export default function PrescriptionPreview() {
           Show QR
         </button>
       </div>
-
-      {/* Notification Inputs */}
-      <div className="flex flex-wrap gap-3 items-center bg-slate-50 p-4 rounded">
-        <div className="flex items-center gap-2">
-          <label className="text-sm font-medium">Email:</label>
-          <input
-            className="px-3 py-2 border rounded"
-            placeholder="patient@email.com"
-            value={notify.email}
-            onChange={(e) => setNotify({ ...notify, email: e.target.value })}
-          />
-        </div>
-        <div className="flex items-center gap-2">
-          <label className="text-sm font-medium">WhatsApp:</label>
-          <input
-            className="px-3 py-2 border rounded"
-            placeholder="+91XXXXXXXXXX"
-            value={notify.phone}
-            onChange={(e) => setNotify({ ...notify, phone: e.target.value })}
-          />
-        </div>
-        <button
-          className="px-4 py-2 bg-primary text-white rounded hover:bg-primary/90"
-          onClick={() => handleSend('email')}
-        >
-          Send via Email
-        </button>
-      </div>
     </div>
   );
 }
-

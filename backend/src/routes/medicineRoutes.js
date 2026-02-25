@@ -45,7 +45,7 @@ router.get('/search', authenticateToken, async (req, res) => {
           AND fu.user_id = ${mysql.escape(userId)}
           AND fu.item_type = 'medicine'
         WHERE m.is_active = 1
-          AND (m.name LIKE ${mysql.escape(like)} OR m.generic_name LIKE ${mysql.escape(like)})
+          AND (m.name LIKE ${mysql.escape(like)} OR m.generic_name LIKE ${mysql.escape(like)} OR m.brand LIKE ${mysql.escape(like)})
         ORDER BY
           CASE WHEN fu.usage_count IS NOT NULL THEN 0 ELSE 1 END,
           fu.usage_count DESC,
@@ -349,6 +349,98 @@ router.get('/patient/:patientId/recent', authenticateToken, async (req, res) => 
   } catch (error) {
     console.error('Patient recent meds error:', error);
     res.json({ medications: [] });
+  }
+});
+
+/**
+ * Create a custom medicine (auto-save from prescription pad)
+ * POST /api/medicines
+ */
+router.post('/', authenticateToken, async (req, res) => {
+  try {
+    const db = await getDb();
+    const { name, brand, generic_name, strength, dosage_form, category } = req.body;
+    if (!name) return res.status(400).json({ error: 'Medicine name is required' });
+
+    // Check if already exists (case-insensitive)
+    const [existing] = await db.query(
+      'SELECT id FROM medicines WHERE LOWER(name) = LOWER(?) LIMIT 1',
+      [name.trim()]
+    );
+    if (existing.length > 0) {
+      return res.json({ success: true, message: 'Medicine already exists', id: existing[0].id });
+    }
+
+    const [result] = await db.query(
+      `INSERT INTO medicines (name, brand, generic_name, strength, dosage_form, category, is_active, usage_count)
+       VALUES (?, ?, ?, ?, ?, ?, 1, 1)`,
+      [name.trim(), brand || name.trim(), generic_name || '', strength || '', dosage_form || 'Tablet', category || 'General']
+    );
+    res.status(201).json({ success: true, id: result.insertId });
+  } catch (error) {
+    console.error('Create medicine error:', error);
+    res.status(500).json({ error: 'Failed to save medicine' });
+  }
+});
+
+/**
+ * Save medicine defaults (dosage, frequency, timing, duration, instructions) for a doctor
+ * POST /api/medicines/defaults
+ */
+router.post('/defaults', authenticateToken, async (req, res) => {
+  try {
+    const { medicine_name, dosage, frequency, duration, timing, instructions, quantity } = req.body;
+    if (!medicine_name || !medicine_name.trim()) {
+      return res.status(400).json({ error: 'Medicine name is required' });
+    }
+    const doctorId = req.user?.doctorId || req.user?.id;
+    if (!doctorId) return res.status(401).json({ error: 'Doctor ID not found' });
+
+    const db = getDb();
+    await db.query(
+      `INSERT INTO medicine_defaults (doctor_id, medicine_name, dosage, frequency, duration, timing, instructions, quantity, usage_count)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
+       ON DUPLICATE KEY UPDATE
+         dosage = COALESCE(VALUES(dosage), dosage),
+         frequency = COALESCE(VALUES(frequency), frequency),
+         duration = COALESCE(VALUES(duration), duration),
+         timing = COALESCE(VALUES(timing), timing),
+         instructions = COALESCE(VALUES(instructions), instructions),
+         quantity = COALESCE(VALUES(quantity), quantity),
+         usage_count = usage_count + 1`,
+      [doctorId, medicine_name.trim(), dosage || null, frequency || null, duration || null, timing || null, instructions || null, quantity || null]
+    );
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Save medicine defaults error:', error);
+    res.status(500).json({ error: 'Failed to save medicine defaults' });
+  }
+});
+
+/**
+ * Get medicine defaults for a doctor
+ * GET /api/medicines/my-defaults?name=Paracetamol
+ */
+router.get('/my-defaults', authenticateToken, async (req, res) => {
+  try {
+    const { name } = req.query;
+    if (!name) return res.json({ defaults: null });
+
+    const doctorId = req.user?.doctorId || req.user?.id;
+    if (!doctorId) return res.json({ defaults: null });
+
+    const db = getDb();
+    const [rows] = await db.query(
+      `SELECT dosage, frequency, duration, timing, instructions, quantity
+       FROM medicine_defaults
+       WHERE doctor_id = ? AND LOWER(medicine_name) = LOWER(?)
+       LIMIT 1`,
+      [doctorId, name.trim()]
+    );
+    res.json({ defaults: rows.length > 0 ? rows[0] : null });
+  } catch (error) {
+    console.error('Get medicine defaults error:', error);
+    res.json({ defaults: null });
   }
 });
 

@@ -1,5 +1,4 @@
 const express = require('express');
-const { authenticateToken, requireRole } = require('../middleware/auth');
 const {
   getAllReferrals,
   getReferralById,
@@ -16,8 +15,13 @@ const { createPatientReferral, updatePatientReferral } = require('../validation/
 
 const router = express.Router();
 
-// All routes require authentication
-router.use(authenticateToken);
+// Auth handled by app.js: app.use('/api/patient-referrals', authenticateToken, ...)
+
+// Referral Network (MUST be before /:id to avoid conflict)
+router.get('/network/doctors', getReferralNetwork);
+router.post('/network/doctors', addToNetwork);
+router.put('/network/doctors/:id', updateNetworkDoctor);
+router.delete('/network/doctors/:id', deleteNetworkDoctor);
 
 // Referral CRUD
 router.get('/', getAllReferrals);
@@ -25,11 +29,5 @@ router.get('/:id', getReferralById);
 router.post('/', joiValidate(createPatientReferral), createReferral);
 router.put('/:id', joiValidate(updatePatientReferral), updateReferral);
 router.delete('/:id', deleteReferral);
-
-// Referral Network
-router.get('/network/doctors', getReferralNetwork);
-router.post('/network/doctors', addToNetwork);
-router.put('/network/doctors/:id', updateNetworkDoctor);
-router.delete('/network/doctors/:id', deleteNetworkDoctor);
 
 module.exports = router;

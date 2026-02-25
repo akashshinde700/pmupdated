@@ -1,202 +1,309 @@
-import { useState, useEffect, useCallback } from 'react';
-import { FiDownload } from 'react-icons/fi';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { FiDownload, FiEdit2, FiTrash2, FiPlus, FiX } from 'react-icons/fi';
 import HeaderBar from '../components/HeaderBar';
 import Modal from '../components/Modal';
 import { useApiClient } from '../api/client';
+import { useAuth } from '../hooks/useAuth';
 import { downloadCertificatePDF } from '../services/pdfService';
+
+/* ─── Standard paragraph template ─────────────────────────────────────── */
+const STANDARD_PARAGRAPH = `This is to certify that Mr./Ms. {{patient_name}}, Age {{age}} years,
+was examined at our clinic and is suffering from {{diagnosis}}.
+
+The patient is advised complete rest from {{valid_from}} to {{valid_until}}.
+
+He/She is expected to resume duties on {{resume_date}}.
+
+This certificate is issued on patient's request for official purposes.`;
+
+/* ─── Variable substitution ────────────────────────────────────────────── */
+function substituteVars(content, data) {
+  if (!content) return '';
+  const fmt = (d) => {
+    if (!d) return '';
+    try { return new Date(d).toLocaleDateString('en-IN'); } catch { return d; }
+  };
+  return content
+    .replace(/\{\{patient_name\}\}/g,       data.patient_name        || '')
+    .replace(/\{\{age\}\}/g,                data.age                 || '')
+    .replace(/\{\{gender\}\}/g,             data.gender              || '')
+    .replace(/\{\{diagnosis\}\}/g,          data.diagnosis           || '')
+    .replace(/\{\{valid_from\}\}/g,         fmt(data.valid_from))
+    .replace(/\{\{valid_until\}\}/g,        fmt(data.valid_until))
+    .replace(/\{\{resume_date\}\}/g,        fmt(data.resume_date))
+    .replace(/\{\{doctor_name\}\}/g,        data.doctor_name         || '')
+    .replace(/\{\{doctor_registration\}\}/g,data.doctor_registration || '')
+    .replace(/\{\{issued_date\}\}/g,        fmt(data.issued_date))
+    // legacy bracket style
+    .replace(/\[PATIENT_NAME\]/g, data.patient_name || '')
+    .replace(/\[AGE\]/g,          data.age          || '')
+    .replace(/\[GENDER\]/g,       data.gender       || '')
+    .replace(/\[DIAGNOSIS\]/g,    data.diagnosis    || '')
+    .replace(/\[DATE\]/g,         fmt(data.issued_date));
+}
+
+/* ─── Compute age from dob ──────────────────────────────────────────────── */
+function calcAge(patient) {
+  if (!patient) return '';
+  // Direct age fields (some APIs return these)
+  if (patient.age)       return String(patient.age);
+  if (patient.age_years) return String(patient.age_years);
+  // Compute from dob
+  if (patient.dob) {
+    try {
+      const dob  = new Date(patient.dob);
+      const today = new Date();
+      let age = today.getFullYear() - dob.getFullYear();
+      const m = today.getMonth() - dob.getMonth();
+      if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--;
+      return age >= 0 ? String(age) : '';
+    } catch { return ''; }
+  }
+  return '';
+}
+
+/* ─── Auto-derive certificate title from type name ──────────────────────── */
+function getAutoTitle(typeName) {
+  if (!typeName || typeName === 'Other') return '';
+  // If name already includes a document-type word, use as-is
+  if (/certificate|report|summary|letter|assessment/i.test(typeName)) return typeName;
+  // Otherwise append " Certificate"
+  return typeName.trim() + ' Certificate';
+}
+
+const BLANK_CERT_FORM = {
+  patient_id: '',
+  doctor_name: '',
+  doctor_registration_no: '',
+  type_id: '',
+  certificate_title: '',
+  diagnosis: '',
+  certificate_content: '',
+  issued_date: new Date().toISOString().split('T')[0],
+  valid_from: '',
+  valid_until: '',
+  resume_date: '',
+  notes: '',
+  header_image: '',
+  footer_image: '',
+};
 
 export default function MedicalCertificates() {
   const api = useApiClient();
+  const { user } = useAuth();
   const [certificates, setCertificates] = useState([]);
-  const [templates, setTemplates] = useState([]);
-  const [patients, setPatients] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [templates, setTemplates]       = useState([]);
+  const [patients, setPatients]         = useState([]);
+  const [loading, setLoading]           = useState(false);
 
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [showViewModal, setShowViewModal] = useState(false);
-  const [showTemplateModal, setShowTemplateModal] = useState(false);
-  const [viewingCertificate, setViewingCertificate] = useState(null);
+  const [showCreateModal,      setShowCreateModal]      = useState(false);
+  const [showViewModal,        setShowViewModal]        = useState(false);
+  const [showTemplateModal,    setShowTemplateModal]    = useState(false);
+  const [showAddTypeModal,     setShowAddTypeModal]     = useState(false);
+  const [showEditTemplateModal,setShowEditTemplateModal]= useState(false);
+  const [viewingCertificate,   setViewingCertificate]  = useState(null);
+  const [editingTemplate,      setEditingTemplate]     = useState(null);
 
-  // Patient search states
-  const [patientSearch, setPatientSearch] = useState('');
-  const [patientResults, setPatientResults] = useState([]);
+  /* patient search */
+  const [patientSearch,     setPatientSearch]     = useState('');
+  const [patientResults,    setPatientResults]    = useState([]);
   const [showPatientSearch, setShowPatientSearch] = useState(false);
-  const [selectedPatient, setSelectedPatient] = useState(null);
+  const [selectedPatient,   setSelectedPatient]   = useState(null);
+  const patientInputRef = useRef(null);
 
-  const [filters, setFilters] = useState({
-    patient_id: '',
-    certificate_type: '',
-    from_date: '',
-    to_date: ''
-  });
+  const [filters, setFilters] = useState({ patient_id: '', type_id: '', from_date: '', to_date: '' });
 
-  const [certificateForm, setCertificateForm] = useState({
-    patient_id: '',
-    doctor_name: '',
-    doctor_registration_no: '',
-    doctor_qualification: '',
-    certificate_type: 'sick_leave',
-    certificate_title: '',
-    diagnosis: '',
-    certificate_content: '',
-    issued_date: new Date().toISOString().split('T')[0],
-    valid_from: '',
-    valid_until: '',
-    notes: '',
-    header_image: '',
-    footer_image: ''
-  });
+  const [certificateForm, setCertificateForm] = useState({ ...BLANK_CERT_FORM });
 
   const [templateForm, setTemplateForm] = useState({
-    template_name: '',
-    certificate_type: 'sick_leave',
-    template_content: '',
-    header_image: '',
-    footer_image: '',
-    is_default: false
+    template_name: '', type_id: 1, template_content: '',
+    header_image: '', footer_image: '', is_default: false,
   });
 
-  const certificateTypes = [
-    { value: 'sick_leave', label: 'Sick Leave' },
-    { value: 'fitness', label: 'Fitness Certificate' },
-    { value: 'discharge', label: 'Discharge Summary' },
-    { value: 'pre_op_fitness', label: 'Pre-Operative Fitness' },
-    { value: '2d_echo', label: '2D Echo Report' },
-    { value: 'travel', label: 'Travel Fitness' },
-    { value: 'disability', label: 'Disability Certificate' },
-    { value: 'medical_report', label: 'Medical Report' },
-    { value: 'other', label: 'Other' }
-  ];
+  const [certificateTypes,  setCertificateTypes]  = useState([]);
+  const [newTypeName,        setNewTypeName]        = useState('');
+  const [editTypeId,         setEditTypeId]         = useState(null);
+  const [editTypeName,       setEditTypeName]       = useState('');
+  const [showEditTypeModal,  setShowEditTypeModal]  = useState(false);
 
+  /* ─── fetch helpers ────────────────────────────────────────────────── */
   const fetchCertificates = useCallback(async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
       if (filters.patient_id) params.append('patient_id', filters.patient_id);
-      if (filters.certificate_type) params.append('certificate_type', filters.certificate_type);
-      if (filters.from_date) params.append('from_date', filters.from_date);
-      if (filters.to_date) params.append('to_date', filters.to_date);
-
-      const res = await api.get(`/api/medical-certificates?${params.toString()}`);
-      setCertificates(res.data.certificates || []);
-    } catch (error) {
-      console.error('Failed to fetch certificates:', error);
-    } finally {
-      setLoading(false);
-    }
+      if (filters.type_id)    params.append('type_id',    filters.type_id);
+      if (filters.from_date)  params.append('from_date',  filters.from_date);
+      if (filters.to_date)    params.append('to_date',    filters.to_date);
+      const res = await api.get(`/api/medical-certificates?${params}`);
+      setCertificates(res.data?.data?.certificates || res.data?.certificates || []);
+    } catch (e) { console.error('Failed to fetch certificates:', e); }
+    finally { setLoading(false); }
   }, [api, filters]);
 
   const fetchTemplates = useCallback(async () => {
     try {
       const res = await api.get('/api/medical-certificates/templates/list');
       setTemplates(res.data.templates || []);
-    } catch (error) {
-      console.error('Failed to fetch templates:', error);
+    } catch (e) { console.error('Failed to fetch templates:', e); }
+  }, [api]);
+
+  const fetchCertificateTypes = useCallback(async () => {
+    try {
+      const res = await api.get('/api/certificate-types');
+      const data = Array.isArray(res.data) ? res.data : (res.data?.data || []);
+      setCertificateTypes(data);
+    } catch (e) {
+      console.error('Failed to fetch certificate types:', e);
+      setCertificateTypes([]);
     }
   }, [api]);
 
   const fetchPatients = useCallback(async () => {
     try {
       const res = await api.get('/api/patients');
-      setPatients(res.data.patients || []);
-    } catch (error) {
-      console.error('Failed to fetch patients:', error);
-    }
+      setPatients(res.data?.data?.patients || res.data?.patients || []);
+    } catch (e) { console.error('Failed to fetch patients:', e); }
   }, [api]);
 
-  // Search patients function
-  const searchPatients = async (query) => {
-    if (!query || query.length < 2) {
-      setPatientResults([]);
-      setShowPatientSearch(false);
-      return;
-    }
+  useEffect(() => {
+    fetchCertificates(); fetchTemplates(); fetchPatients(); fetchCertificateTypes();
+  }, [fetchCertificates, fetchTemplates, fetchPatients, fetchCertificateTypes]);
 
+  /* auto-fill doctor name (no "Dr." prefix — templates already have "Dr. {{doctor_name}}") */
+  useEffect(() => {
+    if (showCreateModal && user?.name) {
+      setCertificateForm(prev => ({
+        ...prev,
+        // Only set if not already filled (e.g. from handlePatientSelect)
+        doctor_name: prev.doctor_name || user.name,
+      }));
+    }
+  }, [showCreateModal, user]);
+
+  useEffect(() => {
+    if (showCreateModal && patientInputRef.current) {
+      setTimeout(() => patientInputRef.current?.focus(), 50);
+    }
+  }, [showCreateModal]);
+
+  /* ─── patient search ────────────────────────────────────────────────── */
+  const searchPatients = async (query) => {
+    if (!query || query.length < 2) { setPatientResults([]); setShowPatientSearch(false); return; }
     try {
       const res = await api.get(`/api/patients?search=${query}`);
-      setPatientResults(res.data.patients || []);
+      setPatientResults(res.data?.data?.patients || res.data?.patients || []);
       setShowPatientSearch(true);
-    } catch (error) {
-      console.error('Error searching patients:', error);
-      setPatientResults([]);
-    }
+    } catch { setPatientResults([]); }
   };
 
-  // Handle patient selection
   const handlePatientSelect = (patient) => {
+    // Set patient state FIRST, then reset form (keeping patient_id), then open modal
     setSelectedPatient(patient);
     setPatientSearch(`${patient.name} (${patient.patient_id})`);
     setShowPatientSearch(false);
     setPatientResults([]);
-
-    // Auto-fill patient data in certificate form
-    setCertificateForm(prev => ({
-      ...prev,
-      patient_id: patient.id
-    }));
-
-    // Open create modal
+    // Reset form but preserve patient — do NOT call resetCertificateForm() as it clears selectedPatient
+    setCertificateForm({
+      ...BLANK_CERT_FORM,
+      patient_id: patient.id,
+      doctor_name: user?.name || '',
+    });
     setShowCreateModal(true);
   };
 
-  useEffect(() => {
-    fetchCertificates();
-    fetchTemplates();
-    fetchPatients();
-  }, [fetchCertificates, fetchTemplates, fetchPatients]);
+  /* ─── certificate type select ───────────────────────────────────────── */
+  const handleCertificateTypeSelect = (typeId) => {
+    if (typeId === '__add_new__') { setShowAddTypeModal(true); return; }
 
+    const selType  = certificateTypes.find(t => t.id === parseInt(typeId));
+    const typeName = selType?.name || '';
+    const isOther  = typeName === 'Other';
+    const autoTitle = getAutoTitle(typeName);
+
+    // Load default template for this type (if any)
+    const defaultTemplate = templates.find(
+      t => parseInt(t.type_id) === parseInt(typeId) && t.is_default
+    );
+
+    let templateContent = defaultTemplate?.template_content || '';
+
+    // Ensure the standard advisory paragraph is present in the content
+    if (!templateContent.includes('This is to certify that')) {
+      const sigIdx = templateContent.indexOf('Dr. {{doctor_name}}');
+      if (sigIdx !== -1) {
+        // Insert before the doctor signature line
+        templateContent =
+          templateContent.substring(0, sigIdx) +
+          STANDARD_PARAGRAPH + '\n\n' +
+          templateContent.substring(sigIdx);
+      } else {
+        // No signature section found — use paragraph as full content or append
+        templateContent = templateContent
+          ? templateContent + '\n\n' + STANDARD_PARAGRAPH
+          : STANDARD_PARAGRAPH;
+      }
+    }
+
+    setCertificateForm(prev => ({
+      ...prev,
+      type_id:             parseInt(typeId),
+      certificate_title:   isOther ? prev.certificate_title : autoTitle,
+      certificate_content: templateContent,
+    }));
+  };
+
+  /* ─── reset ─────────────────────────────────────────────────────────── */
   const resetCertificateForm = () => {
-    setCertificateForm({
-      patient_id: '',
-      doctor_name: '',
-      doctor_registration_no: '',
-      doctor_qualification: '',
-      certificate_type: 'sick_leave',
-      certificate_title: '',
-      diagnosis: '',
-      certificate_content: '',
-      issued_date: new Date().toISOString().split('T')[0],
-      valid_from: '',
-      valid_until: '',
-      notes: '',
-      header_image: '',
-      footer_image: ''
-    });
+    setCertificateForm({ ...BLANK_CERT_FORM });
     setSelectedPatient(null);
     setPatientSearch('');
   };
 
+  /* ─── create certificate ────────────────────────────────────────────── */
   const handleCreateCertificate = async () => {
-    if (!certificateForm.patient_id || !certificateForm.doctor_name || !certificateForm.certificate_title || !certificateForm.certificate_content) {
-      alert('Please fill in all required fields');
+    if (!certificateForm.patient_id || !certificateForm.doctor_name ||
+        !certificateForm.type_id    || !certificateForm.certificate_title) {
+      alert('Please fill in all required fields (Patient, Doctor, Type, Title)');
       return;
     }
-
     try {
-      await api.post('/api/medical-certificates', certificateForm);
+      // Pre-substitute variables into certificate_content before saving
+      const age = calcAge(selectedPatient);
+      const doctorName = (certificateForm.doctor_name || '').replace(/^Dr\.\s*/i, '');
+      const subData = {
+        patient_name:        selectedPatient?.name   || '',
+        age,
+        gender:              selectedPatient?.gender || '',
+        diagnosis:           certificateForm.diagnosis,
+        valid_from:          certificateForm.valid_from,
+        valid_until:         certificateForm.valid_until,
+        resume_date:         certificateForm.resume_date,
+        doctor_name:         doctorName,
+        doctor_registration: certificateForm.doctor_registration_no || '',
+        issued_date:         certificateForm.issued_date,
+      };
+      const processedContent = substituteVars(certificateForm.certificate_content, subData);
+
+      await api.post('/api/medical-certificates', {
+        ...certificateForm,
+        certificate_content: processedContent,
+      });
       setShowCreateModal(false);
       fetchCertificates();
       resetCertificateForm();
       alert('Medical certificate created successfully!');
-    } catch (error) {
-      console.error('Failed to create certificate:', error);
-      alert('Failed to create certificate');
+    } catch (e) {
+      alert('Failed to create certificate: ' + (e.response?.data?.error || e.message));
     }
   };
 
   const handleDeleteCertificate = async (id) => {
-    if (!confirm('Are you sure you want to delete this certificate?')) {
-      return;
-    }
-
+    if (!confirm('Delete this certificate?')) return;
     try {
       await api.delete(`/api/medical-certificates/${id}`);
       fetchCertificates();
-      alert('Certificate deleted successfully!');
-    } catch (error) {
-      console.error('Failed to delete certificate:', error);
-      alert('Failed to delete certificate');
-    }
+    } catch { alert('Failed to delete certificate'); }
   };
 
   const handleViewCertificate = async (cert) => {
@@ -204,579 +311,450 @@ export default function MedicalCertificates() {
       const res = await api.get(`/api/medical-certificates/${cert.id}`);
       setViewingCertificate(res.data.certificate);
       setShowViewModal(true);
-    } catch (error) {
-      console.error('Failed to fetch certificate details:', error);
-      alert('Failed to load certificate');
-    }
-  };
-
-  const handlePrintCertificate = () => {
-    window.print();
+    } catch { alert('Failed to load certificate'); }
   };
 
   const handleLoadTemplate = (templateId) => {
-    const template = templates.find(t => t.id === parseInt(templateId));
-    if (template) {
-      setCertificateForm({
-        ...certificateForm,
-        certificate_type: template.certificate_type,
-        certificate_content: template.template_content
-      });
-    }
+    const t = templates.find(t => t.id === parseInt(templateId));
+    if (t) setCertificateForm(prev => ({
+      ...prev,
+      type_id: t.type_id,
+      certificate_content: t.template_content,
+    }));
   };
 
+  /* ─── template CRUD ─────────────────────────────────────────────────── */
   const handleCreateTemplate = async () => {
     if (!templateForm.template_name || !templateForm.template_content) {
-      alert('Please fill in template name and content');
-      return;
+      alert('Please fill in template name and content'); return;
     }
-
     try {
       await api.post('/api/medical-certificates/templates', templateForm);
       setShowTemplateModal(false);
       fetchTemplates();
-      setTemplateForm({
-        template_name: '',
-        certificate_type: 'sick_leave',
-        template_content: '',
-        header_image: '',
-        footer_image: '',
-        is_default: false
-      });
-      alert('Template created successfully!');
-    } catch (error) {
-      console.error('Failed to create template:', error);
-      alert('Failed to create template');
-    }
+      setTemplateForm({ template_name: '', type_id: 1, template_content: '', header_image: '', footer_image: '', is_default: false });
+      alert('Template created!');
+    } catch { alert('Failed to create template'); }
   };
 
+  const handleUpdateTemplate = async () => {
+    if (!editingTemplate) return;
+    try {
+      await api.put(`/api/medical-certificates/templates/${editingTemplate.id}`, editingTemplate);
+      setShowEditTemplateModal(false);
+      setEditingTemplate(null);
+      fetchTemplates();
+      alert('Template updated!');
+    } catch { alert('Failed to update template'); }
+  };
+
+  const handleDeleteTemplate = async (id) => {
+    if (!confirm('Delete this template?')) return;
+    try {
+      await api.delete(`/api/medical-certificates/templates/${id}`);
+      fetchTemplates();
+    } catch { alert('Failed to delete template'); }
+  };
+
+  /* ─── certificate type CRUD ─────────────────────────────────────────── */
+  const handleAddType = async () => {
+    if (!newTypeName.trim()) return;
+    try {
+      const res = await api.post('/api/certificate-types', { name: newTypeName.trim() });
+      setCertificateTypes(prev => [...prev, { id: res.data.id, name: res.data.name, is_active: 1 }]);
+      setShowAddTypeModal(false);
+      setNewTypeName('');
+    } catch { alert('Failed to add certificate type'); }
+  };
+
+  const handleUpdateType = async () => {
+    if (!editTypeName.trim() || !editTypeId) return;
+    try {
+      await api.put(`/api/certificate-types/${editTypeId}`, { name: editTypeName.trim() });
+      setCertificateTypes(prev => prev.map(t => t.id === editTypeId ? { ...t, name: editTypeName.trim() } : t));
+      setShowEditTypeModal(false);
+      setEditTypeId(null);
+      setEditTypeName('');
+    } catch { alert('Failed to update certificate type'); }
+  };
+
+  const handleDeleteType = async (id) => {
+    if (!confirm('Delete this certificate type?')) return;
+    try {
+      await api.delete(`/api/certificate-types/${id}`);
+      setCertificateTypes(prev => prev.filter(t => t.id !== id));
+    } catch { alert('Failed to delete certificate type'); }
+  };
+
+  /* ─── available template vars (extracted from content) ─────────────── */
+  const extractVars = (content) => {
+    const matches = content?.match(/\{\{(\w+)\}\}/g) || [];
+    return [...new Set(matches.map(m => m.replace(/\{\{|\}\}/g, '')))];
+  };
+
+  /* ─── live preview — substitutes real values as user fills the form ── */
+  const livePreview = useMemo(() => {
+    if (!certificateForm.certificate_content) return '';
+    const age = calcAge(selectedPatient);
+    // Strip "Dr." prefix if user typed it — templates already have "Dr. {{doctor_name}}"
+    const doctorName = (certificateForm.doctor_name || '').replace(/^Dr\.\s*/i, '');
+    const subData = {
+      patient_name:        selectedPatient?.name  || '',
+      age,
+      gender:              selectedPatient?.gender || '',
+      diagnosis:           certificateForm.diagnosis,
+      valid_from:          certificateForm.valid_from,
+      valid_until:         certificateForm.valid_until,
+      resume_date:         certificateForm.resume_date,
+      doctor_name:         doctorName,
+      doctor_registration: certificateForm.doctor_registration_no || '',
+      issued_date:         certificateForm.issued_date,
+    };
+    return substituteVars(certificateForm.certificate_content, subData);
+  }, [selectedPatient, certificateForm]);
+
+  /* ─── render ────────────────────────────────────────────────────────── */
   return (
     <div className="space-y-6">
       <HeaderBar title="Medical Certificates" />
 
-      {/* Patient Search Section */}
+      {/* ── Patient Search ─────────────────────────────────────────── */}
       <div className="bg-white border rounded shadow-sm p-4">
         <h3 className="text-md font-semibold mb-3">Search & Select Patient</h3>
         <div className="relative">
           <input
             type="text"
-            className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
+            className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary"
             placeholder="Search patient by name, ID, phone..."
             value={patientSearch}
-            onChange={(e) => {
-              setPatientSearch(e.target.value);
-              searchPatients(e.target.value);
-            }}
-            onFocus={() => {
-              if (patientSearch.length >= 2) {
-                setShowPatientSearch(true);
-              }
-            }}
+            onChange={e => { setPatientSearch(e.target.value); searchPatients(e.target.value); }}
+            onFocus={() => { if (patientSearch.length >= 2) setShowPatientSearch(true); }}
           />
-
-          {/* Patient Search Dropdown */}
           {showPatientSearch && patientResults.length > 0 && (
             <div className="absolute z-50 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-96 overflow-y-auto">
-              {patientResults.map((patient) => (
-                <div
-                  key={patient.id}
-                  className="px-4 py-3 hover:bg-slate-50 cursor-pointer border-b last:border-b-0"
-                  onClick={() => handlePatientSelect(patient)}
-                >
-                  <div className="font-medium text-slate-900">{patient.name}</div>
-                  <div className="text-sm text-slate-600">
-                    ID: {patient.patient_id} | {patient.age}y, {patient.gender}
-                    {patient.phone && ` | ${patient.phone}`}
-                  </div>
+              {patientResults.map(p => (
+                <div key={p.id} className="px-4 py-3 hover:bg-slate-50 cursor-pointer border-b last:border-b-0" onClick={() => handlePatientSelect(p)}>
+                  <div className="font-medium text-slate-900">{p.name}</div>
+                  <div className="text-sm text-slate-600">ID: {p.patient_id} | {calcAge(p)}y, {p.gender}{p.phone && ` | ${p.phone}`}</div>
                 </div>
               ))}
             </div>
           )}
-
-          {showPatientSearch && patientResults.length === 0 && patientSearch.length >= 2 && (
-            <div className="absolute z-50 w-full mt-1 bg-white border rounded-lg shadow-lg">
-              <div className="px-4 py-3 text-slate-500 text-sm">
-                No patients found matching "{patientSearch}"
-              </div>
-            </div>
-          )}
         </div>
-
         {selectedPatient && (
-          <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-            <div className="flex items-center justify-between">
-              <div>
-                <span className="font-medium text-blue-900">Selected Patient: </span>
-                <span className="text-blue-700">{selectedPatient.name} ({selectedPatient.patient_id})</span>
-                <span className="text-blue-600 text-sm ml-2">
-                  {selectedPatient.age}y, {selectedPatient.gender}
-                </span>
-              </div>
-              <button
-                onClick={() => {
-                  setSelectedPatient(null);
-                  setPatientSearch('');
-                }}
-                className="text-blue-600 hover:text-blue-800 text-sm underline"
-              >
-                Clear
-              </button>
+          <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg flex items-center justify-between">
+            <div>
+              <span className="font-medium text-blue-900">Selected: </span>
+              <span className="text-blue-700">{selectedPatient.name} ({selectedPatient.patient_id})</span>
+              <span className="text-blue-600 text-sm ml-2">{calcAge(selectedPatient)}y, {selectedPatient.gender}</span>
             </div>
+            <button onClick={() => { setSelectedPatient(null); setPatientSearch(''); }} className="text-blue-600 hover:text-blue-800 text-sm underline">Clear</button>
           </div>
         )}
       </div>
 
-      {/* Filters and Actions */}
+      {/* ── Filters & Actions ──────────────────────────────────────── */}
       <div className="bg-white border rounded shadow-sm p-4">
         <div className="flex flex-wrap gap-4 items-end">
           <div className="flex-1 min-w-[200px]">
             <label className="block text-sm font-medium mb-2">Patient</label>
-            <select
-              className="w-full px-3 py-2 border rounded"
-              value={filters.patient_id}
-              onChange={(e) => setFilters({ ...filters, patient_id: e.target.value })}
-            >
+            <select className="w-full px-3 py-2 border rounded" value={filters.patient_id} onChange={e => setFilters(f => ({ ...f, patient_id: e.target.value }))}>
               <option value="">All Patients</option>
-              {patients.map(p => (
-                <option key={p.id} value={p.id}>
-                  {p.name} ({p.patient_id})
-                </option>
-              ))}
+              {patients.map(p => <option key={p.id} value={p.id}>{p.name} ({p.patient_id})</option>)}
             </select>
           </div>
-
-          <div className="flex-1 min-w-[200px]">
+          <div>
             <label className="block text-sm font-medium mb-2">Certificate Type</label>
-            <select
-              className="w-full px-3 py-2 border rounded"
-              value={filters.certificate_type}
-              onChange={(e) => setFilters({ ...filters, certificate_type: e.target.value })}
-            >
+            <select className="w-full px-3 py-2 border rounded" value={filters.type_id} onChange={e => setFilters(f => ({ ...f, type_id: e.target.value }))}>
               <option value="">All Types</option>
-              {certificateTypes.map(type => (
-                <option key={type.value} value={type.value}>{type.label}</option>
-              ))}
+              {certificateTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
           </div>
-
           <div className="flex gap-3">
-            <button
-              onClick={() => setShowCreateModal(true)}
-              className="px-4 py-2 bg-primary text-white rounded hover:bg-primary/90"
-            >
+            <button onClick={() => { resetCertificateForm(); setShowCreateModal(true); }} className="px-4 py-2 bg-primary text-white rounded hover:bg-primary/90">
               Create Certificate
             </button>
-            <button
-              onClick={() => setShowTemplateModal(true)}
-              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-            >
+            <button onClick={() => setShowTemplateModal(true)} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
               Manage Templates
             </button>
           </div>
         </div>
       </div>
 
-      {/* Certificates List */}
+      {/* ── Certificates Table ─────────────────────────────────────── */}
       <div className="bg-white border rounded shadow-sm p-4">
         <h2 className="text-lg font-semibold mb-4">Medical Certificates</h2>
-
         <div className="border rounded overflow-hidden">
           <table className="w-full">
             <thead className="bg-slate-50">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600">DATE</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600">PATIENT</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600">DOCTOR</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600">TYPE</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600">TITLE</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600">ACTIONS</th>
+                {['DATE','PATIENT','DOCTOR','TYPE','TITLE','ACTIONS'].map(h => (
+                  <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-slate-600">{h}</th>
+                ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
               {loading ? (
-                <tr>
-                  <td colSpan="6" className="px-4 py-8 text-center text-slate-500">
-                    Loading...
-                  </td>
-                </tr>
+                <tr><td colSpan="6" className="px-4 py-8 text-center text-slate-500">Loading...</td></tr>
               ) : certificates.length === 0 ? (
-                <tr>
-                  <td colSpan="6" className="px-4 py-8 text-center text-slate-500">
-                    No certificates found. Create your first certificate to get started.
+                <tr><td colSpan="6" className="px-4 py-8 text-center text-slate-500">No certificates found.</td></tr>
+              ) : certificates.map(cert => (
+                <tr key={cert.id} className="hover:bg-slate-50">
+                  <td className="px-4 py-3 text-sm">{new Date(cert.issued_date).toLocaleDateString('en-IN')}</td>
+                  <td className="px-4 py-3 text-sm font-medium">
+                    {cert.patient_name}
+                    <div className="text-xs text-slate-500">{cert.patient_identifier}</div>
+                  </td>
+                  <td className="px-4 py-3 text-sm">{cert.doctor_name}</td>
+                  <td className="px-4 py-3 text-sm">
+                    <span className="inline-flex px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded">
+                      {certificateTypes.find(t => t.id === cert.type_id)?.name || 'Unknown'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-sm">{cert.certificate_title}</td>
+                  <td className="px-4 py-3 text-sm">
+                    <div className="flex gap-2">
+                      <button onClick={() => handleViewCertificate(cert)} className="text-blue-600 hover:underline">View</button>
+                      <button onClick={() => downloadCertificatePDF(cert.id)} className="text-green-600 hover:underline flex items-center gap-1" title="Download PDF">
+                        <FiDownload className="w-3 h-3" /> PDF
+                      </button>
+                      <button onClick={() => handleDeleteCertificate(cert.id)} className="text-red-600 hover:underline">Delete</button>
+                    </div>
                   </td>
                 </tr>
-              ) : (
-                certificates.map((cert) => (
-                  <tr key={cert.id} className="hover:bg-slate-50">
-                    <td className="px-4 py-3 text-sm">
-                      {new Date(cert.issued_date).toLocaleDateString()}
-                    </td>
-                    <td className="px-4 py-3 text-sm font-medium">
-                      {cert.patient_name}
-                      <div className="text-xs text-slate-500">{cert.patient_identifier}</div>
-                    </td>
-                    <td className="px-4 py-3 text-sm">{cert.doctor_name}</td>
-                    <td className="px-4 py-3 text-sm">
-                      <span className="inline-flex px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded">
-                        {certificateTypes.find(t => t.value === cert.certificate_type)?.label || cert.certificate_type}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-sm">{cert.certificate_title}</td>
-                    <td className="px-4 py-3 text-sm">
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => handleViewCertificate(cert)}
-                          className="text-blue-600 hover:underline"
-                        >
-                          View
-                        </button>
-                        <button
-                          onClick={() => downloadCertificatePDF(cert.id)}
-                          className="text-green-600 hover:underline flex items-center gap-1"
-                          title="Download as PDF"
-                        >
-                          <FiDownload className="w-3 h-3" />
-                          PDF
-                        </button>
-                        <button
-                          onClick={() => handleDeleteCertificate(cert.id)}
-                          className="text-red-600 hover:underline"
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
+              ))}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* Create Certificate Modal */}
-      <Modal
-        isOpen={showCreateModal}
-        onClose={() => {
-          setShowCreateModal(false);
-          resetCertificateForm();
-        }}
-        title="Create Medical Certificate"
-        size="xl"
-      >
+      {/* ════════════════════════════════════════════════════════════ */}
+      {/* ── Create Certificate Modal ──────────────────────────────── */}
+      {/* ════════════════════════════════════════════════════════════ */}
+      <Modal isOpen={showCreateModal} onClose={() => { setShowCreateModal(false); resetCertificateForm(); }} title="Create Medical Certificate" size="xl">
         <div className="space-y-4">
+
+          {/* Row 1: Patient + Certificate Type */}
           <div className="grid grid-cols-2 gap-4">
-            <div>
+            {/* Patient search */}
+            <div className="relative">
               <label className="block text-sm font-medium mb-2">Patient *</label>
-              <select
-                className="w-full px-3 py-2 border rounded"
-                value={certificateForm.patient_id}
-                onChange={(e) => setCertificateForm({ ...certificateForm, patient_id: e.target.value })}
-              >
-                <option value="">Select Patient</option>
-                {patients.map(p => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} ({p.patient_id}) - {p.age}y, {p.gender}
-                  </option>
-                ))}
-              </select>
+              <input
+                type="text" ref={patientInputRef}
+                className="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-primary"
+                placeholder="Search by name, ID, phone..."
+                value={patientSearch}
+                onChange={e => { setPatientSearch(e.target.value); searchPatients(e.target.value); }}
+                onFocus={() => { if (patientSearch.length >= 2) setShowPatientSearch(true); }}
+              />
+              {selectedPatient && (
+                <div className="mt-2 flex items-center gap-2">
+                  <span className="inline-flex items-center px-3 py-1 bg-slate-100 rounded-md text-sm">
+                    {selectedPatient.name} • {selectedPatient.patient_id}
+                  </span>
+                  <button type="button" className="text-xs text-red-600 hover:underline" onClick={() => { setSelectedPatient(null); setPatientSearch(''); setCertificateForm(p => ({ ...p, patient_id: '' })); }}>Clear</button>
+                </div>
+              )}
+              {showPatientSearch && patientResults.length > 0 && (
+                <div className="absolute z-50 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-72 overflow-y-auto">
+                  {patientResults.map(p => (
+                    <div key={p.id} className="px-4 py-3 hover:bg-slate-50 cursor-pointer border-b last:border-b-0"
+                      onClick={() => { setSelectedPatient(p); setPatientSearch(`${p.name} (${p.patient_id})`); setShowPatientSearch(false); setPatientResults([]); setCertificateForm(prev => ({ ...prev, patient_id: p.id })); }}>
+                      <div className="font-medium text-slate-900">{p.name}</div>
+                      <div className="text-sm text-slate-600">ID: {p.patient_id} | {calcAge(p)}y, {p.gender}{p.phone && ` | ${p.phone}`}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
+            {/* Certificate Type */}
             <div>
               <label className="block text-sm font-medium mb-2">Certificate Type *</label>
               <select
                 className="w-full px-3 py-2 border rounded"
-                value={certificateForm.certificate_type}
-                onChange={(e) => setCertificateForm({ ...certificateForm, certificate_type: e.target.value })}
+                value={certificateForm.type_id}
+                onChange={e => handleCertificateTypeSelect(e.target.value)}
               >
-                {certificateTypes.map(type => (
-                  <option key={type.value} value={type.value}>{type.label}</option>
+                <option value="">Select Certificate Type</option>
+                {certificateTypes.map(t => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
                 ))}
+                <option value="__add_new__">＋ Add New Type</option>
               </select>
             </div>
           </div>
 
+          {/* Load from Template */}
           <div>
             <label className="block text-sm font-medium mb-2">Load from Template (Optional)</label>
-            <select
-              className="w-full px-3 py-2 border rounded"
-              onChange={(e) => handleLoadTemplate(e.target.value)}
-              defaultValue=""
-            >
+            <select className="w-full px-3 py-2 border rounded" onChange={e => handleLoadTemplate(e.target.value)} defaultValue="">
               <option value="">Select a template...</option>
-              {templates
-                .filter(t => t.certificate_type === certificateForm.certificate_type)
-                .map(t => (
-                  <option key={t.id} value={t.id}>
-                    {t.template_name} {t.is_default ? '(Default)' : ''}
-                  </option>
-                ))}
+              {templates.filter(t => t.type_id === certificateForm.type_id).map(t => (
+                <option key={t.id} value={t.id}>{t.template_name} {t.is_default ? '(Default)' : ''}</option>
+              ))}
             </select>
           </div>
 
+          {/* Doctor Name + Registration */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium mb-2">Doctor Name *</label>
-              <input
-                type="text"
-                className="w-full px-3 py-2 border rounded"
-                placeholder="Dr. Name"
-                value={certificateForm.doctor_name}
-                onChange={(e) => setCertificateForm({ ...certificateForm, doctor_name: e.target.value })}
-              />
+              <input type="text" className="w-full px-3 py-2 border rounded bg-slate-50 text-slate-700" value={certificateForm.doctor_name} readOnly />
             </div>
-
             <div>
-              <label className="block text-sm font-medium mb-2">Registration No.</label>
+              <label className="block text-sm font-medium mb-2">Registration No <span className="text-slate-400 font-normal">(optional)</span></label>
               <input
                 type="text"
                 className="w-full px-3 py-2 border rounded"
-                placeholder="e.g., MCI-12345"
+                placeholder="e.g., MH12345"
                 value={certificateForm.doctor_registration_no}
-                onChange={(e) => setCertificateForm({ ...certificateForm, doctor_registration_no: e.target.value })}
+                onChange={e => setCertificateForm(p => ({ ...p, doctor_registration_no: e.target.value }))}
               />
             </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium mb-2">Doctor Qualification</label>
-            <input
-              type="text"
-              className="w-full px-3 py-2 border rounded"
-              placeholder="e.g., MBBS, MD (Medicine)"
-              value={certificateForm.doctor_qualification}
-              onChange={(e) => setCertificateForm({ ...certificateForm, doctor_qualification: e.target.value })}
-            />
+          {/* Certificate Title */}
+          {(() => {
+            const selTypeName = certificateTypes.find(t => t.id === certificateForm.type_id)?.name || '';
+            const isOther     = selTypeName === 'Other' || !certificateForm.type_id;
+            return (
+              <div>
+                <label className="block text-sm font-medium mb-2">Certificate Title *</label>
+                <input
+                  type="text"
+                  className={`w-full px-3 py-2 border rounded ${!isOther ? 'bg-slate-50 text-slate-700' : ''}`}
+                  placeholder="e.g., Medical Leave Certificate"
+                  value={certificateForm.certificate_title}
+                  onChange={e => setCertificateForm(p => ({ ...p, certificate_title: e.target.value }))}
+                  readOnly={!isOther}
+                />
+                {!isOther && certificateForm.type_id && (
+                  <p className="text-xs text-slate-500 mt-1">
+                    Auto-filled from type. Select "Other" to enter a custom title.
+                  </p>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* Dates row */}
+          <div className="grid grid-cols-4 gap-3">
+            <div>
+              <label className="block text-sm font-medium mb-2">Issued Date *</label>
+              <input type="date" className="w-full px-3 py-2 border rounded" value={certificateForm.issued_date}
+                onChange={e => setCertificateForm(p => ({ ...p, issued_date: e.target.value }))} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-2">Valid From</label>
+              <input type="date" className="w-full px-3 py-2 border rounded" value={certificateForm.valid_from}
+                onChange={e => setCertificateForm(p => ({ ...p, valid_from: e.target.value }))} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-2">Valid Until</label>
+              <input type="date" className="w-full px-3 py-2 border rounded" value={certificateForm.valid_until}
+                onChange={e => setCertificateForm(p => ({ ...p, valid_until: e.target.value }))} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-2">Resume Date</label>
+              <input type="date" className="w-full px-3 py-2 border rounded" value={certificateForm.resume_date}
+                onChange={e => setCertificateForm(p => ({ ...p, resume_date: e.target.value }))} />
+            </div>
           </div>
 
+          {/* Diagnosis */}
           <div>
-            <label className="block text-sm font-medium mb-2">Certificate Title *</label>
+            <label className="block text-sm font-medium mb-2">Diagnosis / Condition</label>
             <input
               type="text"
               className="w-full px-3 py-2 border rounded"
-              placeholder="e.g., Medical Leave Certificate"
-              value={certificateForm.certificate_title}
-              onChange={(e) => setCertificateForm({ ...certificateForm, certificate_title: e.target.value })}
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-2">Diagnosis</label>
-            <input
-              type="text"
-              className="w-full px-3 py-2 border rounded"
-              placeholder="e.g., Acute Viral Fever"
+              placeholder="e.g., Viral Fever, Hypertension..."
               value={certificateForm.diagnosis}
-              onChange={(e) => setCertificateForm({ ...certificateForm, diagnosis: e.target.value })}
+              onChange={e => setCertificateForm(p => ({ ...p, diagnosis: e.target.value }))}
             />
           </div>
 
+          {/* Certificate Content (Paragraph Editor) */}
           <div>
-            <label className="block text-sm font-medium mb-2">Certificate Content *</label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium">Certificate Content / Paragraph</label>
+              {/* Reset to standard paragraph */}
+              <button
+                type="button"
+                className="text-xs text-blue-600 hover:underline"
+                onClick={() => setCertificateForm(p => ({ ...p, certificate_content: STANDARD_PARAGRAPH }))}
+              >
+                Reset to Standard Paragraph
+              </button>
+            </div>
             <textarea
               className="w-full px-3 py-2 border rounded font-mono text-sm"
               rows="8"
-              placeholder="Enter certificate content. You can use placeholders like [PATIENT_NAME], [AGE], [DIAGNOSIS], etc."
+              placeholder="Certificate text. Use {{patient_name}}, {{age}}, {{diagnosis}}, {{valid_from}}, {{valid_until}}, {{resume_date}}, {{doctor_name}}"
               value={certificateForm.certificate_content}
-              onChange={(e) => setCertificateForm({ ...certificateForm, certificate_content: e.target.value })}
+              onChange={e => setCertificateForm(p => ({ ...p, certificate_content: e.target.value }))}
             />
-            <p className="text-xs text-slate-500 mt-1">
-              Available placeholders: [PATIENT_NAME], [AGE], [GENDER], [DIAGNOSIS], [DATE], [DURATION], [PURPOSE]
+            {/* Show detected variables as info pills */}
+            {certificateForm.certificate_content && (
+              <div className="mt-1 flex flex-wrap gap-1">
+                {extractVars(certificateForm.certificate_content).map(v => (
+                  <span key={v} className="inline-flex px-2 py-0.5 text-xs bg-slate-100 text-slate-600 rounded border font-mono">
+                    {`{{${v}}}`}
+                  </span>
+                ))}
+              </div>
+            )}
+            <p className="text-xs text-slate-400 mt-1">
+              Variables are auto-filled from patient data and the fields above when you save.
             </p>
           </div>
 
-          <div className="grid grid-cols-3 gap-4">
+          {/* ── Live Preview ── */}
+          {livePreview && (
             <div>
-              <label className="block text-sm font-medium mb-2">Issued Date *</label>
-              <input
-                type="date"
-                className="w-full px-3 py-2 border rounded"
-                value={certificateForm.issued_date}
-                onChange={(e) => setCertificateForm({ ...certificateForm, issued_date: e.target.value })}
-              />
+              <div className="flex items-center gap-2 mb-2">
+                <label className="block text-sm font-medium text-slate-700">Live Preview</label>
+                <span className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded-full">Auto-updated</span>
+              </div>
+              <div className="px-4 py-3 bg-amber-50 border border-amber-200 rounded text-sm whitespace-pre-wrap leading-relaxed text-slate-800 font-mono max-h-64 overflow-y-auto">
+                {livePreview}
+              </div>
+              <p className="text-xs text-slate-400 mt-1">This is how the certificate will look after saving.</p>
             </div>
+          )}
 
-            <div>
-              <label className="block text-sm font-medium mb-2">Valid From</label>
-              <input
-                type="date"
-                className="w-full px-3 py-2 border rounded"
-                value={certificateForm.valid_from}
-                onChange={(e) => setCertificateForm({ ...certificateForm, valid_from: e.target.value })}
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium mb-2">Valid Until</label>
-              <input
-                type="date"
-                className="w-full px-3 py-2 border rounded"
-                value={certificateForm.valid_until}
-                onChange={(e) => setCertificateForm({ ...certificateForm, valid_until: e.target.value })}
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-2">Notes (Internal)</label>
-            <textarea
-              className="w-full px-3 py-2 border rounded text-sm"
-              rows="2"
-              placeholder="Internal notes (not displayed on certificate)"
-              value={certificateForm.notes}
-              onChange={(e) => setCertificateForm({ ...certificateForm, notes: e.target.value })}
-            />
-          </div>
-
-          {/* Header Image Section */}
+          {/* Header Image */}
           <div>
             <label className="block text-sm font-medium mb-2">Header Image (Optional)</label>
-            <div className="space-y-3">
-              {/* Upload File */}
-              <div>
-                <label className="block text-xs text-slate-600 mb-1">Upload Image</label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="w-full px-3 py-2 border rounded text-sm"
-                  onChange={(e) => {
-                    const file = e.target.files[0];
-                    if (file) {
-                      const reader = new FileReader();
-                      reader.onloadend = () => {
-                        setCertificateForm({ ...certificateForm, header_image: reader.result });
-                      };
-                      reader.readAsDataURL(file);
-                    }
-                  }}
-                />
+            <input type="file" accept="image/*" className="w-full px-3 py-2 border rounded text-sm"
+              onChange={e => { const f = e.target.files[0]; if (f) { const r = new FileReader(); r.onloadend = () => setCertificateForm(p => ({ ...p, header_image: r.result })); r.readAsDataURL(f); } }} />
+            {certificateForm.header_image && (
+              <div className="mt-2 flex items-center gap-2">
+                <img src={certificateForm.header_image} alt="Header preview" className="max-h-16 border rounded" onError={e => e.target.style.display = 'none'} />
+                <button type="button" className="text-xs text-red-600 hover:underline" onClick={() => setCertificateForm(p => ({ ...p, header_image: '' }))}>Remove</button>
               </div>
-
-              {/* OR Divider */}
-              <div className="flex items-center">
-                <div className="flex-1 border-t border-slate-300"></div>
-                <span className="px-3 text-xs text-slate-500">OR</span>
-                <div className="flex-1 border-t border-slate-300"></div>
-              </div>
-
-              {/* URL Input */}
-              <div>
-                <label className="block text-xs text-slate-600 mb-1">Image URL</label>
-                <input
-                  type="text"
-                  className="w-full px-3 py-2 border rounded"
-                  placeholder="https://example.com/header.png"
-                  value={certificateForm.header_image && !certificateForm.header_image.startsWith('data:') ? certificateForm.header_image : ''}
-                  onChange={(e) => setCertificateForm({ ...certificateForm, header_image: e.target.value })}
-                />
-              </div>
-
-              {/* Preview */}
-              {certificateForm.header_image && (
-                <div className="mt-2">
-                  <p className="text-xs text-slate-600 mb-1">Preview:</p>
-                  <img
-                    src={certificateForm.header_image}
-                    alt="Header preview"
-                    className="max-h-32 border rounded"
-                    onError={(e) => {
-                      e.target.style.display = 'none';
-                      alert('Failed to load header image. Please check the URL or upload a valid image.');
-                    }}
-                  />
-                  <button
-                    type="button"
-                    className="text-xs text-red-600 hover:underline mt-1"
-                    onClick={() => setCertificateForm({ ...certificateForm, header_image: '' })}
-                  >
-                    Remove Header Image
-                  </button>
-                </div>
-              )}
-            </div>
+            )}
           </div>
 
-          {/* Footer Image Section */}
+          {/* Footer Image */}
           <div>
             <label className="block text-sm font-medium mb-2">Footer Image (Optional)</label>
-            <div className="space-y-3">
-              {/* Upload File */}
-              <div>
-                <label className="block text-xs text-slate-600 mb-1">Upload Image</label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="w-full px-3 py-2 border rounded text-sm"
-                  onChange={(e) => {
-                    const file = e.target.files[0];
-                    if (file) {
-                      const reader = new FileReader();
-                      reader.onloadend = () => {
-                        setCertificateForm({ ...certificateForm, footer_image: reader.result });
-                      };
-                      reader.readAsDataURL(file);
-                    }
-                  }}
-                />
+            <input type="file" accept="image/*" className="w-full px-3 py-2 border rounded text-sm"
+              onChange={e => { const f = e.target.files[0]; if (f) { const r = new FileReader(); r.onloadend = () => setCertificateForm(p => ({ ...p, footer_image: r.result })); r.readAsDataURL(f); } }} />
+            {certificateForm.footer_image && (
+              <div className="mt-2 flex items-center gap-2">
+                <img src={certificateForm.footer_image} alt="Footer preview" className="max-h-16 border rounded" onError={e => e.target.style.display = 'none'} />
+                <button type="button" className="text-xs text-red-600 hover:underline" onClick={() => setCertificateForm(p => ({ ...p, footer_image: '' }))}>Remove</button>
               </div>
-
-              {/* OR Divider */}
-              <div className="flex items-center">
-                <div className="flex-1 border-t border-slate-300"></div>
-                <span className="px-3 text-xs text-slate-500">OR</span>
-                <div className="flex-1 border-t border-slate-300"></div>
-              </div>
-
-              {/* URL Input */}
-              <div>
-                <label className="block text-xs text-slate-600 mb-1">Image URL</label>
-                <input
-                  type="text"
-                  className="w-full px-3 py-2 border rounded"
-                  placeholder="https://example.com/footer.png"
-                  value={certificateForm.footer_image && !certificateForm.footer_image.startsWith('data:') ? certificateForm.footer_image : ''}
-                  onChange={(e) => setCertificateForm({ ...certificateForm, footer_image: e.target.value })}
-                />
-              </div>
-
-              {/* Preview */}
-              {certificateForm.footer_image && (
-                <div className="mt-2">
-                  <p className="text-xs text-slate-600 mb-1">Preview:</p>
-                  <img
-                    src={certificateForm.footer_image}
-                    alt="Footer preview"
-                    className="max-h-32 border rounded"
-                    onError={(e) => {
-                      e.target.style.display = 'none';
-                      alert('Failed to load footer image. Please check the URL or upload a valid image.');
-                    }}
-                  />
-                  <button
-                    type="button"
-                    className="text-xs text-red-600 hover:underline mt-1"
-                    onClick={() => setCertificateForm({ ...certificateForm, footer_image: '' })}
-                  >
-                    Remove Footer Image
-                  </button>
-                </div>
-              )}
-            </div>
+            )}
           </div>
 
-          <div className="flex gap-3 pt-4">
-            <button
-              onClick={() => {
-                setShowCreateModal(false);
-                resetCertificateForm();
-              }}
-              className="flex-1 px-4 py-2 border rounded hover:bg-slate-50"
-            >
-              Cancel
-            </button>
+          <div className="flex gap-3 pt-2">
+            <button onClick={() => { setShowCreateModal(false); resetCertificateForm(); }} className="flex-1 px-4 py-2 border rounded hover:bg-slate-50">Cancel</button>
             <button
               onClick={handleCreateCertificate}
-              className="flex-1 px-4 py-2 bg-primary text-white rounded hover:bg-primary/90"
+              disabled={!(certificateForm.patient_id && certificateForm.doctor_name && certificateForm.type_id && certificateForm.certificate_title)}
+              className={`flex-1 px-4 py-2 text-white rounded ${(certificateForm.patient_id && certificateForm.doctor_name && certificateForm.type_id && certificateForm.certificate_title) ? 'bg-primary hover:bg-primary/90' : 'bg-slate-200 text-slate-500 cursor-not-allowed'}`}
             >
               Create Certificate
             </button>
@@ -784,336 +762,196 @@ export default function MedicalCertificates() {
         </div>
       </Modal>
 
-      {/* View Certificate Modal */}
-      <Modal
-        isOpen={showViewModal}
-        onClose={() => {
-          setShowViewModal(false);
-          setViewingCertificate(null);
-        }}
-        title="Medical Certificate"
-        size="xl"
-      >
+      {/* ── Add New Certificate Type Modal ────────────────────────── */}
+      <Modal isOpen={showAddTypeModal} onClose={() => { setShowAddTypeModal(false); setNewTypeName(''); }} title="Add New Certificate Type" size="sm">
+        <div className="space-y-4">
+          <input type="text" className="w-full px-3 py-2 border rounded" placeholder="Enter type name" value={newTypeName} onChange={e => setNewTypeName(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleAddType()} />
+          <div className="flex gap-2 justify-end">
+            <button className="px-4 py-2 border rounded" onClick={() => { setShowAddTypeModal(false); setNewTypeName(''); }}>Cancel</button>
+            <button className="px-4 py-2 bg-primary text-white rounded" disabled={!newTypeName.trim()} onClick={handleAddType}>Add</button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* ── Edit Certificate Type Modal ────────────────────────────── */}
+      <Modal isOpen={showEditTypeModal} onClose={() => { setShowEditTypeModal(false); setEditTypeId(null); setEditTypeName(''); }} title="Edit Certificate Type" size="sm">
+        <div className="space-y-4">
+          <input type="text" className="w-full px-3 py-2 border rounded" value={editTypeName} onChange={e => setEditTypeName(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleUpdateType()} />
+          <div className="flex gap-2 justify-end">
+            <button className="px-4 py-2 border rounded" onClick={() => { setShowEditTypeModal(false); }}>Cancel</button>
+            <button className="px-4 py-2 bg-primary text-white rounded" disabled={!editTypeName.trim()} onClick={handleUpdateType}>Update</button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* ════════════════════════════════════════════════════════════ */}
+      {/* ── View Certificate Modal ────────────────────────────────── */}
+      {/* ════════════════════════════════════════════════════════════ */}
+      <Modal isOpen={showViewModal} onClose={() => { setShowViewModal(false); setViewingCertificate(null); }} title="Medical Certificate" size="xl">
         {viewingCertificate && (
           <div className="space-y-6">
-            <div className="border-2 rounded p-8 bg-white print:border-0" id="certificate-print">
-              {/* Header Image */}
+            <div className="border-2 rounded p-8 bg-white" id="certificate-print">
               {viewingCertificate.header_image && (
                 <div className="text-center mb-6">
-                  <img
-                    src={viewingCertificate.header_image}
-                    alt="Header"
-                    className="max-h-40 mx-auto"
-                    onError={(e) => {
-                      e.target.style.display = 'none';
-                    }}
-                  />
+                  <img src={viewingCertificate.header_image} alt="Header" className="max-h-40 mx-auto" onError={e => e.target.style.display = 'none'} />
                 </div>
               )}
-
-              {/* Header */}
               <div className="text-center mb-6 border-b-2 pb-4">
                 {viewingCertificate.clinic_name && (
                   <>
                     <h2 className="text-2xl font-bold text-slate-800">{viewingCertificate.clinic_name}</h2>
-                    {viewingCertificate.clinic_address && (
-                      <p className="text-sm text-slate-600">{viewingCertificate.clinic_address}</p>
-                    )}
-                    {viewingCertificate.clinic_phone && (
-                      <p className="text-sm text-slate-600">Phone: {viewingCertificate.clinic_phone}</p>
-                    )}
+                    {viewingCertificate.clinic_address && <p className="text-sm text-slate-600">{viewingCertificate.clinic_address}</p>}
+                    {viewingCertificate.clinic_phone  && <p className="text-sm text-slate-600">Phone: {viewingCertificate.clinic_phone}</p>}
                   </>
                 )}
                 <h3 className="text-xl font-bold text-slate-800 mt-4">{viewingCertificate.certificate_title}</h3>
               </div>
 
-              {/* Doctor Info */}
               <div className="mb-6">
                 <p className="text-sm"><strong>Doctor:</strong> {viewingCertificate.doctor_name}</p>
-                {viewingCertificate.doctor_registration_no && (
-                  <p className="text-sm"><strong>Registration No:</strong> {viewingCertificate.doctor_registration_no}</p>
-                )}
-                {viewingCertificate.doctor_qualification && (
-                  <p className="text-sm"><strong>Qualification:</strong> {viewingCertificate.doctor_qualification}</p>
-                )}
+                {viewingCertificate.doctor_registration_no && <p className="text-sm"><strong>Registration No:</strong> {viewingCertificate.doctor_registration_no}</p>}
               </div>
 
-              {/* Certificate Content */}
+              {/* Certificate content — variables already substituted at creation time */}
               <div className="mb-6">
                 <div className="text-sm leading-relaxed whitespace-pre-wrap">
-                  {viewingCertificate.certificate_content
-                    .replace(/\[PATIENT_NAME\]/g, viewingCertificate.patient_name || '')
-                    .replace(/\[AGE\]/g, viewingCertificate.age || '')
-                    .replace(/\[GENDER\]/g, viewingCertificate.gender || '')
-                    .replace(/\[DIAGNOSIS\]/g, viewingCertificate.diagnosis || '')
-                    .replace(/\[DATE\]/g, new Date(viewingCertificate.issued_date).toLocaleDateString())
-                  }
+                  {substituteVars(viewingCertificate.certificate_content, viewingCertificate)}
                 </div>
               </div>
 
-              {/* Validity */}
               {(viewingCertificate.valid_from || viewingCertificate.valid_until) && (
                 <div className="mb-6">
                   <p className="text-sm">
                     <strong>Validity:</strong>{' '}
-                    {viewingCertificate.valid_from && `From ${new Date(viewingCertificate.valid_from).toLocaleDateString()}`}
+                    {viewingCertificate.valid_from  && `From ${new Date(viewingCertificate.valid_from).toLocaleDateString('en-IN')}`}
                     {viewingCertificate.valid_from && viewingCertificate.valid_until && ' '}
-                    {viewingCertificate.valid_until && `To ${new Date(viewingCertificate.valid_until).toLocaleDateString()}`}
+                    {viewingCertificate.valid_until && `To ${new Date(viewingCertificate.valid_until).toLocaleDateString('en-IN')}`}
                   </p>
                 </div>
               )}
 
-              {/* Signature */}
               <div className="mt-12 text-right">
-                <div className="inline-block">
-                  <div className="border-t border-slate-400 pt-2 min-w-[200px]">
-                    <p className="text-sm font-semibold">{viewingCertificate.doctor_name}</p>
-                    {viewingCertificate.doctor_qualification && (
-                      <p className="text-xs text-slate-600">{viewingCertificate.doctor_qualification}</p>
-                    )}
-                    {viewingCertificate.doctor_registration_no && (
-                      <p className="text-xs text-slate-600">{viewingCertificate.doctor_registration_no}</p>
-                    )}
-                  </div>
+                <div className="inline-block border-t border-slate-400 pt-2 min-w-[200px]">
+                  <p className="text-sm font-semibold">{viewingCertificate.doctor_name}</p>
+                  {viewingCertificate.doctor_registration_no && <p className="text-xs text-slate-600">{viewingCertificate.doctor_registration_no}</p>}
                 </div>
               </div>
 
-              {/* Footer */}
               <div className="mt-8 text-center text-xs text-slate-500">
-                <p>Date: {new Date(viewingCertificate.issued_date).toLocaleDateString()}</p>
+                <p>Date: {new Date(viewingCertificate.issued_date).toLocaleDateString('en-IN')}</p>
               </div>
 
-              {/* Footer Image */}
               {viewingCertificate.footer_image && (
                 <div className="text-center mt-6">
-                  <img
-                    src={viewingCertificate.footer_image}
-                    alt="Footer"
-                    className="max-h-40 mx-auto"
-                    onError={(e) => {
-                      e.target.style.display = 'none';
-                    }}
-                  />
+                  <img src={viewingCertificate.footer_image} alt="Footer" className="max-h-40 mx-auto" onError={e => e.target.style.display = 'none'} />
                 </div>
               )}
             </div>
 
-            <div className="flex gap-3 print:hidden">
-              <button
-                onClick={() => {
-                  setShowViewModal(false);
-                  setViewingCertificate(null);
-                }}
-                className="flex-1 px-4 py-2 border rounded hover:bg-slate-50"
-              >
-                Close
-              </button>
-              <button
-                onClick={handlePrintCertificate}
-                className="flex-1 px-4 py-2 bg-primary text-white rounded hover:bg-primary/90"
-              >
-                Print Certificate
+            <div className="flex gap-3">
+              <button onClick={() => { setShowViewModal(false); setViewingCertificate(null); }} className="flex-1 px-4 py-2 border rounded hover:bg-slate-50">Close</button>
+              <button onClick={() => window.print()} className="flex-1 px-4 py-2 bg-slate-600 text-white rounded hover:bg-slate-700">Print</button>
+              <button onClick={() => downloadCertificatePDF(viewingCertificate.id)} className="flex-1 px-4 py-2 bg-primary text-white rounded hover:bg-primary/90 flex items-center justify-center gap-2">
+                <FiDownload /> Download PDF
               </button>
             </div>
           </div>
         )}
       </Modal>
 
-      {/* Template Management Modal */}
-      <Modal
-        isOpen={showTemplateModal}
-        onClose={() => setShowTemplateModal(false)}
-        title="Manage Certificate Templates"
-        size="lg"
-      >
+      {/* ════════════════════════════════════════════════════════════ */}
+      {/* ── Manage Templates Modal ────────────────────────────────── */}
+      {/* ════════════════════════════════════════════════════════════ */}
+      <Modal isOpen={showTemplateModal} onClose={() => setShowTemplateModal(false)} title="Manage Certificate Templates" size="lg">
         <div className="space-y-6">
-          {/* Create New Template Form */}
+
+          {/* ── Create New Template ── */}
           <div className="border rounded p-4 bg-slate-50">
             <h4 className="font-semibold mb-3">Create New Template</h4>
             <div className="space-y-3">
               <div>
                 <label className="block text-sm font-medium mb-1">Template Name</label>
-                <input
-                  type="text"
-                  className="w-full px-3 py-2 border rounded"
-                  placeholder="e.g., Standard Sick Leave"
-                  value={templateForm.template_name}
-                  onChange={(e) => setTemplateForm({ ...templateForm, template_name: e.target.value })}
-                />
+                <input type="text" className="w-full px-3 py-2 border rounded" placeholder="e.g., Standard Sick Leave"
+                  value={templateForm.template_name} onChange={e => setTemplateForm(p => ({ ...p, template_name: e.target.value }))} />
               </div>
-
               <div>
                 <label className="block text-sm font-medium mb-1">Certificate Type</label>
-                <select
-                  className="w-full px-3 py-2 border rounded"
-                  value={templateForm.certificate_type}
-                  onChange={(e) => setTemplateForm({ ...templateForm, certificate_type: e.target.value })}
-                >
-                  {certificateTypes.map(type => (
-                    <option key={type.value} value={type.value}>{type.label}</option>
-                  ))}
+                <select className="w-full px-3 py-2 border rounded" value={templateForm.type_id}
+                  onChange={e => setTemplateForm(p => ({ ...p, type_id: parseInt(e.target.value) }))}>
+                  {certificateTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                 </select>
               </div>
-
               <div>
                 <label className="block text-sm font-medium mb-1">Template Content</label>
-                <textarea
-                  className="w-full px-3 py-2 border rounded font-mono text-sm"
-                  rows="6"
-                  placeholder="Use placeholders like [PATIENT_NAME], [AGE], [DIAGNOSIS]"
-                  value={templateForm.template_content}
-                  onChange={(e) => setTemplateForm({ ...templateForm, template_content: e.target.value })}
-                />
+                <textarea className="w-full px-3 py-2 border rounded font-mono text-sm" rows="6"
+                  placeholder={`Use {{patient_name}}, {{age}}, {{diagnosis}}, {{valid_from}}, {{valid_until}}, {{resume_date}}, {{doctor_name}}\n\n` + STANDARD_PARAGRAPH}
+                  value={templateForm.template_content} onChange={e => setTemplateForm(p => ({ ...p, template_content: e.target.value }))} />
+                <button type="button" className="text-xs text-blue-600 hover:underline mt-1"
+                  onClick={() => setTemplateForm(p => ({ ...p, template_content: STANDARD_PARAGRAPH }))}>
+                  Insert Standard Paragraph
+                </button>
               </div>
-
-              {/* Header Image Upload */}
-              <div>
-                <label className="block text-sm font-medium mb-1">Header Image (Optional)</label>
-                <div className="space-y-2">
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="w-full px-3 py-2 border rounded text-sm"
-                    onChange={(e) => {
-                      const file = e.target.files[0];
-                      if (file) {
-                        const reader = new FileReader();
-                        reader.onloadend = () => {
-                          setTemplateForm({ ...templateForm, header_image: reader.result });
-                        };
-                        reader.readAsDataURL(file);
-                      }
-                    }}
-                  />
-                  <div className="flex items-center">
-                    <div className="flex-1 border-t border-slate-300"></div>
-                    <span className="px-2 text-xs text-slate-500">OR</span>
-                    <div className="flex-1 border-t border-slate-300"></div>
-                  </div>
-                  <input
-                    type="text"
-                    className="w-full px-3 py-2 border rounded text-sm"
-                    placeholder="https://example.com/header.png"
-                    value={templateForm.header_image && !templateForm.header_image.startsWith('data:') ? templateForm.header_image : ''}
-                    onChange={(e) => setTemplateForm({ ...templateForm, header_image: e.target.value })}
-                  />
-                  {templateForm.header_image && (
-                    <div className="mt-2">
-                      <img
-                        src={templateForm.header_image}
-                        alt="Header preview"
-                        className="max-h-24 border rounded"
-                        onError={(e) => {
-                          e.target.style.display = 'none';
-                        }}
-                      />
-                      <button
-                        type="button"
-                        className="text-xs text-red-600 hover:underline mt-1"
-                        onClick={() => setTemplateForm({ ...templateForm, header_image: '' })}
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Footer Image Upload */}
-              <div>
-                <label className="block text-sm font-medium mb-1">Footer Image (Optional)</label>
-                <div className="space-y-2">
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="w-full px-3 py-2 border rounded text-sm"
-                    onChange={(e) => {
-                      const file = e.target.files[0];
-                      if (file) {
-                        const reader = new FileReader();
-                        reader.onloadend = () => {
-                          setTemplateForm({ ...templateForm, footer_image: reader.result });
-                        };
-                        reader.readAsDataURL(file);
-                      }
-                    }}
-                  />
-                  <div className="flex items-center">
-                    <div className="flex-1 border-t border-slate-300"></div>
-                    <span className="px-2 text-xs text-slate-500">OR</span>
-                    <div className="flex-1 border-t border-slate-300"></div>
-                  </div>
-                  <input
-                    type="text"
-                    className="w-full px-3 py-2 border rounded text-sm"
-                    placeholder="https://example.com/footer.png"
-                    value={templateForm.footer_image && !templateForm.footer_image.startsWith('data:') ? templateForm.footer_image : ''}
-                    onChange={(e) => setTemplateForm({ ...templateForm, footer_image: e.target.value })}
-                  />
-                  {templateForm.footer_image && (
-                    <div className="mt-2">
-                      <img
-                        src={templateForm.footer_image}
-                        alt="Footer preview"
-                        className="max-h-24 border rounded"
-                        onError={(e) => {
-                          e.target.style.display = 'none';
-                        }}
-                      />
-                      <button
-                        type="button"
-                        className="text-xs text-red-600 hover:underline mt-1"
-                        onClick={() => setTemplateForm({ ...templateForm, footer_image: '' })}
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-
               <div className="flex items-center">
-                <input
-                  type="checkbox"
-                  id="template_is_default"
-                  className="mr-2"
-                  checked={templateForm.is_default}
-                  onChange={(e) => setTemplateForm({ ...templateForm, is_default: e.target.checked })}
-                />
-                <label htmlFor="template_is_default" className="text-sm">
-                  Set as default template for this type
-                </label>
+                <input type="checkbox" id="tpl_default" className="mr-2" checked={templateForm.is_default}
+                  onChange={e => setTemplateForm(p => ({ ...p, is_default: e.target.checked }))} />
+                <label htmlFor="tpl_default" className="text-sm">Set as default for this type</label>
               </div>
-
-              <button
-                onClick={handleCreateTemplate}
-                className="w-full px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-              >
-                Create Template
-              </button>
+              <button onClick={handleCreateTemplate} className="w-full px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Create Template</button>
             </div>
           </div>
 
-          {/* Existing Templates List */}
+          {/* ── Certificate Types Manager ── */}
+          <div className="border rounded p-4 bg-slate-50">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="font-semibold">Certificate Types</h4>
+              <button className="flex items-center gap-1 px-3 py-1 text-sm bg-primary text-white rounded hover:bg-primary/90"
+                onClick={() => setShowAddTypeModal(true)}>
+                <FiPlus /> Add Type
+              </button>
+            </div>
+            <div className="space-y-2 max-h-48 overflow-y-auto">
+              {certificateTypes.map(type => (
+                <div key={type.id} className="flex items-center gap-2 p-2 border rounded bg-white">
+                  <span className="flex-1 text-sm">{type.name}</span>
+                  <button className="p-1 text-slate-400 hover:text-blue-600" title="Edit"
+                    onClick={() => { setEditTypeId(type.id); setEditTypeName(type.name); setShowEditTypeModal(true); }}>
+                    <FiEdit2 size={13} />
+                  </button>
+                  <button className="p-1 text-slate-400 hover:text-red-600" title="Delete" onClick={() => handleDeleteType(type.id)}>
+                    <FiTrash2 size={13} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* ── Existing Templates List ── */}
           <div>
             <h4 className="font-semibold mb-3">Existing Templates</h4>
-            <div className="space-y-2 max-h-96 overflow-y-auto">
-              {templates.map(template => (
-                <div key={template.id} className="border rounded p-3 bg-white">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <p className="font-medium">{template.template_name}</p>
+            <div className="space-y-2 max-h-80 overflow-y-auto">
+              {templates.length === 0 ? (
+                <p className="text-sm text-slate-500 text-center py-4">No templates yet.</p>
+              ) : templates.map(t => (
+                <div key={t.id} className="border rounded p-3 bg-white">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm">{t.template_name}</p>
                       <p className="text-xs text-slate-500">
-                        {certificateTypes.find(t => t.value === template.certificate_type)?.label}
-                        {template.is_default && (
-                          <span className="ml-2 inline-flex px-2 py-0.5 text-xs bg-green-100 text-green-800 rounded">
-                            Default
-                          </span>
-                        )}
+                        {certificateTypes.find(ct => ct.id === t.type_id)?.name}
+                        {t.is_default && <span className="ml-2 px-2 py-0.5 text-xs bg-green-100 text-green-800 rounded">Default</span>}
                       </p>
-                      <p className="text-xs text-slate-600 mt-1 line-clamp-2">
-                        {template.template_content}
-                      </p>
+                      <p className="text-xs text-slate-600 mt-1 line-clamp-2">{t.template_content}</p>
+                    </div>
+                    <div className="flex gap-1 shrink-0">
+                      <button className="p-1.5 text-slate-400 hover:text-blue-600 border rounded" title="Edit"
+                        onClick={() => { setEditingTemplate({ ...t }); setShowEditTemplateModal(true); }}>
+                        <FiEdit2 size={13} />
+                      </button>
+                      <button className="p-1.5 text-slate-400 hover:text-red-600 border rounded" title="Delete" onClick={() => handleDeleteTemplate(t.id)}>
+                        <FiTrash2 size={13} />
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -1122,14 +960,50 @@ export default function MedicalCertificates() {
           </div>
 
           <div className="flex justify-end">
-            <button
-              onClick={() => setShowTemplateModal(false)}
-              className="px-4 py-2 border rounded hover:bg-slate-50"
-            >
-              Close
-            </button>
+            <button onClick={() => setShowTemplateModal(false)} className="px-4 py-2 border rounded hover:bg-slate-50">Close</button>
           </div>
         </div>
+      </Modal>
+
+      {/* ── Edit Template Modal ────────────────────────────────────── */}
+      <Modal isOpen={showEditTemplateModal} onClose={() => { setShowEditTemplateModal(false); setEditingTemplate(null); }} title="Edit Template" size="lg">
+        {editingTemplate && (
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">Template Name</label>
+              <input type="text" className="w-full px-3 py-2 border rounded" value={editingTemplate.template_name}
+                onChange={e => setEditingTemplate(p => ({ ...p, template_name: e.target.value }))} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Certificate Type</label>
+              <select className="w-full px-3 py-2 border rounded" value={editingTemplate.type_id}
+                onChange={e => setEditingTemplate(p => ({ ...p, type_id: parseInt(e.target.value) }))}>
+                {certificateTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Template Content</label>
+              <textarea className="w-full px-3 py-2 border rounded font-mono text-sm" rows="10"
+                value={editingTemplate.template_content}
+                onChange={e => setEditingTemplate(p => ({ ...p, template_content: e.target.value }))} />
+              {/* Variable pills */}
+              <div className="mt-1 flex flex-wrap gap-1">
+                {extractVars(editingTemplate.template_content).map(v => (
+                  <span key={v} className="px-2 py-0.5 text-xs bg-slate-100 text-slate-600 rounded border font-mono">{`{{${v}}}`}</span>
+                ))}
+              </div>
+            </div>
+            <div className="flex items-center">
+              <input type="checkbox" id="edit_tpl_default" className="mr-2" checked={!!editingTemplate.is_default}
+                onChange={e => setEditingTemplate(p => ({ ...p, is_default: e.target.checked }))} />
+              <label htmlFor="edit_tpl_default" className="text-sm">Set as default for this type</label>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => { setShowEditTemplateModal(false); setEditingTemplate(null); }} className="flex-1 px-4 py-2 border rounded hover:bg-slate-50">Cancel</button>
+              <button onClick={handleUpdateTemplate} className="flex-1 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Save Changes</button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );

@@ -1,6 +1,6 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit');
-const { login, register, verifyToken, refreshToken, logout, verifyCredentials } = require('../controllers/authController');
+const { login, register, verifyToken, refreshToken, logout, verifyCredentials, getMe } = require('../controllers/authController');
 const { authenticateToken } = require('../middleware/auth');
 const env = require('../config/env');
 
@@ -51,6 +51,7 @@ router.post('/register', registerLimiter, register);
 
 // Token management endpoints
 router.get('/verify', authenticateToken, verifyToken);
+router.get('/me', authenticateToken, getMe);
 router.post('/refresh', authenticateToken, refreshToken);
 router.post('/logout', authenticateToken, logout);
 

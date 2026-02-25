@@ -17,6 +17,7 @@ export default function AddPatientModal({ isOpen, onClose, onSuccess }) {
     email: '',
     phone: '',
     dob: '',
+    age_years: '',
     gender: 'Male',
     blood_group: '',
     address: '',
@@ -38,11 +39,22 @@ export default function AddPatientModal({ isOpen, onClose, onSuccess }) {
     try {
       // First create the patient
       const response = await api.post('/api/patients', {
-        patient_id: `P${Date.now()}${Math.floor(Math.random() * 1000)}`,
-        name: `${form.salutation} ${form.name}`.trim(),
+        name: (() => {
+          const salutations = ['Mr.', 'Mrs.', 'Ms.', 'Dr.', 'Baby', 'Master'];
+          let cleanName = form.name.trim();
+          // Remove leading salutation if user typed it in name field
+          for (const s of salutations) {
+            if (cleanName.toLowerCase().startsWith(s.toLowerCase() + ' ')) {
+              cleanName = cleanName.slice(s.length).trim();
+              break;
+            }
+          }
+          return `${form.salutation} ${cleanName}`.trim();
+        })(),
         email: form.email,
         phone: form.phone,
         dob: form.dob,
+        age_years: form.age_years || null,
         gender: form.gender,
         blood_group: form.blood_group,
         address: form.address,
@@ -113,7 +125,8 @@ export default function AddPatientModal({ isOpen, onClose, onSuccess }) {
         addToast('Patient added but could not be queued. Please add to queue manually.', 'warning');
       }
 
-      onSuccess?.(response.data);
+      const createdPatient = response.data.patient || response.data;
+      onSuccess?.(createdPatient);
       handleClose();
     } catch (error) {
       const errorMsg = error.response?.data?.error || 'Unable to add patient';
@@ -131,6 +144,7 @@ export default function AddPatientModal({ isOpen, onClose, onSuccess }) {
       email: '',
       phone: '',
       dob: '',
+      age_years: '',
       gender: 'Male',
       blood_group: '',
       address: '',
@@ -243,9 +257,32 @@ export default function AddPatientModal({ isOpen, onClose, onSuccess }) {
                   name="dob"
                   type="date"
                   value={form.dob}
-                  onChange={(e) => setForm({ ...form, dob: e.target.value })}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    const updates = { dob: val };
+                    if (val) {
+                      const age = Math.floor((new Date() - new Date(val)) / (365.25 * 24 * 60 * 60 * 1000));
+                      if (age >= 0) updates.age_years = String(age);
+                    }
+                    setForm({ ...form, ...updates });
+                  }}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   max={new Date().toISOString().split('T')[0]}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Age (Years)</label>
+                <input
+                  id="age_years"
+                  name="age_years"
+                  type="number"
+                  min="0"
+                  max="150"
+                  value={form.age_years}
+                  onChange={(e) => setForm({ ...form, age_years: e.target.value, dob: '' })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="e.g. 27"
                 />
               </div>
 

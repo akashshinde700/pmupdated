@@ -72,11 +72,26 @@ export default function PatientOverview() {
   const [showEditVitalsModal, setShowEditVitalsModal] = useState(false);
   const [editVitalsForm, setEditVitalsForm] = useState({ temp: '', height: '', weight: '', pulse: '', spo2: '', blood_pressure: '' });
   const [showLabUploadModal, setShowLabUploadModal] = useState(false);
+  const [shareWithLetterhead, setShareWithLetterhead] = useState(false);
   const [labUploadForm, setLabUploadForm] = useState({ test_name: '', reading: '', unit: '', date: new Date().toISOString().split('T')[0], notes: '', reference_range: '' });
   const [labTemplates, setLabTemplates] = useState([]);
   const [labTemplateCategories, setLabTemplateCategories] = useState([]);
   const [selectedLabCategory, setSelectedLabCategory] = useState('');
   const [labParamFormTest, setLabParamFormTest] = useState(null);
+  // Referral states
+  const [showReferralModal, setShowReferralModal] = useState(false);
+  const [referralNetwork, setReferralNetwork] = useState([]);
+  const [referralForm, setReferralForm] = useState({
+    selectedDoctor: '',
+    referred_doctor_name: '',
+    referred_doctor_phone: '',
+    referred_doctor_specialization: '',
+    hospital_name: '',
+    reason: '',
+    priority: 'routine',
+    notes: ''
+  });
+  const [referralLoading, setReferralLoading] = useState(false);
   const [labParamFormData, setLabParamFormData] = useState([]);
   const [labParamLoading, setLabParamLoading] = useState(false);
   const [labSearchQuery, setLabSearchQuery] = useState('');
@@ -110,7 +125,7 @@ export default function PatientOverview() {
       setLabs(lab.data.labs || []);
       setVitals(vit.data.vitals || []);
       setTimeline(time.data.timeline || []);
-      setPrescriptions(presc.data.prescriptions || []);
+      setPrescriptions(presc.data?.data?.prescriptions || presc.data?.prescriptions || []);
       setFollowups(fups.data.followups || []);
       setFamilyHistory(Array.isArray(famHist.data) ? famHist.data : famHist.data.family_history || []);
       setLastUpdated(new Date());
@@ -126,6 +141,23 @@ export default function PatientOverview() {
       setLoading(false);
     }
   }, [id, api, includeOtherProfiles, addToast, navigate]);
+  
+  // Listen for custom refresh event from prescription
+  useEffect(() => {
+    const handlePatientDataRefresh = (event) => {
+      if (event.detail?.patientId && parseInt(event.detail.patientId) === parseInt(id)) {
+        console.log('Patient data refresh event received:', event.detail);
+        fetchPatientData();
+        addToast('Lab results updated from prescription', 'success');
+      }
+    };
+
+    window.addEventListener('patientDataRefresh', handlePatientDataRefresh);
+    
+    return () => {
+      window.removeEventListener('patientDataRefresh', handlePatientDataRefresh);
+    };
+  }, [id, fetchPatientData, addToast]);
 
   const handleRefresh = () => {
     fetchPatientData();
@@ -343,6 +375,23 @@ export default function PatientOverview() {
 
   const lastPrescription = (prescriptions && prescriptions.length > 0) ? prescriptions[0] : null;
 
+  // Share the patient's latest bill via WhatsApp
+  const handleShareLatestBillWhatsApp = async () => {
+    if (!patient?.phone) { addToast('Patient phone not available', 'error'); return; }
+    try {
+      const res = await api.get(`/api/bills?patient_id=${id}&limit=1`);
+      const bills = res.data?.data?.bills || res.data?.bills || [];
+      if (bills.length === 0) { addToast('No bills found for this patient', 'info'); return; }
+      const billId = bills[0].id;
+      const lh = shareWithLetterhead ? '?with_letterhead=1' : '';
+      const pdfUrl = `${apiBase.replace(/\/$/, '')}/api/pdf/bill/${billId}${lh}`;
+      const msg = `Hello ${patient.name},\n\nYour bill/receipt is ready.\nView/Download PDF: ${pdfUrl}`;
+      openWhatsApp(patient.phone, msg);
+    } catch {
+      addToast('Failed to fetch bill', 'error');
+    }
+  };
+
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-semibold">Patient Overview</h1>
@@ -449,6 +498,21 @@ export default function PatientOverview() {
               >
                 Family History
               </button>
+              <button
+                onClick={async () => {
+                  setShowReferralModal(true);
+                  try {
+                    const resp = await api.get('/api/patient-referrals/network/doctors');
+                    setReferralNetwork(resp.data?.network || resp.data?.doctors || resp.data?.data?.network || []);
+                  } catch (e) { console.error('Network fetch error:', e); }
+                }}
+                className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 text-sm flex items-center gap-1"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                Refer to Doctor
+              </button>
             </div>
           </div>
 
@@ -457,7 +521,7 @@ export default function PatientOverview() {
             <div className="p-3 bg-slate-50 rounded">
               <div className="text-xs text-slate-500 mb-1">Age</div>
               <div className="font-semibold text-slate-800">
-                {calculateAge(patient.dob)} years
+                {patient.dob ? calculateAge(patient.dob) : (patient.age_years || 'N/A')} years
               </div>
             </div>
             <div className="p-3 bg-slate-50 rounded">
@@ -711,16 +775,18 @@ export default function PatientOverview() {
               </div>
             </div>
             <div className="border rounded divide-y">
-              <div className="grid grid-cols-3 bg-slate-50 text-xs font-semibold text-slate-600 px-3 py-2">
+              <div className="grid grid-cols-[1fr_120px_100px_80px] bg-slate-50 text-xs font-semibold text-slate-600 px-3 py-2">
                 <span>TEST NAME</span>
                 <span>READINGS</span>
+                <span>REF. RANGE</span>
                 <span>DATE</span>
               </div>
               {filteredLabs.map((l, idx) => (
-                <div key={`${l.name}-${idx}`} className="grid grid-cols-3 px-3 py-2 text-sm hover:bg-slate-50">
-                  <span>{l.name}</span>
-                  <span>{l.reading}</span>
-                  <span>{l.date}</span>
+                <div key={`${l.name}-${idx}`} className="grid grid-cols-[1fr_120px_100px_80px] px-3 py-2 text-sm hover:bg-slate-50">
+                  <span className="truncate">{l.name}</span>
+                  <span className="font-medium">{l.reading}{l.unit ? ` ${l.unit}` : ''}</span>
+                  <span className="text-xs text-gray-500">{l.reference_range || '-'}</span>
+                  <span className="text-xs text-gray-500">{l.date ? new Date(l.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}</span>
                 </div>
               ))}
               {filteredLabs.length === 0 && (
@@ -810,6 +876,35 @@ export default function PatientOverview() {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
                       </svg>
                       <p className="font-semibold text-blue-900">{lab.date}</p>
+                    </div>
+                    {/* Lab share buttons */}
+                    <div className="flex items-center gap-1">
+                      <button
+                        title="Share Lab Report via WhatsApp"
+                        onClick={() => {
+                          if (!patient?.phone) { addToast('Patient phone not available', 'error'); return; }
+                          const lh = shareWithLetterhead ? '&with_letterhead=1' : '';
+                          const reportGroup = lab.report_group ? `?report_group=${encodeURIComponent(lab.report_group)}${lh}` : (lh ? `?${lh.slice(1)}` : '');
+                          const pdfUrl = `${apiBase.replace(/\/$/, '')}/api/pdf/lab-report/${id}${reportGroup}`;
+                          const msg = `Hello ${patient.name},\n\nYour lab report is ready.\nView/Download: ${pdfUrl}`;
+                          openWhatsApp(patient.phone, msg);
+                        }}
+                        className="p-1 text-green-600 hover:bg-green-100 rounded"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                      </button>
+                      <button
+                        title="Copy Lab Report PDF Link"
+                        onClick={() => {
+                          const lh = shareWithLetterhead ? '&with_letterhead=1' : '';
+                          const reportGroup = lab.report_group ? `?report_group=${encodeURIComponent(lab.report_group)}${lh}` : (lh ? `?${lh.slice(1)}` : '');
+                          const pdfUrl = `${apiBase.replace(/\/$/, '')}/api/pdf/lab-report/${id}${reportGroup}`;
+                          navigator.clipboard.writeText(pdfUrl).then(() => addToast('Lab report link copied', 'success'));
+                        }}
+                        className="p-1 text-blue-600 hover:bg-blue-200 rounded"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                      </button>
                     </div>
                   </div>
                   <p className="text-blue-800 font-medium">{lab.name}</p>
@@ -960,42 +1055,52 @@ export default function PatientOverview() {
                       No previous visits found
                     </div>
                   )}
-                  {prescriptions.slice(0, showAllHistory ? prescriptions.length : 5).map((presc, idx) => (
-                    <div
-                      key={idx}
-                      className="text-xs p-3 bg-slate-50 hover:bg-slate-100 border rounded mb-2 cursor-pointer transition-colors"
-                      onClick={() => {
-                        setSelectedVisit(presc);
-                        setShowPrescriptionModal(true);
-                      }}
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="font-semibold text-slate-800">
-                          {new Date(presc.created_at).toLocaleDateString('en-IN')}
-                        </span>
-                        <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                        </svg>
+                  {(() => {
+                    const visibleRx = prescriptions.slice(0, showAllHistory ? prescriptions.length : 5);
+                    // Group by date
+                    const grouped = {};
+                    visibleRx.forEach(presc => {
+                      const dateKey = new Date(presc.created_at).toLocaleDateString('en-IN');
+                      if (!grouped[dateKey]) grouped[dateKey] = [];
+                      grouped[dateKey].push(presc);
+                    });
+                    return Object.entries(grouped).map(([date, rxList]) => (
+                      <div key={date} className="mb-3">
+                        <div className="text-xs font-bold text-slate-500 uppercase mb-1 px-1">{date}</div>
+                        {rxList.map((presc, idx) => (
+                          <div
+                            key={idx}
+                            className="text-xs p-3 bg-slate-50 hover:bg-slate-100 border rounded mb-2 cursor-pointer transition-colors"
+                            onClick={() => {
+                              setSelectedVisit(presc);
+                              setShowPrescriptionModal(true);
+                            }}
+                          >
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="font-semibold text-slate-800">
+                                Dr. {presc.doctor_name || 'N/A'}
+                              </span>
+                              <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                              </svg>
+                            </div>
+                            {presc.diagnoses && presc.diagnoses.length > 0 && (
+                              <div className="text-slate-600 mb-1">
+                                <span className="font-medium">Dx:</span> {presc.diagnoses.slice(0, 3).join(', ')}
+                                {presc.diagnoses.length > 3 && '...'}
+                              </div>
+                            )}
+                            {presc.medications && presc.medications.length > 0 && (
+                              <div className="text-slate-600">
+                                <span className="font-medium">Rx:</span> {presc.medications.map(m => m.medication_name || m.medicine_name || m.name || '').filter(Boolean).slice(0, 3).join(', ')}
+                                {presc.medications.length > 3 && ` +${presc.medications.length - 3} more`}
+                              </div>
+                            )}
+                          </div>
+                        ))}
                       </div>
-                      {presc.symptoms && presc.symptoms.length > 0 && (
-                        <div className="text-slate-600 mb-1">
-                          <span className="font-medium">Sx:</span> {presc.symptoms.slice(0, 2).join(', ')}
-                          {presc.symptoms.length > 2 && '...'}
-                        </div>
-                      )}
-                      {presc.diagnoses && presc.diagnoses.length > 0 && (
-                        <div className="text-slate-600 mb-1">
-                          <span className="font-medium">Dx:</span> {presc.diagnoses.slice(0, 2).join(', ')}
-                          {presc.diagnoses.length > 2 && '...'}
-                        </div>
-                      )}
-                      {presc.medications && presc.medications.length > 0 && (
-                        <div className="text-slate-600">
-                          <span className="font-medium">Rx:</span> {presc.medications.length} medication(s)
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                    ));
+                  })()}
                   {prescriptions.length > 5 && (
                     <button
                       onClick={() => setShowAllHistory(!showAllHistory)}
@@ -1291,11 +1396,16 @@ export default function PatientOverview() {
                 <div className="border rounded divide-y">
                   {selectedVisit.medications.map((med, idx) => (
                     <div key={idx} className="p-3 hover:bg-slate-50">
-                      <div className="font-medium text-sm mb-1">{med.name || med.brand}</div>
-                      {med.composition && (
-                        <div className="text-xs text-slate-600 mb-1">{med.composition}</div>
+                      <div className="font-medium text-sm mb-1">{med.medication_name || med.medicine_name || med.name || med.brand || 'Unknown'}</div>
+                      {med.generic_name && (
+                        <div className="text-xs text-slate-500 mb-1">{med.generic_name}</div>
                       )}
                       <div className="flex flex-wrap gap-2 text-xs">
+                        {med.dosage && (
+                          <span className="px-2 py-1 bg-slate-100 text-slate-700 rounded">
+                            {med.dosage}
+                          </span>
+                        )}
                         {med.frequency && (
                           <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded">
                             {med.frequency}
@@ -1309,6 +1419,11 @@ export default function PatientOverview() {
                         {med.duration && (
                           <span className="px-2 py-1 bg-orange-100 text-orange-800 rounded">
                             {med.duration}
+                          </span>
+                        )}
+                        {med.quantity > 0 && (
+                          <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded">
+                            Qty: {med.quantity}
                           </span>
                         )}
                       </div>
@@ -1349,9 +1464,119 @@ export default function PatientOverview() {
 
             {/* Actions */}
             <div className="flex gap-3 pt-4 border-t flex-wrap">
+              {/* Copy All to New Prescription */}
               <button
                 onClick={() => {
-                  const pdfUrl = `${apiBase}/api/prescriptions/pdf/${selectedVisit.id}`;
+                  const rxData = {
+                    symptoms: selectedVisit.symptoms || [],
+                    diagnoses: selectedVisit.diagnoses || [],
+                    medications: (selectedVisit.medications || []).map(m => ({
+                      name: m.medication_name || m.medicine_name || m.name || '',
+                      brand: m.medication_name || m.medicine_name || m.name || '',
+                      dosage: m.dosage || '',
+                      frequency: m.frequency || '',
+                      timing: m.timing || '',
+                      duration: m.duration || '',
+                      instructions: m.instructions || '',
+                      qty: m.quantity || 0,
+                      is_tapering: m.is_tapering || 0,
+                      tapering_schedule: m.tapering_schedule || []
+                    })),
+                    advice: selectedVisit.advice || '',
+                    follow_up_days: selectedVisit.follow_up_days || '',
+                    patient_notes: selectedVisit.patient_notes || ''
+                  };
+                  sessionStorage.setItem('copyPrescription', JSON.stringify(rxData));
+                  navigate(`/orders/${id}?copy=true`);
+                }}
+                className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-xs font-medium"
+              >
+                Copy All
+              </button>
+              {/* Copy only Medications */}
+              {selectedVisit.medications && selectedVisit.medications.length > 0 && (
+                <button
+                  onClick={() => {
+                    const existing = JSON.parse(sessionStorage.getItem('copyPrescription') || '{}');
+                    const rxData = {
+                      ...existing,
+                      medications: (selectedVisit.medications || []).map(m => ({
+                        name: m.medication_name || m.medicine_name || m.name || '',
+                        brand: m.medication_name || m.medicine_name || m.name || '',
+                        dosage: m.dosage || '',
+                        frequency: m.frequency || '',
+                        timing: m.timing || '',
+                        duration: m.duration || '',
+                        instructions: m.instructions || '',
+                        qty: m.quantity || 0,
+                        is_tapering: m.is_tapering || 0,
+                        tapering_schedule: m.tapering_schedule || []
+                      }))
+                    };
+                    sessionStorage.setItem('copyPrescription', JSON.stringify(rxData));
+                    addToast('Medications copied - click Copy All or go to Rx pad', 'success');
+                  }}
+                  className="px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-xs font-medium"
+                >
+                  Copy Rx
+                </button>
+              )}
+              {/* Copy only Symptoms */}
+              {selectedVisit.symptoms && selectedVisit.symptoms.length > 0 && (
+                <button
+                  onClick={() => {
+                    const existing = JSON.parse(sessionStorage.getItem('copyPrescription') || '{}');
+                    const rxData = { ...existing, symptoms: selectedVisit.symptoms || [] };
+                    sessionStorage.setItem('copyPrescription', JSON.stringify(rxData));
+                    addToast('Symptoms copied - click Copy All or go to Rx pad', 'success');
+                  }}
+                  className="px-3 py-2 bg-yellow-600 text-white rounded hover:bg-yellow-700 text-xs font-medium"
+                >
+                  Copy Sx
+                </button>
+              )}
+              {/* Copy only Diagnosis */}
+              {selectedVisit.diagnoses && selectedVisit.diagnoses.length > 0 && (
+                <button
+                  onClick={() => {
+                    const existing = JSON.parse(sessionStorage.getItem('copyPrescription') || '{}');
+                    const rxData = { ...existing, diagnoses: selectedVisit.diagnoses || [] };
+                    sessionStorage.setItem('copyPrescription', JSON.stringify(rxData));
+                    addToast('Diagnosis copied - click Copy All or go to Rx pad', 'success');
+                  }}
+                  className="px-3 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 text-xs font-medium"
+                >
+                  Copy Dx
+                </button>
+              )}
+              {/* Open Rx Pad with copied data */}
+              <button
+                onClick={() => {
+                  const existing = sessionStorage.getItem('copyPrescription');
+                  if (existing) {
+                    navigate(`/orders/${id}?copy=true`);
+                  } else {
+                    addToast('No data copied yet. Use Copy Rx/Sx/Dx first.', 'info');
+                  }
+                }}
+                className="px-3 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 text-xs font-medium"
+              >
+                Open Rx Pad
+              </button>
+              {/* Letterhead toggle for sharing */}
+              <label className="flex items-center gap-1.5 px-3 py-2 border rounded bg-slate-50 cursor-pointer text-xs text-slate-700 select-none" title="Include clinic header & footer in shared PDF">
+                <input
+                  type="checkbox"
+                  checked={shareWithLetterhead}
+                  onChange={e => setShareWithLetterhead(e.target.checked)}
+                  className="cursor-pointer"
+                />
+                With Letterhead
+              </label>
+              <button
+                onClick={() => {
+                  const lh = shareWithLetterhead ? '?with_letterhead=1' : '';
+                  const pdfUrl = `${apiBase.replace(/\/$/, '')}/api/pdf/prescription/${selectedVisit.id}${lh}`;
                   navigator.clipboard.writeText(pdfUrl).then(() => addToast('PDF link copied', 'success'));
                 }}
                 className="px-4 py-2 border rounded hover:bg-slate-50 text-sm"
@@ -1360,7 +1585,8 @@ export default function PatientOverview() {
               </button>
               <button
                 onClick={() => {
-                  const link = `${apiBase.replace(/\/$/, '')}/api/prescriptions/pdf/${selectedVisit.id}`;
+                  const lh = shareWithLetterhead ? '?with_letterhead=1' : '';
+                  const link = `${apiBase.replace(/\/$/, '')}/api/pdf/prescription/${selectedVisit.id}${lh}`;
                   const qr = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(link)}`;
                   window.open(qr, '_blank');
                 }}
@@ -1371,8 +1597,9 @@ export default function PatientOverview() {
               <button
                 onClick={() => {
                   if (!patient?.phone) { addToast('Patient phone not available', 'error'); return; }
-                  const pdfUrl = `${apiBase}/api/prescriptions/pdf/${selectedVisit.id}`;
-                  const msg = `Hello ${patient.name},\n\nYour prescription PDF: ${pdfUrl}`;
+                  const lh = shareWithLetterhead ? '?with_letterhead=1' : '';
+                  const pdfUrl = `${apiBase.replace(/\/$/, '')}/api/pdf/prescription/${selectedVisit.id}${lh}`;
+                  const msg = `Hello ${patient.name},\n\nYour prescription from Dr. is ready.\nView/Download PDF: ${pdfUrl}`;
                   openWhatsApp(patient.phone, msg);
                 }}
                 className="px-4 py-2 border rounded hover:bg-slate-50 text-sm"
@@ -1381,14 +1608,23 @@ export default function PatientOverview() {
               </button>
               <button
                 onClick={() => {
-                  const link = `${apiBase.replace(/\/$/, '')}/api/prescriptions/pdf/${selectedVisit.id}`;
-                  const subj = encodeURIComponent('Your prescription PDF');
-                  const body = encodeURIComponent(`Dear ${patient.name},\n\nPlease find your prescription PDF here: ${link}\n\nRegards`);
+                  const lh = shareWithLetterhead ? '?with_letterhead=1' : '';
+                  const link = `${apiBase.replace(/\/$/, '')}/api/pdf/prescription/${selectedVisit.id}${lh}`;
+                  const subj = encodeURIComponent('Your Prescription PDF');
+                  const body = encodeURIComponent(`Dear ${patient.name},\n\nYour prescription PDF: ${link}\n\nRegards`);
                   window.location.href = `mailto:${patient.email || ''}?subject=${subj}&body=${body}`;
                 }}
                 className="px-4 py-2 border rounded hover:bg-slate-50 text-sm"
               >
                 Share via Email
+              </button>
+              {/* Bill share */}
+              <button
+                onClick={handleShareLatestBillWhatsApp}
+                className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm"
+                title="Send latest bill PDF via WhatsApp"
+              >
+                Share Bill on WhatsApp
               </button>
               <div className="flex-1" />
               <button
@@ -2141,6 +2377,156 @@ export default function PatientOverview() {
                 className="flex-1 px-4 py-2 bg-primary text-white rounded hover:bg-primary/90 disabled:opacity-50"
               >
                 {editLoading ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+      {/* Referral Modal */}
+      {showReferralModal && (
+        <Modal isOpen={showReferralModal} title="Refer Patient to Doctor" onClose={() => setShowReferralModal(false)}>
+          <div className="space-y-4 p-2">
+            {/* Select from network or enter new */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Select Doctor from Network</label>
+              <select
+                className="w-full px-3 py-2 border rounded text-sm"
+                value={referralForm.selectedDoctor}
+                onChange={(e) => {
+                  const docId = e.target.value;
+                  if (docId === 'new') {
+                    setReferralForm(prev => ({ ...prev, selectedDoctor: 'new', referred_doctor_name: '', referred_doctor_phone: '', referred_doctor_specialization: '', hospital_name: '' }));
+                  } else if (docId) {
+                    const doc = referralNetwork.find(d => String(d.id) === docId);
+                    if (doc) {
+                      setReferralForm(prev => ({
+                        ...prev,
+                        selectedDoctor: docId,
+                        referred_doctor_name: doc.network_doctor_name || '',
+                        referred_doctor_phone: doc.network_doctor_phone || '',
+                        referred_doctor_specialization: doc.specialization || '',
+                        hospital_name: doc.hospital_name || ''
+                      }));
+                    }
+                  } else {
+                    setReferralForm(prev => ({ ...prev, selectedDoctor: '' }));
+                  }
+                }}
+              >
+                <option value="">-- Select Doctor --</option>
+                {referralNetwork.map(doc => (
+                  <option key={doc.id} value={doc.id}>
+                    {doc.network_doctor_name}{doc.specialization ? ` (${doc.specialization})` : ''}{doc.hospital_name ? ` - ${doc.hospital_name}` : ''}
+                  </option>
+                ))}
+                <option value="new">+ Add New Doctor</option>
+              </select>
+            </div>
+
+            {/* Doctor details (editable if new or selected) */}
+            {(referralForm.selectedDoctor === 'new' || referralForm.selectedDoctor) && (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Doctor Name *</label>
+                  <input className="w-full px-3 py-2 border rounded text-sm" value={referralForm.referred_doctor_name}
+                    onChange={e => setReferralForm(prev => ({ ...prev, referred_doctor_name: e.target.value }))} placeholder="Dr. Name" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Phone</label>
+                  <input className="w-full px-3 py-2 border rounded text-sm" value={referralForm.referred_doctor_phone}
+                    onChange={e => setReferralForm(prev => ({ ...prev, referred_doctor_phone: e.target.value }))} placeholder="Phone number" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Specialization</label>
+                  <input className="w-full px-3 py-2 border rounded text-sm" value={referralForm.referred_doctor_specialization}
+                    onChange={e => setReferralForm(prev => ({ ...prev, referred_doctor_specialization: e.target.value }))} placeholder="e.g. Cardiologist" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Hospital</label>
+                  <input className="w-full px-3 py-2 border rounded text-sm" value={referralForm.hospital_name}
+                    onChange={e => setReferralForm(prev => ({ ...prev, hospital_name: e.target.value }))} placeholder="Hospital name" />
+                </div>
+              </div>
+            )}
+
+            {/* Reason */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Reason for Referral *</label>
+              <input className="w-full px-3 py-2 border rounded text-sm" value={referralForm.reason}
+                onChange={e => setReferralForm(prev => ({ ...prev, reason: e.target.value }))} placeholder="e.g. Further cardiac evaluation" />
+            </div>
+
+            {/* Priority */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
+              <div className="flex gap-4">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="radio" name="priority" value="routine" checked={referralForm.priority === 'routine'}
+                    onChange={() => setReferralForm(prev => ({ ...prev, priority: 'routine' }))} className="accent-blue-600" />
+                  <span className="text-sm">Routine</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="radio" name="priority" value="urgent" checked={referralForm.priority === 'urgent'}
+                    onChange={() => setReferralForm(prev => ({ ...prev, priority: 'urgent' }))} className="accent-red-600" />
+                  <span className="text-sm text-red-600 font-medium">Urgent</span>
+                </label>
+              </div>
+            </div>
+
+            {/* Notes */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+              <textarea className="w-full px-3 py-2 border rounded text-sm" rows={3} value={referralForm.notes}
+                onChange={e => setReferralForm(prev => ({ ...prev, notes: e.target.value }))} placeholder="Additional notes..." />
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => setShowReferralModal(false)}
+                className="flex-1 px-4 py-2 border rounded text-sm hover:bg-gray-50"
+              >Cancel</button>
+              <button
+                disabled={referralLoading || !referralForm.referred_doctor_name || !referralForm.reason}
+                onClick={async () => {
+                  setReferralLoading(true);
+                  try {
+                    await api.post('/api/patient-referrals', {
+                      patient_id: parseInt(id),
+                      referred_doctor_name: referralForm.referred_doctor_name,
+                      referred_doctor_phone: referralForm.referred_doctor_phone,
+                      referred_doctor_specialization: referralForm.referred_doctor_specialization,
+                      hospital_name: referralForm.hospital_name,
+                      referral_date: new Date().toISOString().split('T')[0],
+                      reason: referralForm.reason,
+                      priority: referralForm.priority,
+                      notes: referralForm.notes
+                    });
+                    addToast('Referral saved successfully! You can share via WhatsApp from Doctor Settings > Referrals', 'success');
+
+                    // Also save to network if new doctor
+                    if (referralForm.selectedDoctor === 'new' && referralForm.referred_doctor_name) {
+                      try {
+                        await api.post('/api/patient-referrals/network/doctors', {
+                          network_doctor_name: referralForm.referred_doctor_name,
+                          network_doctor_phone: referralForm.referred_doctor_phone,
+                          specialization: referralForm.referred_doctor_specialization,
+                          hospital_name: referralForm.hospital_name
+                        });
+                      } catch (e) { /* ignore if already exists */ }
+                    }
+
+                    setShowReferralModal(false);
+                    setReferralForm({ selectedDoctor: '', referred_doctor_name: '', referred_doctor_phone: '', referred_doctor_specialization: '', hospital_name: '', reason: '', priority: 'routine', notes: '' });
+                  } catch (err) {
+                    addToast(err.response?.data?.error || 'Failed to create referral', 'error');
+                  } finally {
+                    setReferralLoading(false);
+                  }
+                }}
+                className="flex-1 px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 text-sm disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {referralLoading ? 'Saving...' : 'Save Referral'}
               </button>
             </div>
           </div>

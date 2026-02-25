@@ -252,6 +252,102 @@ async function deleteDoctor(req, res) {
   }
 }
 
+// Get hospital affiliations for a doctor
+async function getAffiliations(req, res) {
+  try {
+    const { doctorId } = req.params;
+    const db = getDb();
+    const [affiliations] = await db.execute(
+      'SELECT id, name, location, created_at FROM hospital_affiliations WHERE doctor_id = ? ORDER BY id ASC',
+      [doctorId]
+    );
+    res.json({ affiliations });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch affiliations' });
+  }
+}
+
+// Add hospital affiliation
+async function addAffiliation(req, res) {
+  try {
+    const { doctorId } = req.params;
+    const { name, location } = req.body;
+    if (!name) return res.status(400).json({ error: 'Hospital name is required' });
+    const db = getDb();
+    const [result] = await db.execute(
+      'INSERT INTO hospital_affiliations (doctor_id, name, location) VALUES (?, ?, ?)',
+      [doctorId, name, location || '']
+    );
+    res.status(201).json({ id: result.insertId, name, location, message: 'Affiliation added' });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to add affiliation' });
+  }
+}
+
+// Delete hospital affiliation
+async function deleteAffiliation(req, res) {
+  try {
+    const { doctorId, id } = req.params;
+    const db = getDb();
+    await db.execute('DELETE FROM hospital_affiliations WHERE id = ? AND doctor_id = ?', [id, doctorId]);
+    res.json({ message: 'Affiliation deleted' });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to delete affiliation' });
+  }
+}
+
+// Get landing page data for a doctor (public)
+async function getLandingPageData(req, res) {
+  try {
+    const { doctorId } = req.params;
+    const db = getDb();
+
+    // Doctor + user + clinic info
+    const [doctors] = await db.execute(`
+      SELECT d.id, d.specialization, d.qualification, d.experience_years,
+             u.name as doctor_name, u.phone as doctor_phone, u.email as doctor_email,
+             c.name as clinic_name, c.address as clinic_address, c.city as clinic_city,
+             c.phone as clinic_phone, c.email as clinic_email
+      FROM doctors d
+      JOIN users u ON d.user_id = u.id
+      LEFT JOIN clinics c ON d.clinic_id = c.id
+      WHERE d.id = ?
+    `, [doctorId]);
+
+    if (doctors.length === 0) {
+      return res.status(404).json({ error: 'Doctor not found' });
+    }
+
+    // Hospital affiliations
+    const [affiliations] = await db.execute(
+      'SELECT id, name, location FROM hospital_affiliations WHERE doctor_id = ? ORDER BY id ASC',
+      [doctorId]
+    );
+
+    const doc = doctors[0];
+    res.json({
+      doctor: {
+        name: doc.doctor_name,
+        phone: doc.doctor_phone,
+        email: doc.doctor_email,
+        specialization: doc.specialization,
+        qualification: doc.qualification,
+        experience_years: doc.experience_years
+      },
+      clinic: {
+        name: doc.clinic_name,
+        address: doc.clinic_address,
+        city: doc.clinic_city,
+        phone: doc.clinic_phone,
+        email: doc.clinic_email
+      },
+      affiliations
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch landing page data' });
+  }
+}
+
 module.exports = {
   listDoctors,
   addDoctor,
@@ -260,5 +356,9 @@ module.exports = {
   getDoctorById,
   updateDoctor,
   deleteDoctor,
-  getDoctorByUserId  // New function added
+  getDoctorByUserId,
+  getAffiliations,
+  addAffiliation,
+  deleteAffiliation,
+  getLandingPageData
 };

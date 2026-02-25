@@ -13,12 +13,11 @@ const { createQueueEntry, updateQueueEntry } = require('../validation/commonSche
 
 const router = express.Router();
 
-// Make queue creation and today endpoint public for testing
+// Create queue entry
 router.post('/', joiValidate(createQueueEntry), addToQueue);
-router.get('/today', getTodayQueue);
 
-// All other routes require authentication
-router.use(authenticateToken);
+// Get today's queue
+router.get('/today', getTodayQueue);
 
 // Get queue statistics
 router.get('/stats', getQueueStats);

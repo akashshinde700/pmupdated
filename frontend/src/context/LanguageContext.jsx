@@ -104,12 +104,14 @@ const LanguageContext = createContext();
 export function LanguageProvider({ children }) {
   const [language, setLanguage] = useState(() => {
     const savedLanguage = localStorage.getItem('language');
-    return (savedLanguage && ['en', 'hi'].includes(savedLanguage)) ? savedLanguage : 'en';
+    const supported = ['en', 'hi', 'mr', 'bn', 'gu', 'ta', 'te', 'kn', 'ml', 'pa', 'ur'];
+    return (savedLanguage && supported.includes(savedLanguage)) ? savedLanguage : 'en';
   });
 
   // Save language preference to localStorage
   const changeLanguage = (newLanguage) => {
-    if (['en', 'hi'].includes(newLanguage)) {
+    const supported = ['en', 'hi', 'mr', 'bn', 'gu', 'ta', 'te', 'kn', 'ml', 'pa', 'ur'];
+    if (supported.includes(newLanguage)) {
       setLanguage(newLanguage);
       localStorage.setItem('language', newLanguage);
     }

@@ -1,6 +1,7 @@
 const { getDb } = require('../config/db');
 const QRCode = require('qrcode');
 const { v4: uuidv4 } = require('uuid');
+const { generateUHID } = require('../utils/uhidHelper');
 
 /**
  * Generate QR code for doctor
@@ -211,7 +212,10 @@ const bookViaQR = async (req, res) => {
       console.log('Found existing patient:', patientDbId, patientUhid);
     } else {
       // Create new patient with auto-generated UHID
-      const uhid = 'P' + Date.now() + Math.floor(Math.random() * 1000);
+      let uhid;
+      try {
+        uhid = await generateUHID(db, null);
+      } catch { uhid = 'DRA' + Date.now(); }
       const genderCode = patientGender === 'male' ? 'M' : patientGender === 'female' ? 'F' : 'U';
 
       const [newPatient] = await db.execute(

@@ -108,6 +108,8 @@ async function listAppointments(req, res) {
         p.name as patient_name, 
         p.phone as contact,
         p.gender as patient_gender,
+        p.dob as patient_dob,
+        p.age_years as patient_age,
         u.name as doctor_name,
         d.specialization as doctor_specialization,
         c.name as clinic_name

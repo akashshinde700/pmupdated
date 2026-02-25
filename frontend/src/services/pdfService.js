@@ -53,9 +53,14 @@ export const downloadPDF = async (endpoint, filename) => {
  * Download prescription as PDF
  * @param {number} prescriptionId - ID of prescription
  */
-export const downloadPrescriptionPDF = (prescriptionId) => {
+export const downloadPrescriptionPDF = (prescriptionId, { language, templateId, withLetterhead = false } = {}) => {
+  const params = new URLSearchParams();
+  if (language) params.set('lang', language);
+  if (templateId) params.set('template_id', templateId);
+  if (withLetterhead) params.set('with_letterhead', '1');
+  const qs = params.toString() ? `?${params.toString()}` : '';
   return downloadPDF(
-    `prescription/${prescriptionId}`,
+    `prescription/${prescriptionId}${qs}`,
     `prescription_${prescriptionId}.pdf`
   );
 };
@@ -64,9 +69,12 @@ export const downloadPrescriptionPDF = (prescriptionId) => {
  * Download bill/invoice as PDF
  * @param {number} billId - ID of bill
  */
-export const downloadBillingPDF = (billId) => {
+export const downloadBillingPDF = (billId, { withLetterhead = false } = {}) => {
+  const params = new URLSearchParams();
+  if (withLetterhead) params.set('with_letterhead', '1');
+  const qs = params.toString() ? `?${params.toString()}` : '';
   return downloadPDF(
-    `bill/${billId}`,
+    `bill/${billId}${qs}`,
     `invoice_${billId}.pdf`
   );
 };

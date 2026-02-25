@@ -29,7 +29,6 @@ const UserProfile = lazy(() => import('./pages/UserProfile'));
 const AppointmentIntents = lazy(() => import('./pages/AppointmentIntents'));
 const AuditLogs = lazy(() => import('./pages/AuditLogs'));
 const ClinicManagement = lazy(() => import('./pages/ClinicManagement'));
-const RoleManagement = lazy(() => import('./pages/RoleManagement'));
 const UserManagement = lazy(() => import('./pages/UserManagement'));
 const BackupRestore = lazy(() => import('./pages/BackupRestore'));
 const DoctorExport = lazy(() => import('./pages/DoctorExport'));
@@ -42,6 +41,15 @@ const ReceiptTemplates = lazy(() => import('./pages/ReceiptTemplates'));
 const SymptomsTemplates = lazy(() => import('./pages/SymptomsTemplates'));
 const DoctorSettings = lazy(() => import('./pages/DoctorSettings'));
 const DoctorManagement = lazy(() => import('./pages/DoctorManagement'));
+const VIPPatients = lazy(() => import('./pages/VIPPatients'));
+const DiagnosisTemplates = lazy(() => import('./pages/DiagnosisTemplates'));
+const InjectionTemplates = lazy(() => import('./pages/InjectionTemplates'));
+const MedicationsTemplates = lazy(() => import('./pages/MedicationsTemplates'));
+const PrescriptionTemplates = lazy(() => import('./pages/PrescriptionTemplates'));
+const StaffBilling = lazy(() => import('./pages/StaffBilling'));
+const DoctorBilling = lazy(() => import('./pages/DoctorBilling'));
+const SubscriptionPackages = lazy(() => import('./pages/SubscriptionPackages'));
+const ABHADashboard = lazy(() => import('./pages/ABHADashboard'));
 
 // New grouped pages
 const Appointments = lazy(() => import('./pages/Appointments'));
@@ -358,7 +366,7 @@ function App() {
           <Route path="/doctor-settings" element={
             <MainLayout>
               <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="text-lg">Loading...</div></div>}>
-                <RequireRole allowedRoles={['doctor']}>
+                <RequireRole allowed={['doctor']}>
                   <DoctorSettings />
                 </RequireRole>
               </Suspense>
@@ -435,6 +443,69 @@ function App() {
                   <Settings />
                 </Suspense>
               </EnhancedErrorBoundary>
+            </MainLayout>
+          } />
+          <Route path="/vip-patients" element={
+            <MainLayout>
+              <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="text-lg">Loading...</div></div>}>
+                <VIPPatients />
+              </Suspense>
+            </MainLayout>
+          } />
+          <Route path="/diagnosis-templates" element={
+            <MainLayout>
+              <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="text-lg">Loading...</div></div>}>
+                <DiagnosisTemplates />
+              </Suspense>
+            </MainLayout>
+          } />
+          <Route path="/injection-templates" element={
+            <MainLayout>
+              <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="text-lg">Loading...</div></div>}>
+                <InjectionTemplates />
+              </Suspense>
+            </MainLayout>
+          } />
+          <Route path="/medications-templates" element={
+            <MainLayout>
+              <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="text-lg">Loading...</div></div>}>
+                <MedicationsTemplates />
+              </Suspense>
+            </MainLayout>
+          } />
+          <Route path="/prescription-templates" element={
+            <MainLayout>
+              <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="text-lg">Loading...</div></div>}>
+                <PrescriptionTemplates />
+              </Suspense>
+            </MainLayout>
+          } />
+          <Route path="/staff-billing" element={
+            <MainLayout>
+              <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="text-lg">Loading...</div></div>}>
+                <StaffBilling />
+              </Suspense>
+            </MainLayout>
+          } />
+          <Route path="/doctor-billing" element={
+            <MainLayout>
+              <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="text-lg">Loading...</div></div>}>
+                <DoctorBilling />
+              </Suspense>
+            </MainLayout>
+          } />
+          <Route path="/subscription-packages" element={
+            <MainLayout>
+              <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="text-lg">Loading...</div></div>}>
+                <SubscriptionPackages />
+              </Suspense>
+            </MainLayout>
+          } />
+          <Route path="/abha-dashboard" element={
+            <MainLayout>
+              <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="text-lg">Loading...</div></div>}>
+                <ABHADashboard />
+              </Suspense>
             </MainLayout>
           } />
           <Route path="*" element={<Navigate to="/queue" replace />} />

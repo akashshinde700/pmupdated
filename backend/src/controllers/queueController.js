@@ -40,7 +40,7 @@ exports.getTodayQueue = async (req, res) => {
           q.notes as queue_notes,
           p.id as patient_id,
           p.name,
-          TIMESTAMPDIFF(YEAR, p.dob, CURDATE()) as age,
+          COALESCE(TIMESTAMPDIFF(YEAR, p.dob, CURDATE()), p.age_years) as age,
           p.gender,
           p.phone,
           p.is_vip,

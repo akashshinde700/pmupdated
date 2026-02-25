@@ -92,6 +92,7 @@ async function getTemplateById(req, res) {
 // POST /api/prescription-templates
 async function createTemplate(req, res) {
   try {
+    console.log('createTemplate payload:', req.body);
     const {
       template_name,
       name, // fallback
@@ -123,31 +124,36 @@ async function createTemplate(req, res) {
     const medicationsJson = toJsonString(medications);
 
     const db = getDb();
+    const params = [
+      finalName,
+      category || null,
+      description || null,
+      symptomsJson,
+      diagnosesJson,
+      medicationsJson,
+      investigations || null,
+      precautions || null,
+      diet_restrictions || null,
+      activities || null,
+      advice || null,
+      follow_up_days || null,
+      duration_days || 7,
+      clinicId,
+      userId
+    ];
+    console.log('createTemplate params:', params);
+
     const [result] = await db.execute(
       `INSERT INTO prescription_templates (
          template_name, category, description, symptoms, diagnoses, medications,
          investigations, precautions, diet_restrictions, activities,
          advice, follow_up_days, duration_days, is_active, doctor_id, clinic_id, created_by
        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NULL, ?, ?)`,
-      [
-        finalName,
-        category || null,
-        description || null,
-        symptomsJson,
-        diagnosesJson,
-        medicationsJson,
-        investigations || null,
-        precautions || null,
-        diet_restrictions || null,
-        activities || null,
-        advice || null,
-        follow_up_days || null,
-        duration_days || 7,
-        clinicId,
-        userId
-      ]
+      params
     );
 
+    console.log('createTemplate result insertId:', result.insertId);
+    // Return created template id for frontend convenience
     res.status(201).json({
       message: 'Template created successfully',
       templateId: result.insertId

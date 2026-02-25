@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect, useCallback, lazy, Suspense } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate, useLocation, Link } from 'react-router-dom';
 import { useReactToPrint } from 'react-to-print';
 import { FiEdit3, FiVideo, FiLink2, FiCopy, FiSettings, FiX, FiDownload, FiBookmark } from 'react-icons/fi';
 import { useToast } from '../hooks/useToast';
@@ -220,6 +220,12 @@ const timingOptions = {
   ]
 };
 
+const allFrequencyPresets = [
+  '1-0-1', '1-1-1', '0-0-1', '1-0-0', '0-1-0',
+  '1/2-0-1/2', '1/2-1/2-1/2', '1-1-1-1', '0-0-0-1', '1-0-0-0',
+  '1-0-1-0', '0-1-0-1', '1/2-0-0', '0-0-1/2', 'SOS',
+  'Once daily', 'Twice daily', 'Three times daily', 'Four times daily', 'Every 8 hours', 'Every 12 hours', 'Weekly', 'Stat'
+];
 const frequencyOptions = {
   en: ['1-0-1', '1-1-1', '0-0-1', '1-0-0', '0-1-0', 'SOS'],
   hi: ['1-0-1', '1-1-1', '0-0-1', '1-0-0', '0-1-0', 'ज़रूरत पर'],
@@ -233,6 +239,218 @@ const frequencyOptions = {
   pa: ['1-0-1', '1-1-1', '0-0-1', '1-0-0', '0-1-0', 'ਲੋੜ ਪਈਂ'],
   ur: ['1-0-1', '1-1-1', '0-0-1', '1-0-0', '0-1-0', 'ضرورت پڑ']
 };
+// Instruction translations for all supported languages
+const INSTRUCTION_TRANSLATIONS = {
+      'After food to avoid gastric irritation': {
+        en: 'After food to avoid gastric irritation',
+        hi: 'गैस्ट्रिक जलन से बचने के लिए खाने के बाद',
+        mr: 'जठरामाशयीय जलनापासून बचण्यासाठी खाण्यानंतर'
+      },
+      'Take with water': {
+        en: 'Take with water',
+        hi: 'पानी के साथ लें',
+        mr: 'पाण्याबरोबर घ्या'
+      },
+      'May cause mild drowsiness': {
+        en: 'May cause mild drowsiness',
+        hi: 'हल्की नींद आ सकती है',
+        mr: 'हल्की निंद्रा येऊ शकते'
+      },
+      'Take at onset of headache': {
+        en: 'Take at onset of headache',
+        hi: 'सिरदर्द की शुरुआत में लें',
+        mr: 'डोकेदुखी सुरू होताच घ्या'
+      },
+      'Preventive. Continue for 1 month.': {
+        en: 'Preventive. Continue for 1 month.',
+        hi: 'निवारक। 1 महीने तक जारी रखें।',
+        mr: 'प्रতिबंधक। 1 महिन्यासाठी सुरू ठेवा।'
+      },
+      'For nausea and vomiting': {
+        en: 'For nausea and vomiting',
+        hi: 'मतली और उल्टी के लिए',
+        mr: 'मळमळीक आणि उल्टीसाठी'
+      },
+      'Take 30 min before food': {
+        en: 'Take 30 min before food',
+        hi: 'खाने से 30 मिनट पहले लें',
+        mr: 'खाण्यापूर्वी 30 मिनिटे आधी घ्या'
+      },
+      'Take on empty stomach': {
+        en: 'Take on empty stomach',
+        hi: 'खाली पेट पर लें',
+        mr: 'रिकाम्या पोटी घ्या'
+      },
+      'Protective coating for stomach': {
+        en: 'Protective coating for stomach',
+        hi: 'पेट के लिए सुरक्षात्मक कोटिंग',
+        mr: 'पोटासाठी संरक्षक कोटिंग'
+      },
+      'For sudden pain relief': {
+        en: 'For sudden pain relief',
+        hi: 'अचानक दर्द से राहत के लिए',
+        mr: 'अचानक दुखापुरठे मदतीसाठी'
+      },
+      'Long-acting ACE inhibitor': {
+        en: 'Long-acting ACE inhibitor',
+        hi: 'दीर्घकालिक ACE अवरोधक',
+        mr: 'दीर्घ-कार्यरत ACE प्रतिबंधक'
+      },
+      'ACE inhibitor for BP control': {
+        en: 'ACE inhibitor for BP control',
+        hi: 'रक्तचाप नियंत्रण के लिए ACE अवरोधक',
+        mr: 'BP नियंत्रणासाठी ACE प्रतिबंधक'
+      },
+      'Take with water, do not exceed recommended dose': {
+        en: 'Take with water, do not exceed recommended dose',
+        hi: 'पानी के साथ लें, अनुशंसित खुराक से अधिक न लें',
+        mr: 'पाण्याबरोबर घ्या, शिफारस केलेल्या डोसपेक्षा जास्त घेऊ नका'
+      },
+      'Take as prescribed by doctor': {
+        en: 'Take as prescribed by doctor',
+        hi: 'डॉक्टर के निर्देशानुसार लें',
+        mr: 'डॉक्टरांच्या सल्ल्यानुसार घ्या'
+      },
+      'As directed by physician': {
+        en: 'As directed by physician',
+        hi: 'चिकित्सक के निर्देशानुसार',
+        mr: 'डॉक्टरांच्या सल्ल्यानुसार'
+      },
+      'Take after meals': {
+        en: 'Take after meals',
+        hi: 'खाने के बाद लें',
+        mr: 'जेवणानंतर घ्या'
+      },
+      'Take before meals': {
+        en: 'Take before meals',
+        hi: 'खाने से पहले लें',
+        mr: 'जेवणापूर्वी घ्या'
+      },
+      'Do not crush or chew': {
+        en: 'Do not crush or chew',
+        hi: 'कुचलें या चबाएं नहीं',
+        mr: 'कुस्करू किंवा चावू नका'
+      },
+      'Avoid alcohol': {
+        en: 'Avoid alcohol',
+        hi: 'शराब से बचें',
+        mr: 'मद्यपान टाळा'
+      },
+      'Take at bedtime': {
+        en: 'Take at bedtime',
+        hi: 'सोते समय लें',
+        mr: 'झोपण्यापूर्वी घ्या'
+      },
+      'Complete the full course': {
+        en: 'Complete the full course',
+        hi: 'पूरा कोर्स पूरा करें',
+        mr: 'संपूर्ण कोर्स पूर्ण करा'
+      },
+      'For fever and pain': {
+        en: 'For fever and pain',
+        hi: 'बुखार और दर्द के लिए',
+        mr: 'ताप आणि वेदनांसाठी'
+      },
+      'For cough': {
+        en: 'For cough',
+        hi: 'खांसी के लिए',
+        mr: 'खोकल्यासाठी'
+      },
+      'For allergy': {
+        en: 'For allergy',
+        hi: 'एलर्जी के लिए',
+        mr: 'अॅलर्जीसाठी'
+      },
+      'For acidity': {
+        en: 'For acidity',
+        hi: 'एसिडिटी के लिए',
+        mr: 'अॅसिडिटीसाठी'
+      },
+      'SOS - take only when needed': {
+        en: 'SOS - take only when needed',
+        hi: 'SOS - जरूरत पड़ने पर ही लें',
+        mr: 'SOS - गरज असेल तेव्हाच घ्या'
+      },
+      'Apply locally': {
+        en: 'Apply locally',
+        hi: 'स्थानीय रूप से लगाएं',
+        mr: 'स्थानिकपणे लावा'
+      },
+      'For external use only': {
+        en: 'For external use only',
+        hi: 'केवल बाहरी उपयोग के लिए',
+        mr: 'फक्त बाह्य वापरासाठी'
+      },
+      'After food': { en: 'After food', hi: 'खाने के बाद', mr: 'जेवणानंतर', bn: 'খাবারের পরে', gu: 'ખાણ પછી', ta: 'உணவுக்குப் பின்', te: 'భోజనం తర్వాత', kn: 'ನುಡಪಾ ನಂತರ', ml: 'ഭക്ഷണത്തിനു ശേഷം', pa: 'ਖਾਣ ਤੋਂ ਬਾਅਦ', ur: 'کھانے کے بعد' },
+  'Before food': { en: 'Before food', hi: 'खाने से पहले', mr: 'जेवणापूर्वी', bn: 'খাবারের আগে', gu: 'ખાણ પહેલાં', ta: 'உணவுக்கு முன்', te: 'భోజనానికి ముందు', kn: 'ನುಡೆಕ್ಕೂ ಮೊದಲು', ml: 'ഭക്ഷണത്തിനു മുമ്പ്', pa: 'ਖਾਣ ਤੋਂ ਪਹਿਲਾਂ', ur: 'کھانے سے پہلے' },
+  'For fever reduction': { en: 'For fever reduction', hi: 'बुखार कम करने के लिए', mr: 'ताप कमी करण्यासाठी', bn: 'জ্বর কমাতে', gu: 'તાવ ઘટાડવા માટે', ta: 'காய்ச்சலை குறைக்க', te: 'జ్వరం తగ్గించడానికి', kn: 'ಜ್ವರ ಕಡಿಮೆ ಮಾಡಲು', ml: 'പനി കുറയ്ക്കാന്', pa: 'ਬੁਖ਼ਾਰ ਘਟਾਉਣ ਲਈ', ur: 'بخار کم کرنے کے لیے' },
+  'Anti-inflammatory': { en: 'Anti-inflammatory', hi: 'सूजन-रोधी', mr: 'दाहशामक', bn: 'প্রদাহ-বিরোধী', gu: 'સોજા-વિરોધી', ta: 'அழற்சி எதிர்ப்பு', te: 'వాపు నిరోధక', kn: 'ಉರಿಯೂತ ನಿರೋಧಕ', ml: 'വേദനാ-ജ്വലന-വിരുദ്ധ', pa: 'ਸੋਜ਼ਸ਼-ਵਿਰੋਧੀ', ur: 'سوزش مخالف' },
+  'For hydration': { en: 'For hydration', hi: 'हाइड्रेशन के लिए', mr: 'हायड्रेशनसाठी', bn: 'হাইড্রেশনের জন্য', gu: 'હાઇડ્રેશન માટે', ta: 'நீரேற்றத்திற்கு', te: 'హైడ్రేషన్ కోసం', kn: 'ಹೈಡ್ರೇಷನ್ ಗಾಗಿ', ml: 'ജലാംശ നൽകാന്', pa: 'ਪਾਣੀ ਦੀ ਮਾਤਰਾ ਲਈ', ur: 'پانی کی کمی پوری کرنے کے لیے' },
+  'For hydration and electrolytes': { en: 'For hydration and electrolytes', hi: 'हाइड्रेशन और इलेक्ट्रोलाइट के लिए', mr: 'हायड्रेशन व इलेक्ट्रोलाइटसाठी', bn: 'হাইড্রেশন ও ইলেকট্রোলাইটের জন্য', gu: 'હાઇડ્રેશન અને ઇલેક્ટ્રોલાઇટ માટે', ta: 'நீரேற்றம் மற்றும் எலெக்ட்ரோலைட்டிற்கு', te: 'హైడ్రేషన్ మరియు ఎలక్ట్రోలైట్ కోసం', kn: 'ಹೈಡ್ರೇಷನ್ ಮತ್ತು ಎಲೆಕ್ಟ್ರೋಲೈಟ್ ಗಾಗಿ', ml: 'ജലാംശത്തിനും ഇലക്ട്രോലൈറ്റിനും', pa: 'ਪਾਣੀ ਅਤੇ ਇਲੈਕਟ੍ਰੋਲਾਈਟ ਲਈ', ur: 'پانی اور الیکٹرولائٹ کے لیے' },
+  'For pain relief': { en: 'For pain relief', hi: 'दर्द से राहत के लिए', mr: 'वेदना कमी करण्यासाठी', bn: 'ব্যথা উপশমের জন্য', gu: 'ਦર્દ રાહાત માટે', ta: 'வலி நிவாரணத்திற்கு', te: 'నొప్పి నివారణకు', kn: 'ನೋವು ಪರಿಹಾರಕ್ಕೆ', ml: 'വേദന ശമനത്തിന്', pa: 'ਦਰਦ ਰਾਹਤ ਲਈ', ur: 'درد سے آرام کے لیے' },
+  'For infection': { en: 'For infection', hi: 'संक्रमण के लिए', mr: 'संसर्गासाठी', bn: 'सংক্রমণের জন্য', gu: 'ચેપ માટે', ta: 'தொற்றுக்கு', te: 'ఇన్ఫెక్షన్ కోసం', kn: 'ಸೋಂಕಿಗೆ', ml: 'അണുബാധയ്ക്ക്', pa: 'ਇਨਫੈਕਸ਼ਨ ਲਈ', ur: 'انفیکشن کے لیے' },
+  'For diabetes': { en: 'For diabetes', hi: 'मधुमेह के लिए', mr: 'मधुमेहासाठी', bn: 'ডায়াবেটিসের জন্য', gu: 'ડાયાબિટિઝ માટે', ta: 'நீரிழிவுக்கு', te: 'మధుమేహానికి', kn: 'ಮಧುಮೇಹಕ್ಕೆ', ml: 'പ്രമേഹത്തിന്', pa: 'ਸ਼ੂਗਰ ਲਈ', ur: 'ذیابطیس کے لیے' },
+  'For blood pressure': { en: 'For blood pressure', hi: 'रक्तचाप के लिए', mr: 'रक्तदाबासाठी', bn: 'রক্তচাপের জন্য', gu: 'BP માટે', ta: 'இரத்த அழுத்தத்திற்கு', te: 'రక్తపోటుకు', kn: 'ರಕ್ತದ ಒತ್ತಡಕ್ಕೆ', ml: 'രക്തസമ്മര്ദ്ദത്തിന്', pa: 'ਬਲੱਡ ਪ੍ਰੈਸ਼ਰ ਲਈ', ur: 'بلڈ پریشر کے لیے' },
+};
+
+
+// Parse frequency string to doses per day
+function parseDosesPerDay(freq) {
+  if (!freq) return 0;
+  const f = freq.trim().toLowerCase();
+  // Handle dash-separated: "1-0-1", "1/2-1/2-1/2", "1-1-1-1"
+  if (/^[\d\/]+([-][\d\/]+)+$/.test(f)) {
+    return f.split('-').reduce((sum, part) => {
+      if (part.includes('/')) {
+        const [num, den] = part.split('/').map(Number);
+        return sum + (den ? num / den : 0);
+      }
+      return sum + (parseFloat(part) || 0);
+    }, 0);
+  }
+  // Named frequencies
+  if (f === 'once daily' || f === 'od') return 1;
+  if (f === 'twice daily' || f === 'bd' || f === 'bid') return 2;
+  if (f === 'three times daily' || f === 'tds' || f === 'tid') return 3;
+  if (f === 'four times daily' || f === 'qid') return 4;
+  if (f === 'every 8 hours') return 3;
+  if (f === 'every 12 hours') return 2;
+  if (f === 'weekly') return 1 / 7;
+  if (f === 'sos' || f === 'stat') return 1;
+  return 0;
+}
+
+// Parse duration string to number of days
+function parseDurationDays(dur) {
+  if (!dur) return 0;
+  const d = dur.trim().toLowerCase();
+  // "3-5 days" → use max (5)
+  let match = d.match(/(\d+)\s*[-–]\s*(\d+)\s*(day|week|month)/i);
+  if (match) {
+    const max = parseInt(match[2]);
+    if (match[3].startsWith('week')) return max * 7;
+    if (match[3].startsWith('month')) return max * 30;
+    return max;
+  }
+  // "7 days", "2 weeks", "1 month"
+  match = d.match(/(\d+)\s*(day|week|month)/i);
+  if (match) {
+    const num = parseInt(match[1]);
+    if (match[2].startsWith('week')) return num * 7;
+    if (match[2].startsWith('month')) return num * 30;
+    return num;
+  }
+  // Just a number
+  const num = parseInt(d);
+  return isNaN(num) ? 0 : num;
+}
+
+function calcQty(frequency, duration) {
+  const perDay = parseDosesPerDay(frequency);
+  const days = parseDurationDays(duration);
+  if (perDay > 0 && days > 0) return Math.ceil(perDay * days);
+  return 0;
+}
 
 const uiLabels = {
   en: {
@@ -471,6 +689,7 @@ const uiLabels = {
 export default function PrescriptionPad() {
   const { patientId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { addToast } = useToast();
   const api = useApiClient();
   const { user } = useAuth();  // Get logged in user
@@ -998,7 +1217,7 @@ export default function PrescriptionPad() {
               <div className="flex items-center justify-between">
                 <h3 className="font-semibold flex items-center gap-2">
                   <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold">Sx</span>
-                  {uiLabels[language]?.symptoms || 'Symptoms'}
+                  {uiLabels['en']?.symptoms || 'Symptoms'}
                 </h3>
                 <button
                   type="button"
@@ -1175,7 +1394,13 @@ export default function PrescriptionPad() {
                         </div>
                         <button
                           type="button"
-                          onClick={() => setLabResultEntries(prev => prev.filter((_, i) => i !== idx))}
+                          onClick={async () => {
+                            const entry = labResultEntries[idx];
+                            if (entry.id) {
+                              try { await api.delete(`/api/labs/${entry.id}`); } catch (err) { console.error('Failed to delete lab result:', err); }
+                            }
+                            setLabResultEntries(prev => prev.filter((_, i) => i !== idx));
+                          }}
                           className="text-red-400 hover:text-red-600 text-xs"
                         >×</button>
                       </div>
@@ -1247,13 +1472,26 @@ export default function PrescriptionPad() {
                 <p className="text-sm text-gray-400 italic">No lab results or medical records. Use buttons above to add.</p>
               )}
 
-              {/* Additional Investigations textarea */}
+              {/* Lab Test Advice */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Additional Investigations</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Lab Test Advice</label>
                 <textarea
                   className="w-full px-3 py-2 border rounded"
                   rows={2}
-                  placeholder="Enter additional lab investigations and results..."
+                  value={labAdvice}
+                  onChange={(e) => setLabAdvice(e.target.value)}
+                  placeholder="Enter lab tests to advise (e.g., CBC, LFT, KFT, Thyroid Profile)..."
+                />
+              </div>
+              {/* Remarks */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Remarks</label>
+                <textarea
+                  className="w-full px-3 py-2 border rounded"
+                  rows={2}
+                  value={labRemarks}
+                  onChange={(e) => setLabRemarks(e.target.value)}
+                  placeholder="Additional remarks or notes..."
                 />
               </div>
             </div>
@@ -1265,7 +1503,7 @@ export default function PrescriptionPad() {
               <div className="flex items-center justify-between">
                 <h3 className="font-semibold flex items-center gap-2">
                   <span className="w-6 h-6 rounded-full bg-purple-100 text-purple-700 flex items-center justify-center text-xs font-bold">Dx</span>
-                  {uiLabels[language]?.diagnosis || 'Diagnosis'}
+                  {uiLabels['en']?.diagnosis || 'Diagnosis'}
                 </h3>
                 <button
                   type="button"
@@ -1315,6 +1553,9 @@ export default function PrescriptionPad() {
                             <span className="w-5 h-5 rounded-full bg-purple-100 text-purple-700 flex items-center justify-center text-xs">Dx</span>
                             <div className="flex flex-col">
                               <span>{item.label}</span>
+                              {item.type === 'custom' && (
+                                <span className="text-xs text-green-600 font-medium">Your custom diagnosis</span>
+                              )}
                               {item.type === 'icd' && item.code && (
                                 <span className="text-xs text-slate-500">{item.version || 'ICD'}: {item.code}</span>
                               )}
@@ -1373,14 +1614,7 @@ export default function PrescriptionPad() {
                     </button>
                   </div>
 
-                  {/* Debug Info */}
-                  <div className="mb-2 text-xs text-gray-600">
-                    Debug: {JSON.stringify({
-                      medicines: smartSuggestions.medicines?.length || 0,
-                      frequentlyUsed: smartSuggestions.frequentlyUsed?.length || 0,
-                      diagnoses: smartSuggestions.diagnoses?.length || 0
-                    })}
-                  </div>
+                  {/* Suggestion counts */}
 
                   {/* Frequently Used Medicines */}
                   {smartSuggestions.frequentlyUsed.length > 0 && (
@@ -1453,90 +1687,43 @@ export default function PrescriptionPad() {
                       </div>
                     </div>
                   )}
+
+                  {/* Injection Suggestions */}
+                  {smartSuggestions.injections && smartSuggestions.injections.length > 0 && (
+                    <div className="mb-3">
+                      <div className="text-xs font-medium text-gray-700 mb-2">💉 Suggested Injections</div>
+                      <div className="flex flex-wrap gap-1">
+                        {smartSuggestions.injections.slice(0, 8).map((inj, idx) => (
+                          <button
+                            key={`inj-sugg-${idx}`}
+                            type="button"
+                            onMouseDown={() => {
+                              setMeds(prev => [...prev, {
+                                type: 'injection',
+                                name: inj.injection_name || inj.name || '',
+                                brand: inj.injection_name || inj.name || '',
+                                composition: inj.generic_name || '',
+                                dose: inj.dose || '',
+                                route: inj.route || 'IV',
+                                infusion_rate: inj.infusion_rate || '',
+                                frequency: inj.frequency || '',
+                                duration: inj.duration || '',
+                                timing: inj.timing || '',
+                                instructions: inj.instructions || ''
+                              }]);
+                            }}
+                            className="px-2 py-1 bg-orange-50 border border-orange-200 rounded text-xs hover:bg-orange-100 transition"
+                            title={inj.generic_name ? `${inj.generic_name} - ${inj.route || ''}` : ''}
+                          >
+                            💉 {inj.injection_name || inj.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
-              <div className="space-y-3">
-                {meds.map((med, idx) => (
-                  <div key={idx} className="border rounded p-3 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <input
-                        type="text"
-                        className="flex-1 px-3 py-2 border rounded mr-2"
-                        placeholder="Medicine name"
-                        value={med.name || ''}
-                        onChange={(e) => updateMed(idx, 'name', e.target.value)}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => removeMed(idx)}
-                        className="text-red-500 hover:text-red-700"
-                      >
-                        🗑️
-                      </button>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <input
-                        type="text"
-                        className="px-3 py-2 border rounded"
-                        placeholder="Brand"
-                        value={med.brand || ''}
-                        onChange={(e) => updateMed(idx, 'brand', e.target.value)}
-                      />
-                      <input
-                        type="text"
-                        className="px-3 py-2 border rounded"
-                        placeholder="Strength"
-                        value={med.strength || ''}
-                        onChange={(e) => updateMed(idx, 'strength', e.target.value)}
-                      />
-                    </div>
-                    <div className="grid grid-cols-3 gap-2">
-                      <select
-                        className="px-3 py-2 border rounded"
-                        value={med.frequency || ''}
-                        onChange={(e) => updateMed(idx, 'frequency', e.target.value)}
-                      >
-                        <option value="">Frequency</option>
-                        {(timingOptions[language] || timingOptions.en).map((opt) => (
-                          <option key={opt} value={opt}>{opt}</option>
-                        ))}
-                      </select>
-                      <select
-                        className="px-3 py-2 border rounded"
-                        value={med.timing || 'After Meal'}
-                        onChange={(e) => updateMed(idx, 'timing', e.target.value)}
-                      >
-                        <option value="Before Meal">Before Meal</option>
-                        <option value="After Meal">After Meal</option>
-                      </select>
-                      <input
-                        type="text"
-                        className="px-3 py-2 border rounded"
-                        placeholder="Duration"
-                        value={med.duration || ''}
-                        onChange={(e) => updateMed(idx, 'duration', e.target.value)}
-                      />
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <input
-                        type="text"
-                        className="px-3 py-2 border rounded"
-                        placeholder="Quantity"
-                        value={med.qty || ''}
-                        onChange={(e) => updateMed(idx, 'qty', e.target.value)}
-                      />
-                      <input
-                        type="text"
-                        className="px-3 py-2 border rounded"
-                        placeholder="Instructions"
-                        value={med.instructions || ''}
-                        onChange={(e) => updateMed(idx, 'instructions', e.target.value)}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
             </div>
           );
 
@@ -1641,6 +1828,41 @@ export default function PrescriptionPad() {
                         + {adv}
                       </button>
                     ))}
+                    {customAdviceItems.map((adv, idx) => (
+                      <span key={'ca-' + idx} className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-blue-50 border border-blue-200 rounded">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (advice && !advice.endsWith('\n')) {
+                              setAdvice(advice + '\n' + adv);
+                            } else {
+                              setAdvice((advice || '') + adv);
+                            }
+                          }}
+                          className="hover:text-blue-700"
+                        >
+                          + {adv}
+                        </button>
+                        <button type="button" onClick={() => deleteCustomAdvice(idx)} className="text-red-400 hover:text-red-600 ml-1">&times;</button>
+                      </span>
+                    ))}
+                  </div>
+                  <div className="flex gap-2 mt-2">
+                    <input
+                      type="text"
+                      className="flex-1 px-2 py-1 text-xs border rounded"
+                      placeholder="Type custom advice..."
+                      value={newAdviceInput}
+                      onChange={(e) => setNewAdviceInput(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCustomAdvice(newAdviceInput); } }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => addCustomAdvice(newAdviceInput)}
+                      className="px-3 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600"
+                    >
+                      Add
+                    </button>
                   </div>
                 </div>
               </div>
@@ -1674,6 +1896,10 @@ export default function PrescriptionPad() {
   const [showDiagnosisTemplateSelector, setShowDiagnosisTemplateSelector] = useState(false);
   const [medInput, setMedInput] = useState('');
   const [medDropdown, setMedDropdown] = useState(false);
+  const [showTaperInput, setShowTaperInput] = useState(false);
+  const [taperMedInput, setTaperMedInput] = useState('');
+  const [taperMedResults, setTaperMedResults] = useState([]);
+  const [taperMedLoading, setTaperMedLoading] = useState(false);
   const [meds, setMeds] = useState([]);
   const [medications, setMedications] = useState([]); // Alias for meds for compatibility
   const [snomedDrugResults, setSnomedDrugResults] = useState([]); // SNOMED CT drug search results
@@ -1686,6 +1912,10 @@ export default function PrescriptionPad() {
   const [advice, setAdvice] = useState('');
   const [enableTranslations, setEnableTranslations] = useState(false);
   const [selectedAdvice, setSelectedAdvice] = useState([]);
+  const [customAdviceItems, setCustomAdviceItems] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('custom_advice_items') || '[]'); } catch { return []; }
+  });
+  const [newAdviceInput, setNewAdviceInput] = useState('');
   const [printOnPrescription, setPrintOnPrescription] = useState(true);
   const [followUp, setFollowUp] = useState({ days: '', date: '', autoFill: false });
   const [patientNotes, setPatientNotes] = useState('');
@@ -1820,6 +2050,8 @@ export default function PrescriptionPad() {
   const [labParamFormData, setLabParamFormData] = useState([]); // parameter values being filled
   const [labParamLoading, setLabParamLoading] = useState(false);
   const [labSearchQuery, setLabSearchQuery] = useState('');
+  const [labAdvice, setLabAdvice] = useState('');
+  const [labRemarks, setLabRemarks] = useState('');
   // Examination Findings custom templates
   const [customExamTemplates, setCustomExamTemplates] = useState([]);
   const [showSaveExamTemplate, setShowSaveExamTemplate] = useState(false);
@@ -1853,10 +2085,18 @@ export default function PrescriptionPad() {
   const [showLabResultsModal, setShowLabResultsModal] = useState(false);
   const [previousLabResults, setPreviousLabResults] = useState([]);
 
+  // Letterhead toggle for print/download (default: false = no header/footer)
+  const [printWithLetterhead, setPrintWithLetterhead] = useState(false);
+
   // Receipt template states
   const [receiptTemplates, setReceiptTemplates] = useState([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState(null);
   const [selectedTemplate, setSelectedTemplate] = useState(null);
+  const [showDefaultLetterhead, setShowDefaultLetterhead] = useState(() => {
+    return localStorage.getItem('hideDefaultLetterhead') !== 'true';
+  });
+  const [showTemplateDropdown, setShowTemplateDropdown] = useState(false);
+  const templateDropdownRef = useRef(null);
 
   // Specialty module states
   const [showSpecialtySelector, setShowSpecialtySelector] = useState(false);
@@ -1988,9 +2228,16 @@ export default function PrescriptionPad() {
         if (hoursDiff < 24) {
           setSymptoms(draftData.symptoms || []);
           setDiagnoses(draftData.diagnoses || []);
-          setMeds(draftData.meds || []);
+          setMeds((draftData.meds || []).map(m => ({
+            ...m,
+            timing: translateTiming(m.timing, language) || m.timing,
+            instructions: translateInstruction(m.instructions, language) || m.instructions
+          })));
           setAdvice(draftData.advice || '');
-          setFollowUp(draftData.followUp || { days: '', date: '', autoFill: false });
+          const draftFollowUp = draftData.followUp || { days: '', date: '', autoFill: false };
+          // Sanitize days: if it's an object (corrupted draft), reset to ''
+          if (typeof draftFollowUp.days === 'object') draftFollowUp.days = '';
+          setFollowUp(draftFollowUp);
           setPatientNotes(draftData.patientNotes || '');
           setPrivateNotes(draftData.privateNotes || '');
           setProcedures(draftData.procedures || []);
@@ -2024,7 +2271,7 @@ export default function PrescriptionPad() {
         category: templateCategory,
         description: templateDescription,
         symptoms: JSON.stringify(symptoms),
-        diagnoses: JSON.stringify(diagnoses),
+        diagnosis: JSON.stringify(diagnoses),
         medications: JSON.stringify(meds.map(m => ({
           name: m.name,
           brand: m.brand,
@@ -2036,8 +2283,8 @@ export default function PrescriptionPad() {
         }))),
         advice,
         precautions: advice, // Using advice for precautions
-        follow_up_days: followUp.days || null,
-        duration_days: followUp.days || 7,
+        follow_up_days: (() => { const d = parseInt(followUp.days, 10); return isNaN(d) ? null : d; })(),
+        duration_days: (() => { const d = parseInt(followUp.days, 10); return isNaN(d) ? 7 : d; })(),
         created_by: user?.id
       };
 
@@ -2049,8 +2296,9 @@ export default function PrescriptionPad() {
       setTemplateCategory('');
       setTemplateDescription('');
     } catch (error) {
-      console.error('Error saving template:', error);
-      addToast('Failed to save template', 'error');
+      console.error('Error saving template:', error, error.response?.data);
+      const errMsg = error.response?.data?.error || error.message || 'Failed to save template';
+      addToast(errMsg, 'error');
     }
   }, [templateName, templateShortName, templateCategory, templateDescription, meds, symptoms, diagnoses, advice, followUp, user, api, addToast]);
 
@@ -2175,8 +2423,8 @@ export default function PrescriptionPad() {
     try {
       // Fetch past prescriptions
       try {
-        const rxRes = await api.get(`/api/prescriptions/${patientId}`);
-        setPastPrescriptions(rxRes.data.prescriptions || []);
+        const rxRes = await api.get(`/api/prescriptions/${patientId}?limit=50`);
+        setPastPrescriptions(rxRes.data?.data?.prescriptions || rxRes.data?.prescriptions || []);
       } catch (err) {
         console.error('Failed to fetch prescriptions:', err);
       }
@@ -2199,19 +2447,35 @@ export default function PrescriptionPad() {
         const vitalsData = vitalsRes.data.vitals || [];
         setPastVitals(vitalsData);
 
-        // Auto-fill with latest vitals if available
+        // Auto-fill with latest vitals - API returns flattened array [{label, value, date}]
         if (vitalsData.length > 0) {
-          const latestVital = vitalsData[0]; // Assuming sorted by date DESC
-          setVitals({
-            temp: latestVital.temperature || '',
-            height: latestVital.height_cm || '',
-            bmi: '', // Will be calculated
-            weight: latestVital.weight_kg || '',
-            pulse: latestVital.pulse || '',
-            blood_pressure: latestVital.blood_pressure || '',
-            spo2: latestVital.spo2 || ''
-          });
-          console.log('Auto-filled vitals from latest record:', latestVital);
+          // Group by label and take the latest value for each
+          const vitalsMap = {};
+          for (const v of vitalsData) {
+            if (v.value != null && !vitalsMap[v.label]) {
+              vitalsMap[v.label] = v.value;
+            }
+          }
+          const h = parseFloat(vitalsMap['Height']) || 0;
+          const w = parseFloat(vitalsMap['Weight']) || 0;
+          const bmiCalc = h > 0 && w > 0 ? (w / ((h / 100) ** 2)).toFixed(1) : '';
+          const newVitals = {
+            temp: vitalsMap['Temperature'] || '',
+            height: vitalsMap['Height'] || '',
+            bmi: vitalsMap['BMI'] || bmiCalc || '',
+            weight: vitalsMap['Weight'] || '',
+            pulse: vitalsMap['Pulse Rate'] || vitalsMap['Pulse'] || '',
+            blood_pressure: vitalsMap['Blood Pressure'] || vitalsMap['BP'] || '',
+            spo2: vitalsMap['SpO2'] || vitalsMap['SPO2'] || ''
+          };
+          // Only update vitals if we got meaningful data from API
+          if (Object.values(newVitals).some(v => v !== '')) {
+            setVitals(prev => ({
+              ...prev,
+              ...Object.fromEntries(Object.entries(newVitals).filter(([_, v]) => v !== ''))
+            }));
+          }
+          console.log('Auto-filled vitals from records:', newVitals);
         }
       } catch (err) {
         console.error('Failed to fetch vitals:', err);
@@ -2223,6 +2487,26 @@ export default function PrescriptionPad() {
         setPastRecords(recordsRes.data.records || []);
       } catch (err) {
         console.error('Failed to fetch records:', err);
+      }
+      
+      // Fetch lab results to sync with PatientOverview
+      try {
+        const labsRes = await api.get(`/api/labs/${patientId}`);
+        const labsData = labsRes.data.labs || [];
+        // Convert lab results to prescription format
+        const labEntries = labsData.map(lab => ({
+          id: lab.id,
+          test_name: lab.name,
+          result_value: lab.reading,
+          result_unit: lab.unit,
+          reference_range: lab.reference_range,
+          category: lab.test_category || 'GENERAL',
+          date: lab.date
+        }));
+        // Set lab results for display in prescription
+        setLabResultEntries(labEntries);
+      } catch (err) {
+        console.error('Failed to fetch lab results:', err);
       }
     } catch (err) {
       console.error('Failed to load past data:', err);
@@ -2404,6 +2688,42 @@ export default function PrescriptionPad() {
     }
   }, [patientId, fetchPatient, fetchPastData, fetchMedicalHistory]);
 
+  // Load copied prescription data from PatientOverview
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (params.get('copy') === 'true') {
+      try {
+        const rxData = JSON.parse(sessionStorage.getItem('copyPrescription') || '{}');
+        if (rxData.symptoms && rxData.symptoms.length > 0) {
+          setSymptoms(rxData.symptoms.map(s => typeof s === 'string' ? { name: s, remarks: '' } : s));
+        }
+        if (rxData.diagnoses && rxData.diagnoses.length > 0) {
+          setDiagnoses(rxData.diagnoses);
+        }
+        if (rxData.medications && rxData.medications.length > 0) {
+          setMeds(rxData.medications.map(m => ({
+            ...m,
+            timing: translateTiming(m.timing, language) || m.timing,
+            instructions: translateInstruction(m.instructions, language) || m.instructions
+          })));
+        }
+        if (rxData.advice) {
+          setAdvice(rxData.advice);
+        }
+        if (rxData.follow_up_days) {
+          setFollowUp(prev => ({ ...prev, days: rxData.follow_up_days }));
+        }
+        if (rxData.patient_notes) {
+          setPatientNotes(rxData.patient_notes);
+        }
+        sessionStorage.removeItem('copyPrescription');
+        addToast('Prescription data copied from previous visit', 'success');
+      } catch (e) {
+        console.error('Failed to load copied prescription:', e);
+      }
+    }
+  }, [location.search]);
+
   // Fetch active allergies for this patient
   useEffect(() => {
     const fetchAllergies = async () => {
@@ -2462,21 +2782,25 @@ export default function PrescriptionPad() {
       const dx = Array.isArray(rx.diagnoses) ? rx.diagnoses : (rx.diagnoses ? [rx.diagnoses] : []);
       if (dx.length) setDiagnoses(dx);
 
-      // Medications - Filter out invalid entries
+      // Medications - Filter out invalid entries and translate to current language
       const medsIn = Array.isArray(rx.medications) ? rx.medications : [];
       if (medsIn.length) {
         const validMeds = medsIn
           .filter(m => m && (m.name || m.medication_name || m.brand))
-          .map(m => ({
-            name: m.name || m.medication_name || m.brand || '',
-            brand: m.brand || m.name || '',
-            composition: m.composition || '',
-            frequency: m.frequency || m.dosage || '',
-            timing: m.timing || (timingOptions[language] || timingOptions.en)[0],
-            duration: m.duration || '',
-            instructions: m.instructions || '',
-            qty: m.quantity || m.qty || 0
-          }));
+          .map(m => {
+            const rawTiming = m.timing || (timingOptions[language] || timingOptions.en)[0];
+            const rawInstructions = m.instructions || '';
+            return {
+              name: m.name || m.medication_name || m.brand || '',
+              brand: m.brand || m.name || '',
+              composition: m.composition || '',
+              frequency: m.frequency || m.dosage || '',
+              timing: translateTiming(rawTiming, language) || rawTiming,
+              duration: m.duration || '',
+              instructions: translateInstruction(rawInstructions, language) || rawInstructions,
+              qty: m.quantity || m.qty || 0
+            };
+          });
         if (validMeds.length > 0) {
           setMeds(validMeds);
         }
@@ -2585,15 +2909,61 @@ export default function PrescriptionPad() {
         const templates = res.data.templates || [];
         setReceiptTemplates(templates);
 
-        // Don't auto-select default template - let user choose manually
-        setSelectedTemplateId(null);
-        setSelectedTemplate(null);
+        // Auto-select default template for letterhead
+        const defaultTpl = templates.find(t => t.is_default);
+        if (defaultTpl) {
+          setSelectedTemplateId(defaultTpl.id);
+          setSelectedTemplate(defaultTpl);
+        }
       } catch (error) {
         console.error('Failed to fetch receipt templates:', error);
       }
     };
     fetchReceiptTemplates();
   }, [api]);
+
+  // Close template dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (templateDropdownRef.current && !templateDropdownRef.current.contains(e.target)) {
+        setShowTemplateDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Delete a receipt template
+  const deleteReceiptTemplate = async (templateId) => {
+    if (!confirm('Are you sure you want to delete this letterhead template?')) return;
+    try {
+      await api.delete(`/api/receipt-templates/${templateId}`);
+      setReceiptTemplates(prev => prev.filter(t => t.id !== templateId));
+      if (selectedTemplateId === templateId) {
+        setSelectedTemplateId(null);
+        setSelectedTemplate(null);
+      }
+      addToast('Template deleted', 'success');
+    } catch (e) {
+      addToast('Failed to delete template', 'error');
+    }
+  };
+
+  // Hide default letterhead
+  const hideDefaultLetterhead = () => {
+    if (!confirm('Remove Default Letterhead? You can restore it from Doctor Settings.')) return;
+    setShowDefaultLetterhead(false);
+    localStorage.setItem('hideDefaultLetterhead', 'true');
+    // If default was selected, switch to first available template or none
+    if (!selectedTemplateId) {
+      const first = receiptTemplates[0];
+      if (first) {
+        setSelectedTemplateId(first.id);
+        setSelectedTemplate(first);
+      }
+    }
+    addToast('Default Letterhead removed', 'success');
+  };
 
   // Clear selected advice when language changes to avoid mismatch
   useEffect(() => {
@@ -2921,18 +3291,17 @@ export default function PrescriptionPad() {
     const debounceTimer = setTimeout(async () => {
       try {
         setDiagnosisLoading(true);
-        const response = await api.get('/api/icd/search', {
-          params: { q: diagnosisInput, version: 'all', limit: 20 }
+        const response = await api.get('/api/diagnoses/search', {
+          params: { q: diagnosisInput, limit: 20 }
         });
 
-        const payload = response.data?.data || response.data;
-        // Handle ICD search response format
-        const results = payload?.results || payload?.items || payload?.diagnoses || [];
+        const results = response.data?.diagnoses || [];
         setDiagnosisSearchResults(Array.isArray(results) ? results.map(r => ({
-          code: r.icd_code || r.icd11_code || r.code || '',
-          diagnosis_name: r.primary_description || r.preferred_label || r.title || r.diagnosis_name || '',
-          description: r.secondary_description || r.full_title || r.description || '',
-          version: r.version === 'icd11' ? 'ICD-11' : (r.version === 'icd10' ? 'ICD-10' : (r.icd11_code ? 'ICD-11' : 'ICD-10'))
+          code: r.code || r.icd_code || r.icd11_code || '',
+          diagnosis_name: r.diagnosis_name || r.primary_description || r.preferred_label || r.title || '',
+          description: r.description || r.secondary_description || r.full_title || '',
+          version: r.version === 'custom' ? 'Custom' : (r.version === 'icd11' ? 'ICD-11' : 'ICD-10'),
+          isCustom: r.version === 'custom'
         })) : []);
       } catch (err) {
         console.debug('Diagnosis search error:', err);
@@ -3012,7 +3381,7 @@ export default function PrescriptionPad() {
     let sourceLang = null;
 
     // Check each language to find where this timing value exists
-    ['en', 'hi', 'mr'].forEach(lang => {
+    Object.keys(timingOptions).forEach(lang => {
       const idx = timingOptions[lang]?.indexOf(timingValue);
       if (idx !== -1) {
         foundIndex = idx;
@@ -3033,77 +3402,91 @@ export default function PrescriptionPad() {
     if (!instruction) return '';
     
     // Instruction translations dictionary
-    const instructionTranslations = {
-      'After food to avoid gastric irritation': {
-        en: 'After food to avoid gastric irritation',
-        hi: 'गैस्ट्रिक जलन से बचने के लिए खाने के बाद',
-        mr: 'जठरामाशयीय जलनापासून बचण्यासाठी खाण्यानंतर'
-      },
-      'Take with water': {
-        en: 'Take with water',
-        hi: 'पानी के साथ लें',
-        mr: 'पाण्याबरोबर घ्या'
-      },
-      'May cause mild drowsiness': {
-        en: 'May cause mild drowsiness',
-        hi: 'हल्की नींद आ सकती है',
-        mr: 'हल्की निंद्रा येऊ शकते'
-      },
-      'Take at onset of headache': {
-        en: 'Take at onset of headache',
-        hi: 'सिरदर्द की शुरुआत में लें',
-        mr: 'डोकेदुखी सुरू होताच घ्या'
-      },
-      'Preventive. Continue for 1 month.': {
-        en: 'Preventive. Continue for 1 month.',
-        hi: 'निवारक। 1 महीने तक जारी रखें।',
-        mr: 'प्रতिबंधक। 1 महिन्यासाठी सुरू ठेवा।'
-      },
-      'For nausea and vomiting': {
-        en: 'For nausea and vomiting',
-        hi: 'मतली और उल्टी के लिए',
-        mr: 'मळमळीक आणि उल्टीसाठी'
-      },
-      'Take 30 min before food': {
-        en: 'Take 30 min before food',
-        hi: 'खाने से 30 मिनट पहले लें',
-        mr: 'खाण्यापूर्वी 30 मिनिटे आधी घ्या'
-      },
-      'Take on empty stomach': {
-        en: 'Take on empty stomach',
-        hi: 'खाली पेट पर लें',
-        mr: 'रिकाम्या पोटी घ्या'
-      },
-      'Protective coating for stomach': {
-        en: 'Protective coating for stomach',
-        hi: 'पेट के लिए सुरक्षात्मक कोटिंग',
-        mr: 'पोटासाठी संरक्षक कोटिंग'
-      },
-      'For sudden pain relief': {
-        en: 'For sudden pain relief',
-        hi: 'अचानक दर्द से राहत के लिए',
-        mr: 'अचानक दुखापुरठे मदतीसाठी'
-      },
-      'Long-acting ACE inhibitor': {
-        en: 'Long-acting ACE inhibitor',
-        hi: 'दीर्घकालिक ACE अवरोधक',
-        mr: 'दीर्घ-कार्यरत ACE प्रतिबंधक'
-      },
-      'ACE inhibitor for BP control': {
-        en: 'ACE inhibitor for BP control',
-        hi: 'रक्तचाप नियंत्रण के लिए ACE अवरोधक',
-        mr: 'BP नियंत्रणासाठी ACE प्रतिबंधक'
-      }
-    };
-    
-    // Check if instruction exists in translations
-    if (instructionTranslations[instruction]) {
-      return instructionTranslations[instruction][targetLang] || instruction;
+    const instructionTranslations = INSTRUCTION_TRANSLATIONS;
+
+    if (!targetLang) return instruction;
+
+    // 1. Exact match against English keys
+    if (instructionTranslations[instruction] && instructionTranslations[instruction][targetLang]) {
+      return instructionTranslations[instruction][targetLang];
     }
-    
-    // Return original instruction if not found in translations
+
+    // 2. Reverse lookup: if instruction is already in another language, find the English key and translate
+    for (const [enKey, langs] of Object.entries(instructionTranslations)) {
+      for (const [, text] of Object.entries(langs)) {
+        if (text === instruction && instructionTranslations[enKey][targetLang]) {
+          return instructionTranslations[enKey][targetLang];
+        }
+      }
+    }
+
+    // 3. Partial match - check all language values, find longest match
+    const lowerInstr = instruction.toLowerCase();
+    let bestMatch = null;
+    let bestLen = 0;
+    // Check English keys
+    for (const key of Object.keys(instructionTranslations)) {
+      if (lowerInstr.includes(key.toLowerCase()) && key.length > bestLen) {
+        bestMatch = key;
+        bestLen = key.length;
+      }
+    }
+    // Also check non-English values for reverse partial match
+    if (!bestMatch) {
+      for (const [enKey, langs] of Object.entries(instructionTranslations)) {
+        for (const [, text] of Object.entries(langs)) {
+          if (text && lowerInstr.includes(text.toLowerCase()) && text.length > bestLen) {
+            bestMatch = enKey;
+            bestLen = text.length;
+          }
+        }
+      }
+    }
+    if (bestMatch && instructionTranslations[bestMatch][targetLang]) {
+      return instructionTranslations[bestMatch][targetLang];
+    }
+
     return instruction;
   };
+
+  // Translate a single advice line by matching it against predefinedAdvice in all languages
+  const translateAdviceLine = (line, targetLang) => {
+    const trimmed = line.trim();
+    if (!trimmed) return line;
+    // Search all languages for a match
+    const langKeys = Object.keys(predefinedAdvice);
+    for (const srcLang of langKeys) {
+      const items = predefinedAdvice[srcLang];
+      const idx = items.findIndex(item => item.toLowerCase() === trimmed.toLowerCase());
+      if (idx !== -1) {
+        const target = predefinedAdvice[targetLang] || predefinedAdvice.en;
+        return target[idx] || line;
+      }
+    }
+    return line; // no match found, keep as-is
+  };
+
+  // When language changes, translate all existing medication timings, instructions AND advice to the new language
+  useEffect(() => {
+    if (meds.length > 0) {
+      setMeds(prev => prev.map(m => {
+        const translatedTiming = translateTiming(m.timing, language);
+        const translatedInstructions = translateInstruction(m.instructions, language);
+        const updated = { ...m };
+        if (translatedTiming && translatedTiming !== m.timing) updated.timing = translatedTiming;
+        if (translatedInstructions && translatedInstructions !== m.instructions) updated.instructions = translatedInstructions;
+        return updated;
+      }));
+    }
+    // Translate advice text
+    if (advice) {
+      const lines = advice.split('\n');
+      const translated = lines.map(line => translateAdviceLine(line, language));
+      const newAdvice = translated.join('\n');
+      if (newAdvice !== advice) setAdvice(newAdvice);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [language]);
 
   // Parse frequency strings like '1-0-1', 'OD', 'BD', 'TDS', 'QID'
   const parseFrequency = (freq) => {
@@ -3222,6 +3605,9 @@ export default function PrescriptionPad() {
     if (!alreadyExists) {
       setSymptoms((prev) => [...prev, { name: symptomName, remarks: '' }]);
 
+      // Save custom symptom to DB for future suggestions
+      try { api.post('/api/symptoms', { symptom_name: symptomName }); } catch (e) { /* ignore */ }
+
       // Auto-suggest diagnosis and medications based on symptom
       try {
         const response = await api.get(`/api/symptom-medications/suggestions?symptoms=${encodeURIComponent(s)}`);
@@ -3313,15 +3699,16 @@ export default function PrescriptionPad() {
     const defaultTiming = (timingOptions[language] || timingOptions.en)[0];
     
     selectedMeds.forEach(med => {
+      const rawInstr = med.instructions || '';
       const medObj = {
         name: med.name,
         brand: med.brand || med.name,
         strength: med.strength || '',
         dosage_form: med.dosage_form || '',
         frequency: med.frequency || '1-0-1',
-        timing: med.timing || defaultTiming,
+        timing: translateTiming(med.timing, language) || med.timing || defaultTiming,
         duration: med.duration || '7 days',
-        instructions: med.instructions || '',
+        instructions: translateInstruction(rawInstr, language) || rawInstr,
         qty: 7
       };
       setMeds((prev) => [...prev, medObj]);
@@ -3430,6 +3817,8 @@ export default function PrescriptionPad() {
     if (!d) return;
     if (!diagnoses.includes(d)) {
       setDiagnoses((prev) => [...prev, d]);
+      // Save custom diagnosis to DB for future suggestions
+      try { api.post('/api/diagnoses', { diagnosis_name: d }); } catch (e) { /* ignore */ }
     }
     setDiagnosisInput('');
     setDiagnosisDropdown(false);
@@ -3566,7 +3955,8 @@ export default function PrescriptionPad() {
     }
 
     // Try to fetch dosage from dosage_references by medicine name
-    const medName = baseMed.name || baseMed.medication_name || baseMed.brand || '';
+    // Use brand name first (what user sees/clicks), fallback to generic name
+    const medName = baseMed.brand || baseMed.name || baseMed.medication_name || '';
     try {
       if (medName) {
         const resp = await api.get('/api/medicines/dosage', {
@@ -3596,26 +3986,111 @@ export default function PrescriptionPad() {
       }
     }
 
+    // Try to fetch doctor's custom defaults (highest priority - overrides system defaults)
+    let customTiming = '';
+    let customInstructions = '';
+    try {
+      if (medName) {
+        const resp = await api.get('/api/medicines/my-defaults', { params: { name: medName } });
+        const defs = resp.data?.defaults;
+        if (defs) {
+          dosage = defs.dosage || dosage;
+          frequency = defs.frequency || frequency;
+          duration = defs.duration || duration;
+          customTiming = defs.timing || '';
+          customInstructions = defs.instructions || '';
+          if (defs.quantity) qty = defs.quantity;
+        }
+      }
+    } catch (e) { /* ignore */ }
+
     // Estimate quantity
     const perDay = parseFrequency(frequency);
     const days = parseDurationDays(duration);
     if (perDay && days) qty = perDay * days;
 
+    // Determine timing and instructions, then translate if non-English language
+    let finalTiming = customTiming || baseMed.timing || defaultTiming;
+    let finalInstructions = customInstructions || baseMed.instructions || '';
+    if (language && language !== 'en') {
+      const translatedT = translateTiming(finalTiming, language);
+      if (translatedT) finalTiming = translatedT;
+      const translatedI = translateInstruction(finalInstructions, language);
+      if (translatedI) finalInstructions = translatedI;
+    }
+
     const medObj = {
       name: medName,
-      brand: baseMed.brand || baseMed.name || '',
+      brand: baseMed.brand || '',
+      generic_name: baseMed.name || baseMed.generic_name || baseMed.composition || '',
       composition: baseMed.composition || baseMed.generic_name || '',
+      strength: baseMed.strength || '',
       frequency,
-      timing: baseMed.timing || defaultTiming,
+      timing: finalTiming,
       duration,
-      instructions: baseMed.instructions || '',
+      instructions: finalInstructions,
       qty
     };
 
     setMeds((prev) => [...prev, medObj]);
     setMedInput('');
     setMedDropdown(false);
+
+    // Save custom medicine to database if it was typed manually (not from search)
+    if (typeof med === 'string') {
+      try {
+        await api.post('/api/medicines', { name: med, brand: med, is_active: 1 });
+      } catch (e) {
+        // Ignore if already exists or fails
+      }
+    }
   };
+
+  // Add medicine with tapering enabled
+  const addTaperMed = async (med) => {
+    const defaultTiming = (timingOptions[language] || timingOptions.en)[0];
+    const baseMed = typeof med === 'string' ? { name: med, brand: med } : { ...med };
+    const medName = baseMed.brand || baseMed.name || '';
+    let frequency = '1-0-0';
+    let duration = '15 days';
+    let dosage = '';
+    try {
+      if (medName) {
+        const resp = await api.get('/api/medicines/dosage', { params: { name: medName } });
+        const d = resp.data?.dosage;
+        if (d) { dosage = d.standard_dosage || ''; frequency = d.recommended_frequency || frequency; duration = d.recommended_duration || duration; }
+      }
+    } catch (e) { /* ignore */ }
+    setMeds(prev => [...prev, {
+      name: medName,
+      brand: baseMed.brand || '',
+      generic_name: baseMed.name || baseMed.generic_name || baseMed.composition || '',
+      composition: baseMed.composition || baseMed.generic_name || '',
+      strength: baseMed.strength || '',
+      frequency, timing: defaultTiming, duration,
+      instructions: '', qty: '',
+      is_tapering: true,
+      tapering_schedule: [
+        { step_number: 1, dose: dosage || '10 mg', frequency: 'Once daily', duration_days: 5 },
+        { step_number: 2, dose: '5 mg', frequency: 'Once daily', duration_days: 5 },
+        { step_number: 3, dose: '2.5 mg', frequency: 'Once daily', duration_days: 5 }
+      ]
+    }]);
+    setShowTaperInput(false);
+    setTaperMedInput('');
+    setTaperMedResults([]);
+  };
+
+  // Search medicines for tapering input
+  const searchTaperMeds = useCallback(async (query) => {
+    if (!query || query.length < 2) { setTaperMedResults([]); return; }
+    setTaperMedLoading(true);
+    try {
+      const resp = await api.get('/api/medicines/search', { params: { q: query, limit: 15 } });
+      setTaperMedResults(resp.data?.medicines || resp.data?.results || resp.data || []);
+    } catch (e) { setTaperMedResults([]); }
+    setTaperMedLoading(false);
+  }, []);
 
   const removeMed = (idx) => {
     setMeds((prev) => prev.filter((_, i) => i !== idx));
@@ -3746,9 +4221,24 @@ export default function PrescriptionPad() {
   // Advice Handlers
   // ========================================
   const toggleAdvice = (adv) => {
-    setSelectedAdvice((prev) => 
+    setSelectedAdvice((prev) =>
       prev.includes(adv) ? prev.filter(a => a !== adv) : [...prev, adv]
     );
+  };
+
+  const addCustomAdvice = (text) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    const updated = [...customAdviceItems, trimmed];
+    setCustomAdviceItems(updated);
+    localStorage.setItem('custom_advice_items', JSON.stringify(updated));
+    setNewAdviceInput('');
+  };
+
+  const deleteCustomAdvice = (index) => {
+    const updated = customAdviceItems.filter((_, i) => i !== index);
+    setCustomAdviceItems(updated);
+    localStorage.setItem('custom_advice_items', JSON.stringify(updated));
   };
 
   const formatAdvice = (command) => {
@@ -3794,11 +4284,15 @@ export default function PrescriptionPad() {
       // Set medications
       if (rx.medications && Array.isArray(rx.medications)) {
         setMeds(rx.medications.map(med => ({
+          name: med.medication_name || med.name,
           medication_name: med.medication_name || med.name,
           dosage: med.dosage,
           frequency: med.frequency,
           duration: med.duration,
-          instructions: med.instructions
+          instructions: translateInstruction(med.instructions, language) || med.instructions,
+          timing: translateTiming(med.timing, language) || med.timing,
+          is_tapering: med.is_tapering || 0,
+          tapering_schedule: med.tapering_schedule || []
         })));
       }
 
@@ -3861,11 +4355,18 @@ export default function PrescriptionPad() {
         medication_name: m.name || m.brand,
         brand_name: m.brand || m.name,
         dosage: m.dosage || '',
-        frequency: m.frequency || '',
+        frequency: m.is_tapering ? 'Tapering' : (m.frequency || ''),
         duration: m.duration || '',
         instructions: m.instructions || '',
         timing: m.timing || '',
-        quantity: m.qty || 0
+        quantity: m.qty || 0,
+        is_tapering: m.is_tapering ? 1 : 0,
+        tapering_schedule: m.is_tapering && m.tapering_schedule ? m.tapering_schedule.map((s, i) => ({
+          step_number: i + 1,
+          dose: s.dose || '',
+          frequency: s.frequency || '',
+          duration_days: s.duration_days || 1
+        })) : []
       }));
 
       // Prepare request body
@@ -3890,7 +4391,13 @@ export default function PrescriptionPad() {
         follow_up_days: followUp.days ? parseInt(followUp.days) : null,
         follow_up_date: followUp.date || null,
         patient_notes: patientNotes || '',
-        private_notes: privateNotes || ''
+        private_notes: privateNotes || '',
+        lab_advice: labAdvice || '',
+        lab_remarks: labRemarks || '',
+        examination_findings: {
+          general: generalExamination || '',
+          systemic: systemicExamination || ''
+        }
       };
 
       console.log('Saving prescription:', requestBody);
@@ -3903,23 +4410,46 @@ export default function PrescriptionPad() {
       // Save vitals to patient's vitals record
       try {
         if (vitals.temp || vitals.height || vitals.weight || vitals.pulse || vitals.blood_pressure || vitals.spo2) {
-          const vitalsData = {
-            vitals: [
-              { label: 'Temperature', value: vitals.temp, date: new Date().toISOString() },
-              { label: 'Height', value: vitals.height, date: new Date().toISOString() },
-              { label: 'Weight', value: vitals.weight, date: new Date().toISOString() },
-              { label: 'Pulse Rate', value: vitals.pulse, date: new Date().toISOString() },
-              { label: 'Blood Pressure', value: vitals.blood_pressure, date: new Date().toISOString() },
-              { label: 'SpO2', value: vitals.spo2, date: new Date().toISOString() },
-              ...(vitals.bmi ? [{ label: 'BMI', value: vitals.bmi, date: new Date().toISOString() }] : [])
-            ].filter(v => v.value)
-          };
-          await api.post(`/api/patient-data/vitals/${parsedPatientId}`, vitalsData);
+          await api.post(`/api/patient-data/vitals/${parsedPatientId}`, {
+            temperature: vitals.temp || null,
+            height: vitals.height || null,
+            weight: vitals.weight || null,
+            pulse: vitals.pulse || null,
+            blood_pressure: vitals.blood_pressure || null,
+            spo2: vitals.spo2 || null
+          });
           console.log('Vitals saved to patient record');
         }
       } catch (vitalErr) {
         console.warn('Could not save vitals to patient record:', vitalErr);
         // Don't fail the prescription save if vitals save fails
+      }
+
+      // Save lab results to patient's lab record for bidirectional sync
+      try {
+        if (labResultEntries.length > 0) {
+          for (const lab of labResultEntries) {
+            // Skip entries already saved to DB (have an id) to avoid duplicates
+            if (lab.id) continue;
+            if (lab.result_value && lab.test_name) {
+              await api.post(`/api/labs/${parsedPatientId}`, {
+                test_name: lab.test_name,
+                result_value: lab.result_value,
+                result_unit: lab.result_unit || '',
+                reference_range: lab.reference_range || '',
+                test_category: lab.category || 'GENERAL',
+                result_date: lab.date || new Date().toISOString().split('T')[0],
+                report_group: 'Prescription'
+              });
+            }
+          }
+          console.log('Lab results synced to patient overview:', labResultEntries.length);
+          // Trigger refresh in PatientOverview by emitting a custom event
+          window.dispatchEvent(new CustomEvent('patientDataRefresh', { detail: { patientId: parsedPatientId } }));
+        }
+      } catch (labErr) {
+        console.warn('Could not sync lab results to patient record:', labErr);
+        // Don't fail the prescription save if lab sync fails
       }
 
       // Store prescription ID for PDF download
@@ -3937,7 +4467,22 @@ export default function PrescriptionPad() {
         console.error('Failed to save ICD diagnoses:', e);
         addToast('Prescription saved, but ICD diagnoses could not be saved', 'warning');
       }
-      
+
+      // Save medicine defaults for future suggestions (fire-and-forget)
+      try {
+        for (const m of meds) {
+          api.post('/api/medicines/defaults', {
+            medicine_name: m.name || m.brand,
+            dosage: m.dosage || null,
+            frequency: m.frequency || null,
+            duration: m.duration || null,
+            timing: m.timing || null,
+            instructions: m.instructions || null,
+            quantity: m.qty || null
+          }).catch(() => {});
+        }
+      } catch (e) { /* ignore */ }
+
       return response.data;
     } catch (error) {
       console.error('Save error:', error);
@@ -3956,8 +4501,10 @@ export default function PrescriptionPad() {
     try {
       // Step 1: Save the prescription
       await handleSave();
-      
+
       // Step 2: Mark appointment as completed if appointment_id exists
+      // Track whether the appointment was valid (so billing doesn't use a bad FK)
+      let validAppointmentId = meta.appointment_id || null;
       if (meta.appointment_id) {
         try {
           await api.patch(`/api/appointments/${meta.appointment_id}/status`, {
@@ -3965,16 +4512,22 @@ export default function PrescriptionPad() {
           });
           addToast('Appointment marked as completed', 'success');
         } catch (error) {
+          if (error.response?.status === 404) {
+            // Appointment doesn't exist — don't pass it to billing
+            validAppointmentId = null;
+          }
           console.error('Error marking appointment as completed:', error);
           addToast('Prescription saved but could not mark appointment as completed', 'warning');
         }
       }
-      
+
       addToast('Prescription completed and visit ended', 'success');
 
       // Hand off to billing / receipt creation
-      if (meta.patient_id && meta.appointment_id) {
-        navigate(`/receipts?patient=${meta.patient_id}&appointment=${meta.appointment_id}&quick=true`);
+      if (meta.patient_id && validAppointmentId) {
+        navigate(`/receipts?patient=${meta.patient_id}&appointment=${validAppointmentId}&quick=true`);
+      } else if (meta.patient_id) {
+        navigate(`/receipts?patient=${meta.patient_id}&quick=true`);
       } else {
         navigate('/queue');
       }
@@ -4014,11 +4567,11 @@ export default function PrescriptionPad() {
   const combinedDiagnosisResults = (() => {
     const out = [];
 
-    // 1) Backend ICD results (ICD-10 + ICD-11)
+    // 1) Backend results (Custom diagnoses first, then ICD-10 + ICD-11)
     for (const r of diagnosisSearchResults) {
       const label = r.diagnosis_name || r.code;
       if (!label) continue;
-      out.push({ type: 'icd', label, code: r.code, description: r.description, version: r.version });
+      out.push({ type: r.isCustom ? 'custom' : 'icd', label, code: r.code, description: r.description, version: r.version });
     }
 
     // 2) Quick suggestions (only if no ICD results or no input)
@@ -4511,6 +5064,71 @@ export default function PrescriptionPad() {
               </select>
             </div>
 
+            <div className="mb-2">
+              {!showTaperInput ? (
+                <button
+                  type="button"
+                  onClick={() => setShowTaperInput(true)}
+                  className="px-4 py-2 bg-purple-600 text-white rounded font-medium text-sm hover:bg-purple-700 transition-all shadow-sm flex items-center gap-1.5"
+                >
+                  <span className="text-base leading-none">↓</span> Add Tapering Dose
+                </button>
+              ) : (
+                <div className="flex items-start gap-2 p-3 bg-purple-50 border border-purple-200 rounded-lg">
+                  <div className="relative flex-1">
+                    <label className="text-xs font-semibold text-purple-700 mb-1 block">Search medicine for tapering dose:</label>
+                    <input
+                      autoFocus
+                      className="w-full px-3 py-2 border border-purple-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-purple-400"
+                      placeholder="Type medicine name (e.g. Prednisolone, Wysolone)..."
+                      value={taperMedInput}
+                      onChange={(e) => {
+                        setTaperMedInput(e.target.value);
+                        searchTaperMeds(e.target.value);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && taperMedInput.trim()) {
+                          e.preventDefault();
+                          addTaperMed(taperMedInput.trim());
+                        }
+                        if (e.key === 'Escape') {
+                          setShowTaperInput(false);
+                          setTaperMedInput('');
+                          setTaperMedResults([]);
+                        }
+                      }}
+                    />
+                    {(taperMedResults.length > 0 || taperMedLoading) && (
+                      <div className="absolute z-50 w-full mt-1 bg-white border border-purple-200 rounded shadow-lg max-h-60 overflow-y-auto">
+                        {taperMedLoading && <div className="px-3 py-2 text-xs text-gray-500">Searching...</div>}
+                        {taperMedResults.map((m, idx) => (
+                          <button
+                            key={`taper-${idx}`}
+                            type="button"
+                            className="w-full text-left px-3 py-2 hover:bg-purple-50 border-b text-sm"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => addTaperMed(m)}
+                          >
+                            <div className="font-medium text-gray-900">{m.brand || m.name}</div>
+                            {(m.composition || m.generic_name || m.strength) && (
+                              <div className="text-xs text-gray-500">{[m.composition || m.generic_name, m.strength].filter(Boolean).join(' | ')}</div>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => { setShowTaperInput(false); setTaperMedInput(''); setTaperMedResults([]); }}
+                    className="mt-6 px-3 py-2 text-sm text-gray-500 hover:text-red-600 border rounded hover:border-red-300"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+            </div>
+
             <div className="relative">
               <input
                 data-testid="medicine-input"
@@ -4685,10 +5303,49 @@ export default function PrescriptionPad() {
                     <span className="text-xs font-normal bg-blue-100 px-2 py-0.5 rounded-full">
                       {meds.filter(m => !m.type || m.type === 'medication').length} items
                     </span>
+                    <span className="ml-auto flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowMedicationsTemplateSelector(true)}
+                        className="text-xs px-2 py-1 bg-blue-200 text-blue-700 rounded hover:bg-blue-300 transition"
+                      >
+                        📋 Load Template
+                      </button>
+                      {meds.filter(m => !m.type || m.type === 'medication').length > 0 && (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const tName = prompt('Template name:');
+                            if (!tName) return;
+                            const medsToSave = meds.filter(m => !m.type || m.type === 'medication').map(m => ({
+                              medication_name: m.name || m.brand,
+                              brand_name: m.brand || m.name,
+                              frequency: m.frequency || '',
+                              duration: m.duration || '',
+                              timing: m.timing || '',
+                              instructions: m.instructions || '',
+                              quantity: m.qty || 0
+                            }));
+                            try {
+                              await api.post('/api/medications-templates', { name: tName, medications: medsToSave });
+                              addToast('Template saved!', 'success');
+                              const res = await api.get('/api/medications-templates');
+                              setMedicationsTemplates(res.data.templates || []);
+                            } catch (e) {
+                              addToast('Failed to save template', 'error');
+                            }
+                          }}
+                          className="text-xs px-2 py-1 bg-green-200 text-green-700 rounded hover:bg-green-300 transition"
+                        >
+                          💾 Save as Template
+                        </button>
+                      )}
+                    </span>
                   </h4>
                   <div className="bg-white border rounded overflow-x-auto">
-                    <div className="grid grid-cols-7 min-w-[800px] bg-blue-100 text-xs font-semibold text-blue-800 px-3 py-2">
-                      <span className="col-span-2">MEDICINE (Generic)</span>
+                    <div className="grid min-w-[850px] bg-blue-100 text-xs font-semibold text-blue-800 px-3 py-2" style={{gridTemplateColumns:'40px 2fr 1fr 1fr 1fr 1fr 100px'}}>
+                      <span>#</span>
+                      <span>MEDICINE (Generic)</span>
                       <span>FREQUENCY</span>
                       <span>TIMING</span>
                       <span>DURATION</span>
@@ -4698,54 +5355,155 @@ export default function PrescriptionPad() {
                     {meds.filter(m => !m.type || m.type === 'medication').map((med, idx) => {
                       const actualIdx = meds.findIndex(m => m === med);
                       return (
-                        <div key={idx} className="grid grid-cols-7 min-w-[800px] px-3 py-2 border-t text-sm hover:bg-blue-50 transition">
-                          <div className="col-span-2">
-                            <div className="font-medium text-gray-900">{med.brand || med.name}</div>
-                            {med.composition && <div className="text-xs text-gray-500">{med.composition}</div>}
+                        <React.Fragment key={idx}>
+                        <div className="grid min-w-[850px] px-3 py-2 border-t text-sm hover:bg-blue-50 transition" style={{gridTemplateColumns:'40px 2fr 1fr 1fr 1fr 1fr 100px'}}>
+                          <div className="flex items-center gap-1">
+                            <span className="text-xs text-gray-500 font-medium w-5">{idx + 1}.</span>
+                            <div className="flex flex-col gap-0.5">
+                              <button type="button" onClick={() => { if (actualIdx > 0) { const u = [...meds]; [u[actualIdx-1], u[actualIdx]] = [u[actualIdx], u[actualIdx-1]]; setMeds(u); }}} className="text-gray-400 hover:text-blue-600 leading-none text-xs" title="Move up">▲</button>
+                              <button type="button" onClick={() => { if (actualIdx < meds.length-1) { const u = [...meds]; [u[actualIdx], u[actualIdx+1]] = [u[actualIdx+1], u[actualIdx]]; setMeds(u); }}} className="text-gray-400 hover:text-blue-600 leading-none text-xs" title="Move down">▼</button>
+                            </div>
                           </div>
-                          <input
-                            className="px-2 py-1 border rounded text-xs"
-                            value={med.frequency || ''}
-                            onChange={(e) => {
-                              const updated = [...meds];
-                              updated[actualIdx].frequency = e.target.value;
-                              setMeds(updated);
-                            }}
-                            placeholder="1-0-1"
-                          />
-                          <select
-                            className="px-2 py-1 border rounded text-xs"
-                            value={med.timing || ''}
-                            onChange={(e) => {
-                              const updated = [...meds];
-                              updated[actualIdx].timing = e.target.value;
-                              setMeds(updated);
-                            }}
-                          >
-                            {(timingOptions[language] || timingOptions.en).map(opt => (
-                              <option key={opt} value={opt}>{opt}</option>
-                            ))}
-                          </select>
+                          <div>
+                            <div className="font-medium text-gray-900">{med.name || med.brand}</div>
+                            {(med.composition || med.strength) && <div className="text-xs text-gray-500">{[med.composition, med.strength].filter(Boolean).join(' ')}</div>}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const updated = [...meds];
+                                updated[actualIdx].is_tapering = !updated[actualIdx].is_tapering;
+                                if (updated[actualIdx].is_tapering && (!updated[actualIdx].tapering_schedule || updated[actualIdx].tapering_schedule.length === 0)) {
+                                  updated[actualIdx].tapering_schedule = [
+                                    { step_number: 1, dose: '10 mg', frequency: 'Once daily', duration_days: 5 },
+                                    { step_number: 2, dose: '5 mg', frequency: 'Once daily', duration_days: 5 },
+                                    { step_number: 3, dose: '2.5 mg', frequency: 'Once daily', duration_days: 5 }
+                                  ];
+                                }
+                                setMeds(updated);
+                              }}
+                              className={`mt-1 px-2 py-0.5 rounded text-xs font-medium border transition-all ${
+                                med.is_tapering
+                                  ? 'bg-purple-600 text-white border-purple-600 shadow-sm'
+                                  : 'bg-white text-purple-600 border-purple-300 hover:bg-purple-50 hover:border-purple-400'
+                              }`}
+                              title="Toggle tapering dose schedule"
+                            >
+                              {med.is_tapering ? '✓ Tapering' : '↓ Taper'}
+                            </button>
+                          </div>
+                          {/* Frequency - editable input with dropdown */}
+                          <div className="relative">
+                            <input
+                              className="px-2 py-1 border rounded text-xs w-full pr-6"
+                              value={med.frequency || ''}
+                              onChange={(e) => {
+                                const updated = [...meds];
+                                updated[actualIdx].frequency = e.target.value;
+                                updated[actualIdx].qty = calcQty(e.target.value, updated[actualIdx].duration) || updated[actualIdx].qty;
+                                setMeds(updated);
+                              }}
+                              onFocus={(e) => e.target.nextSibling.style.display = 'block'}
+                              onBlur={() => setTimeout(() => { try { document.querySelectorAll('.freq-dd').forEach(el => el.style.display = 'none'); } catch(e){} }, 200)}
+                              placeholder="1-0-1"
+                            />
+                            <div className="freq-dd absolute left-0 top-full mt-1 w-40 bg-white border border-gray-200 rounded shadow-lg z-50 max-h-48 overflow-y-auto" style={{display:'none'}}>
+                              {allFrequencyPresets.map(f => (
+                                <button key={f} type="button"
+                                  onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    const updated = [...meds];
+                                    updated[actualIdx].frequency = f;
+                                    updated[actualIdx].qty = calcQty(f, updated[actualIdx].duration) || updated[actualIdx].qty;
+                                    setMeds(updated);
+                                  }}
+                                  className="w-full text-left px-3 py-1.5 text-xs hover:bg-blue-50 hover:text-blue-700 border-b border-gray-50"
+                                >{f}</button>
+                              ))}
+                            </div>
+                          </div>
+                          {/* Timing - editable input with dropdown */}
+                          <div className="relative">
+                            <input
+                              className="px-2 py-1 border rounded text-xs w-full"
+                              value={med.timing || ''}
+                              onChange={(e) => {
+                                const updated = [...meds];
+                                updated[actualIdx].timing = e.target.value;
+                                setMeds(updated);
+                              }}
+                              onFocus={(e) => e.target.nextSibling.style.display = 'block'}
+                              onBlur={() => setTimeout(() => { try { document.querySelectorAll('.timing-dd').forEach(el => el.style.display = 'none'); } catch(e){} }, 200)}
+                              placeholder="After Meal"
+                            />
+                            <div className="timing-dd absolute left-0 top-full mt-1 w-40 bg-white border border-gray-200 rounded shadow-lg z-50 max-h-48 overflow-y-auto" style={{display:'none'}}>
+                              {(timingOptions[language] || timingOptions.en).map(opt => (
+                                <button key={opt} type="button"
+                                  onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    const updated = [...meds];
+                                    updated[actualIdx].timing = opt;
+                                    setMeds(updated);
+                                  }}
+                                  className="w-full text-left px-3 py-1.5 text-xs hover:bg-blue-50 hover:text-blue-700 border-b border-gray-50"
+                                >{opt}</button>
+                              ))}
+                            </div>
+                          </div>
                           <input
                             className="px-2 py-1 border rounded text-xs"
                             value={med.duration || ''}
                             onChange={(e) => {
                               const updated = [...meds];
                               updated[actualIdx].duration = e.target.value;
+                              updated[actualIdx].qty = calcQty(updated[actualIdx].frequency, e.target.value) || updated[actualIdx].qty;
                               setMeds(updated);
                             }}
                             placeholder="7 days"
                           />
-                          <input
-                            className="px-2 py-1 border rounded text-xs"
-                            value={med.instructions || ''}
-                            onChange={(e) => {
-                              const updated = [...meds];
-                              updated[actualIdx].instructions = e.target.value;
-                              setMeds(updated);
-                            }}
-                            placeholder="After food"
-                          />
+                          <div className="relative">
+                            <input
+                              className="px-2 py-1 border rounded text-xs w-full"
+                              value={med.instructions || ''}
+                              onChange={(e) => {
+                                const updated = [...meds];
+                                updated[actualIdx].instructions = e.target.value;
+                                setMeds(updated);
+                              }}
+                              onFocus={(e) => e.target.nextSibling.style.display = 'block'}
+                              onBlur={() => setTimeout(() => { try { document.querySelectorAll('.instr-dd').forEach(el => el.style.display = 'none'); } catch(e){} }, 200)}
+                              placeholder="Instructions"
+                            />
+                            <div className="instr-dd absolute left-0 top-full mt-1 w-56 bg-white border border-gray-200 rounded shadow-lg z-50 max-h-48 overflow-y-auto" style={{display:'none'}}>
+                              {[
+                                {en: 'Take with water', hi: 'पानी के साथ लें', mr: 'पाण्याबरोबर घ्या'},
+                                {en: 'Take after meals', hi: 'खाने के बाद लें', mr: 'जेवणानंतर घ्या'},
+                                {en: 'Take before meals', hi: 'खाने से पहले लें', mr: 'जेवणापूर्वी घ्या'},
+                                {en: 'Take on empty stomach', hi: 'खाली पेट पर लें', mr: 'रिकाम्या पोटी घ्या'},
+                                {en: 'Take at bedtime', hi: 'सोते समय लें', mr: 'झोपण्यापूर्वी घ्या'},
+                                {en: 'Take as prescribed by doctor', hi: 'डॉक्टर के निर्देशानुसार लें', mr: 'डॉक्टरांच्या सल्ल्यानुसार घ्या'},
+                                {en: 'Take with water, do not exceed recommended dose', hi: 'पानी के साथ लें, अनुशंसित खुराक से अधिक न लें', mr: 'पाण्याबरोबर घ्या, शिफारस केलेल्या डोसपेक्षा जास्त घेऊ नका'},
+                                {en: 'After food to avoid gastric irritation', hi: 'गैस्ट्रिक जलन से बचने के लिए खाने के बाद', mr: 'जठरामाशयीय जलनापासून बचण्यासाठी खाण्यानंतर'},
+                                {en: 'Take 30 min before food', hi: 'खाने से 30 मिनट पहले लें', mr: 'खाण्यापूर्वी 30 मिनिटे आधी घ्या'},
+                                {en: 'Do not crush or chew', hi: 'कुचलें या चबाएं नहीं', mr: 'कुस्करू किंवा चावू नका'},
+                                {en: 'Complete the full course', hi: 'पूरा कोर्स पूरा करें', mr: 'संपूर्ण कोर्स पूर्ण करा'},
+                                {en: 'SOS - take only when needed', hi: 'SOS - जरूरत पड़ने पर ही लें', mr: 'SOS - गरज असेल तेव्हाच घ्या'},
+                                {en: 'For external use only', hi: 'केवल बाहरी उपयोग के लिए', mr: 'फक्त बाह्य वापरासाठी'},
+                                {en: 'Apply locally', hi: 'स्थानीय रूप से लगाएं', mr: 'स्थानिकपणे लावा'},
+                                {en: 'Avoid alcohol', hi: 'शराब से बचें', mr: 'मद्यपान टाळा'},
+                                {en: 'May cause mild drowsiness', hi: 'हल्की नींद आ सकती है', mr: 'हल्की निंद्रा येऊ शकते'},
+                              ].map((opt, oi) => (
+                                <button key={oi} type="button"
+                                  onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    const updated = [...meds];
+                                    updated[actualIdx].instructions = opt[language] || opt.en;
+                                    setMeds(updated);
+                                  }}
+                                  className="w-full text-left px-3 py-1.5 text-xs hover:bg-blue-50 hover:text-blue-700 border-b border-gray-50"
+                                >{opt[language] || opt.en}</button>
+                              ))}
+                            </div>
+                          </div>
                           <div className="flex items-center gap-2">
                             <input
                               className="px-2 py-1 border rounded text-xs w-16"
@@ -4765,6 +5523,109 @@ export default function PrescriptionPad() {
                             </button>
                           </div>
                         </div>
+                        {/* Tapering Schedule - Step-wise */}
+                        {med.is_tapering && med.tapering_schedule && (
+                          <div className="min-w-[850px] px-3 py-2 bg-purple-50 border-t border-purple-200">
+                            <div className="flex items-center gap-2 mb-2">
+                              <span className="text-xs font-semibold text-purple-700">Tapering Schedule</span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const updated = [...meds];
+                                  const nextStep = updated[actualIdx].tapering_schedule.length + 1;
+                                  updated[actualIdx].tapering_schedule.push({ step_number: nextStep, dose: '', frequency: 'Once daily', duration_days: 5 });
+                                  setMeds(updated);
+                                }}
+                                className="text-xs px-2 py-0.5 bg-purple-200 text-purple-700 rounded hover:bg-purple-300"
+                              >
+                                + Add Step
+                              </button>
+                            </div>
+                            <div className="grid grid-cols-[40px_1fr_1fr_80px_30px] gap-1 text-xs font-medium text-purple-600 mb-1 px-1">
+                              <span>Step</span>
+                              <span>Dose</span>
+                              <span>Frequency</span>
+                              <span>Duration</span>
+                              <span></span>
+                            </div>
+                            {med.tapering_schedule.map((step, si) => (
+                              <div key={si} className="grid grid-cols-[40px_1fr_1fr_80px_30px] gap-1 items-center mb-1">
+                                <span className="text-xs font-bold text-purple-700 text-center">{si + 1}</span>
+                                <input
+                                  className="text-xs border rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-purple-400"
+                                  value={step.dose}
+                                  onChange={(e) => {
+                                    const updated = [...meds];
+                                    updated[actualIdx].tapering_schedule[si].dose = e.target.value;
+                                    setMeds(updated);
+                                  }}
+                                  placeholder="e.g. 10 mg"
+                                />
+                                <select
+                                  className="text-xs border rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-purple-400 bg-white"
+                                  value={step.frequency}
+                                  onChange={(e) => {
+                                    const updated = [...meds];
+                                    updated[actualIdx].tapering_schedule[si].frequency = e.target.value;
+                                    setMeds(updated);
+                                  }}
+                                >
+                                  <option value="Once daily">Once daily</option>
+                                  <option value="Twice daily">Twice daily</option>
+                                  <option value="Thrice daily">Thrice daily</option>
+                                  <option value="Every other day">Every other day</option>
+                                  <option value="Once weekly">Once weekly</option>
+                                  <option value="1-0-0">1-0-0</option>
+                                  <option value="0-1-0">0-1-0</option>
+                                  <option value="0-0-1">0-0-1</option>
+                                  <option value="1-1-0">1-1-0</option>
+                                  <option value="1-0-1">1-0-1</option>
+                                  <option value="0-1-1">0-1-1</option>
+                                  <option value="1-1-1">1-1-1</option>
+                                </select>
+                                <div className="flex items-center gap-1">
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    className="text-xs border rounded px-1 py-1 w-12 focus:outline-none focus:ring-1 focus:ring-purple-400"
+                                    value={step.duration_days}
+                                    onChange={(e) => {
+                                      const updated = [...meds];
+                                      updated[actualIdx].tapering_schedule[si].duration_days = parseInt(e.target.value) || 1;
+                                      setMeds(updated);
+                                    }}
+                                  />
+                                  <span className="text-xs text-gray-500">d</span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const updated = [...meds];
+                                    updated[actualIdx].tapering_schedule = updated[actualIdx].tapering_schedule.filter((_, i) => i !== si);
+                                    // Re-number steps
+                                    updated[actualIdx].tapering_schedule.forEach((s, i) => s.step_number = i + 1);
+                                    setMeds(updated);
+                                  }}
+                                  className="text-red-400 hover:text-red-600 text-xs"
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            ))}
+                            {med.tapering_schedule.length > 0 && (
+                              <div className="mt-2 text-xs text-purple-600 bg-purple-100 rounded px-2 py-1">
+                                <span className="font-medium">Preview: </span>
+                                {med.tapering_schedule.map((s, i) => (
+                                  <span key={i}>
+                                    {i > 0 && <span className="font-medium"> → Then </span>}
+                                    {s.dose} {s.frequency} for {s.duration_days} day{s.duration_days > 1 ? 's' : ''}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </React.Fragment>
                       );
                     })}
                   </div>
@@ -4832,6 +5693,13 @@ export default function PrescriptionPad() {
                   <div className="text-gray-400 text-xs mt-1">
                     Search above or use smart suggestions to add items
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowMedicationsTemplateSelector(true)}
+                    className="mt-3 text-xs px-3 py-1.5 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition"
+                  >
+                    📋 Load from Template
+                  </button>
                 </div>
               )}
             </div>
@@ -4917,7 +5785,7 @@ export default function PrescriptionPad() {
           {/* Advices - Now dynamically rendered based on pad configuration */}
           {/* <div className="bg-white border rounded shadow-sm p-4 space-y-3">
             <div className="flex items-center justify-between">
-              <h3 className="font-semibold">{uiLabels[language]?.advice || 'Advices'}</h3>
+              <h3 className="font-semibold">{uiLabels['en']?.advice || 'Advices'}</h3>
               <div className="flex items-center gap-2">
                 <label className="flex items-center gap-1 text-sm">
                   <input
@@ -4951,6 +5819,34 @@ export default function PrescriptionPad() {
                   {adv}
                 </label>
               ))}
+              {customAdviceItems.map((adv, idx) => (
+                <span key={'ca2-' + idx} className="flex items-center gap-1 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={selectedAdvice.includes(adv)}
+                    onChange={() => toggleAdvice(adv)}
+                  />
+                  <span className="text-blue-700">{adv}</span>
+                  <button type="button" onClick={() => deleteCustomAdvice(idx)} className="text-red-400 hover:text-red-600 text-xs ml-1">&times;</button>
+                </span>
+              ))}
+            </div>
+            <div className="flex gap-2 mt-1">
+              <input
+                type="text"
+                className="flex-1 px-2 py-1 text-sm border rounded"
+                placeholder="Type custom advice and press Enter..."
+                value={newAdviceInput}
+                onChange={(e) => setNewAdviceInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCustomAdvice(newAdviceInput); } }}
+              />
+              <button
+                type="button"
+                onClick={() => addCustomAdvice(newAdviceInput)}
+                className="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
+              >
+                Add
+              </button>
             </div>
             <div className="border rounded p-2">
               <div className="flex gap-2 mb-2 border-b pb-2">
@@ -4999,7 +5895,7 @@ export default function PrescriptionPad() {
 
           {/* Follow Up - Now dynamically rendered based on pad configuration */}
           {/* <div className="bg-white border rounded shadow-sm p-4 space-y-3">
-            <h3 className="font-semibold">{uiLabels[language]?.followUp || 'Follow Up'}</h3>
+            <h3 className="font-semibold">{uiLabels['en']?.followUp || 'Follow Up'}</h3>
             <div className="flex gap-2 items-center">
               <input
                 className="px-3 py-2 border rounded"
@@ -5034,7 +5930,7 @@ export default function PrescriptionPad() {
           {/* <div className="bg-white border rounded shadow-sm p-4 space-y-3">
             <h3 className="font-semibold">{language === 'hi' ? 'नोट्स' : language === 'mr' ? 'टिपा' : 'Notes'}</h3>
             <div>
-              <label className="block text-sm font-medium mb-1">{uiLabels[language]?.patientNotes || 'Patient Notes'}</label>
+              <label className="block text-sm font-medium mb-1">{uiLabels['en']?.patientNotes || 'Patient Notes'}</label>
               <textarea
                 className="w-full px-3 py-2 border rounded"
                 rows={3}
@@ -5045,7 +5941,7 @@ export default function PrescriptionPad() {
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">
-                {(uiLabels[language]?.privateNotes || 'PRIVATE NOTES').toUpperCase()}
+                {(uiLabels['en']?.privateNotes || 'PRIVATE NOTES').toUpperCase()}
                 <span className="text-xs text-slate-500 ml-2">(These will not be printed)</span>
               </label>
               <textarea
@@ -5076,24 +5972,83 @@ export default function PrescriptionPad() {
                 <option value="hi">Hindi</option>
                 <option value="mr">Marathi</option>
               </select>
-              <select
-                className="px-3 py-2 text-sm border rounded bg-blue-50"
-                value={selectedTemplateId || ''}
-                onChange={(e) => {
-                  const templateId = e.target.value ? parseInt(e.target.value) : null;
-                  setSelectedTemplateId(templateId);
-                  const template = receiptTemplates.find(t => t.id === templateId);
-                  setSelectedTemplate(template || null);
-                }}
-                title="Select Letterhead Template"
-              >
-                <option value="">Default Letterhead</option>
-                {receiptTemplates.map(template => (
-                  <option key={template.id} value={template.id}>
-                    {template.template_name} {template.is_default ? '(Default)' : ''}
-                  </option>
-                ))}
-              </select>
+              <div className="relative" ref={templateDropdownRef}>
+                <button
+                  type="button"
+                  className="px-3 py-2 text-sm border rounded bg-blue-50 flex items-center gap-2 min-w-[160px] justify-between"
+                  onClick={() => setShowTemplateDropdown(!showTemplateDropdown)}
+                  title="Select Letterhead Template"
+                >
+                  <span className="truncate">
+                    {selectedTemplateId
+                      ? (receiptTemplates.find(t => t.id === selectedTemplateId)?.template_name || 'Template')
+                      : (showDefaultLetterhead ? 'Default Letterhead' : 'No Letterhead')}
+                  </span>
+                  <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                </button>
+                {showTemplateDropdown && (
+                  <div className="absolute top-full left-0 mt-1 bg-white border rounded shadow-lg z-50 min-w-[220px]">
+                    {/* No Letterhead option */}
+                    <button
+                      type="button"
+                      className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-100 ${!selectedTemplateId && !showDefaultLetterhead ? 'bg-blue-50 font-medium' : ''}`}
+                      onClick={() => { setSelectedTemplateId(null); setSelectedTemplate(null); setShowDefaultLetterhead(false); localStorage.setItem('hideDefaultLetterhead', 'true'); setShowTemplateDropdown(false); }}
+                    >
+                      No Letterhead
+                    </button>
+                    {/* Default Letterhead option */}
+                    {showDefaultLetterhead && (
+                      <div className={`flex items-center justify-between hover:bg-gray-100 ${!selectedTemplateId ? 'bg-blue-50' : ''}`}>
+                        <button
+                          type="button"
+                          className="flex-1 text-left px-3 py-2 text-sm font-medium"
+                          onClick={() => { setSelectedTemplateId(null); setSelectedTemplate(null); setShowTemplateDropdown(false); }}
+                        >
+                          Default Letterhead
+                        </button>
+                        <button
+                          type="button"
+                          className="px-2 py-1 text-red-400 hover:text-red-600 text-xs mr-1"
+                          onClick={(e) => { e.stopPropagation(); hideDefaultLetterhead(); setShowTemplateDropdown(false); }}
+                          title="Remove Default Letterhead"
+                        >
+                          &times;
+                        </button>
+                      </div>
+                    )}
+                    {/* Receipt templates */}
+                    {receiptTemplates.map(template => (
+                      <div key={template.id} className={`flex items-center justify-between hover:bg-gray-100 ${selectedTemplateId === template.id ? 'bg-blue-50' : ''}`}>
+                        <button
+                          type="button"
+                          className="flex-1 text-left px-3 py-2 text-sm"
+                          onClick={() => { setSelectedTemplateId(template.id); setSelectedTemplate(template); setShowTemplateDropdown(false); }}
+                        >
+                          {template.template_name} {template.is_default ? '(Default)' : ''}
+                        </button>
+                        <button
+                          type="button"
+                          className="px-2 py-1 text-red-400 hover:text-red-600 text-xs mr-1"
+                          onClick={(e) => { e.stopPropagation(); deleteReceiptTemplate(template.id); }}
+                          title="Delete template"
+                        >
+                          &times;
+                        </button>
+                      </div>
+                    ))}
+                    {/* Restore default option if hidden */}
+                    {!showDefaultLetterhead && (
+                      <button
+                        type="button"
+                        className="w-full text-left px-3 py-2 text-xs text-blue-500 hover:bg-blue-50 border-t"
+                        onClick={() => { setShowDefaultLetterhead(true); localStorage.removeItem('hideDefaultLetterhead'); setShowTemplateDropdown(false); addToast('Default Letterhead restored', 'info'); }}
+                      >
+                        + Restore Default Letterhead
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
             <div className="flex flex-wrap gap-2 items-center justify-start md:justify-end">
               <button
@@ -5116,7 +6071,7 @@ export default function PrescriptionPad() {
               {currentPrescriptionId && (
                 <button
                   className="flex items-center gap-1 px-3 py-2 text-sm border rounded hover:bg-green-50 text-green-700 hover:border-green-300"
-                  onClick={() => downloadPrescriptionPDF(currentPrescriptionId)}
+                  onClick={() => downloadPrescriptionPDF(currentPrescriptionId, { language, templateId: selectedTemplateId, withLetterhead: printWithLetterhead })}
                   title="Download prescription as PDF"
                 >
                   <FiDownload className="w-4 h-4" />
@@ -5172,6 +6127,18 @@ export default function PrescriptionPad() {
                   <span>A5</span>
                 </label>
               </div>
+
+              {/* Letterhead toggle */}
+              <label className="flex items-center gap-1.5 px-2 py-1 border rounded bg-gray-50 cursor-pointer text-xs text-gray-700 select-none" title="Include clinic header & footer when printing/downloading">
+                <input
+                  type="checkbox"
+                  checked={printWithLetterhead}
+                  onChange={e => setPrintWithLetterhead(e.target.checked)}
+                  className="cursor-pointer"
+                />
+                <span className="hidden sm:inline">With Letterhead</span>
+                <span className="sm:hidden">Letterhead</span>
+              </label>
 
               <button
                 className="px-3 py-1.5 text-sm border rounded hover:bg-slate-50"
@@ -5254,27 +6221,113 @@ export default function PrescriptionPad() {
                 {pastVisitsTab === 'past' && (
                   <>
                     {pastPrescriptions.length === 0 ? (
-                      <div className="text-xs text-slate-500 text-center py-4">No past visits</div>
+                      <div className="text-xs text-slate-500 text-center py-4">No past prescriptions</div>
                     ) : (
-                      pastPrescriptions.slice(0, 5).map((visit, idx) => (
-                        <div key={`past-${idx}`} className="border rounded p-2 space-y-2">
-                          <div className="text-xs font-semibold text-slate-700">
-                            {new Date(visit.prescribed_date || visit.created_at).toLocaleDateString()}
+                      pastPrescriptions.map((visit, idx) => (
+                        <div key={`past-${idx}`} className="border rounded p-2 space-y-1.5 hover:border-blue-300 transition">
+                          {/* Header: Date + Copy Button */}
+                          <div className="flex items-center justify-between">
+                            <div className="text-xs font-bold text-slate-700">
+                              {new Date(visit.prescribed_date || visit.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                // Copy this prescription into current form
+                                if (visit.chief_complaint) {
+                                  const syms = visit.chief_complaint.split(',').map(s => s.trim()).filter(Boolean);
+                                  setSymptoms(syms.map(s => ({ name: s, remarks: '' })));
+                                }
+                                if (visit.diagnoses && visit.diagnoses.length > 0) {
+                                  setDiagnoses(visit.diagnoses);
+                                } else if (visit.diagnosis) {
+                                  setDiagnoses(visit.diagnosis.split(',').map(d => d.trim()).filter(Boolean));
+                                }
+                                if (visit.medications && visit.medications.length > 0) {
+                                  const copiedMeds = visit.medications.map(med => ({
+                                    name: med.medication_name || med.name || '',
+                                    brand: med.medication_name || med.name || '',
+                                    generic_name: med.generic_name || '',
+                                    dosage: med.dosage || '',
+                                    frequency: med.frequency || '',
+                                    duration: med.duration || '',
+                                    timing: translateTiming(med.timing, language) || med.timing || '',
+                                    instructions: translateInstruction(med.instructions || med.notes || '', language) || med.instructions || med.notes || '',
+                                    qty: med.quantity || '',
+                                    type: med.type || 'medication',
+                                    is_tapering: med.is_tapering || 0,
+                                    tapering_schedule: med.tapering_schedule || []
+                                  }));
+                                  setMeds(copiedMeds);
+                                }
+                                if (visit.advice) setAdvice(visit.advice);
+                                if (visit.follow_up_days) setFollowUp(prev => ({ ...prev, days: visit.follow_up_days }));
+                                if (visit.patient_notes) setPatientNotes(visit.patient_notes);
+                                addToast('Prescription copied! Review and modify as needed.', 'success');
+                              }}
+                              className="px-2 py-0.5 text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200 rounded hover:bg-blue-100 transition flex items-center gap-1"
+                              title="Copy this prescription"
+                            >
+                              <FiCopy className="w-3 h-3" /> Copy
+                            </button>
                           </div>
-                          {visit.medications && visit.medications.length > 0 && (
-                            <div className="space-y-1">
-                              {visit.medications.slice(0, 2).map((med, mIdx) => (
-                                <div key={`med-${mIdx}`} className="flex items-center gap-1 text-xs">
-                                  <span className="w-4 h-4 rounded-full bg-pink-100 text-pink-700 flex items-center justify-center text-[10px]">Mx</span>
-                                  <span className="truncate">{med.medication_name || med.name}</span>
-                                </div>
-                              ))}
+
+                          {/* Symptoms */}
+                          {(visit.symptoms?.length > 0 || visit.chief_complaint) && (
+                            <div className="flex items-start gap-1 text-xs">
+                              <span className="shrink-0 w-4 h-4 rounded-full bg-orange-100 text-orange-700 flex items-center justify-center text-[9px] font-bold mt-0.5">S</span>
+                              <span className="text-slate-600 leading-tight">
+                                {visit.symptoms?.length > 0 ? visit.symptoms.join(', ') : visit.chief_complaint}
+                              </span>
                             </div>
                           )}
-                          {visit.diagnosis && (
-                            <div className="flex items-center gap-1 text-xs">
-                              <span className="w-4 h-4 rounded-full bg-purple-100 text-purple-700 flex items-center justify-center text-[10px]">Dx</span>
-                              <span className="truncate">{visit.diagnosis}</span>
+
+                          {/* Diagnosis */}
+                          {(visit.diagnoses?.length > 0 || visit.diagnosis) && (
+                            <div className="flex items-start gap-1 text-xs">
+                              <span className="shrink-0 w-4 h-4 rounded-full bg-purple-100 text-purple-700 flex items-center justify-center text-[9px] font-bold mt-0.5">D</span>
+                              <span className="text-slate-600 leading-tight">
+                                {visit.diagnoses?.length > 0 ? visit.diagnoses.join(', ') : visit.diagnosis}
+                              </span>
+                            </div>
+                          )}
+
+                          {/* Medicines */}
+                          {visit.medications && visit.medications.length > 0 && (
+                            <div className="space-y-0.5">
+                              <div className="flex items-center gap-1 text-xs">
+                                <span className="shrink-0 w-4 h-4 rounded-full bg-pink-100 text-pink-700 flex items-center justify-center text-[9px] font-bold">M</span>
+                                <span className="font-medium text-slate-700">{visit.medications.filter(m => !m.type || m.type === 'medication').length} medicines</span>
+                              </div>
+                              {visit.medications.filter(m => !m.type || m.type === 'medication').map((med, mIdx) => (
+                                <div key={`med-${mIdx}`} className="ml-5 text-[11px] text-slate-600 flex items-center gap-1">
+                                  <span className="font-medium">{med.medication_name || med.name}</span>
+                                  {med.frequency && <span className="text-slate-400">| {med.frequency}</span>}
+                                  {med.duration && <span className="text-slate-400">| {med.duration}</span>}
+                                </div>
+                              ))}
+                              {/* Injections */}
+                              {visit.medications.filter(m => m.type === 'injection').length > 0 && (
+                                <>
+                                  <div className="flex items-center gap-1 text-xs mt-1">
+                                    <span className="shrink-0 w-4 h-4 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center text-[9px] font-bold">I</span>
+                                    <span className="font-medium text-slate-700">{visit.medications.filter(m => m.type === 'injection').length} injections</span>
+                                  </div>
+                                  {visit.medications.filter(m => m.type === 'injection').map((inj, iIdx) => (
+                                    <div key={`inj-${iIdx}`} className="ml-5 text-[11px] text-slate-600">
+                                      <span className="font-medium">{inj.medication_name || inj.name}</span>
+                                    </div>
+                                  ))}
+                                </>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Advice preview */}
+                          {visit.advice && (
+                            <div className="flex items-start gap-1 text-xs">
+                              <span className="shrink-0 w-4 h-4 rounded-full bg-green-100 text-green-700 flex items-center justify-center text-[9px] font-bold mt-0.5">A</span>
+                              <span className="text-slate-500 leading-tight line-clamp-2">{visit.advice}</span>
                             </div>
                           )}
                         </div>
@@ -5352,18 +6405,25 @@ export default function PrescriptionPad() {
         <div ref={printRef}>
           {printFormat === 'A4' ? (
             <Suspense fallback={<div>Loading letterhead...</div>}>
-              <Letterhead template={selectedTemplate}>
+              <Letterhead template={selectedTemplate} showLetterhead={printWithLetterhead}>
                 <div>
                 {patient && (
                 <div style={{ marginBottom: 16, fontSize: 14 }}>
-                  <div style={{ fontWeight: 700, fontSize: 16 }}>{patient.name}</div>
-                  <div style={{ color: '#444' }}>
-                    {`${patient.gender || ''} • ${patient.dob ? `${new Date(patient.dob).toLocaleDateString()} (${calculateAge(patient.dob)} yrs)` : ''} • UHID: ${patient.patient_id || ''} • ${patient.phone || ''}`}
-                  </div>
-                  <div style={{ color: '#666', fontSize: 12, marginTop: 4 }}>
-                    📅 {new Date(meta.prescription_date).toLocaleDateString('en-IN', {
-                      day: '2-digit', month: 'short', year: 'numeric'
-                    })} • 🕐 {meta.prescription_time}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: 16 }}>{patient.name}</div>
+                      <div style={{ color: '#444' }}>
+                        {`${patient.gender || ''} • ${patient.dob ? `${new Date(patient.dob).toLocaleDateString()} (${calculateAge(patient.dob)} yrs)` : ''} • ${patient.phone || ''}`}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontWeight: 600, fontSize: 13 }}>UHID: {patient.patient_id || ''}</div>
+                      <div style={{ color: '#666', fontSize: 12, marginTop: 2 }}>
+                        {new Date(meta.prescription_date).toLocaleDateString('en-IN', {
+                          day: '2-digit', month: 'short', year: 'numeric'
+                        })} • {meta.prescription_time}
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
@@ -5384,53 +6444,51 @@ export default function PrescriptionPad() {
               )}
 
               {symptoms.length > 0 && (
-                <div style={{ marginBottom: 12 }}>
-                  <div style={{ fontWeight: 600, marginBottom: 6 }}>Symptoms</div>
-                  <ul style={{ margin: 0, paddingLeft: 16, fontSize: 13 }}>
-                    {symptoms.map((s, i) => {
-                      const name = typeof s === 'object' ? s.name : s;
-                      const remarks = typeof s === 'object' ? s.remarks : '';
-                      return <li key={`print-sx-${i}`}>{name}{remarks ? ` - ${remarks}` : ''}</li>;
-                    })}
-                  </ul>
+                <div style={{ marginBottom: 8, fontSize: 13 }}>
+                  <span style={{ fontWeight: 600 }}>Symptoms: </span>
+                  <span>{symptoms.map(s => {
+                    const name = typeof s === 'object' ? s.name : s;
+                    const remarks = typeof s === 'object' ? s.remarks : '';
+                    return name + (remarks ? ` (${remarks})` : '');
+                  }).join(', ')}</span>
                 </div>
               )}
 
               {diagnoses.length > 0 && (
-                <div style={{ marginBottom: 12 }}>
-                  <div style={{ fontWeight: 600, marginBottom: 6 }}>Diagnosis</div>
-                  <ul style={{ margin: 0, paddingLeft: 16, fontSize: 13 }}>
-                    {diagnoses.map((d, i) => (<li key={`print-dx-${i}`}>{d}</li>))}
-                  </ul>
+                <div style={{ marginBottom: 8, fontSize: 13 }}>
+                  <span style={{ fontWeight: 600 }}>Diagnosis: </span>
+                  <span>{diagnoses.join(', ')}</span>
                 </div>
               )}
 
               {meds.length > 0 && (
                 <div style={{ marginBottom: 12 }}>
                   <div style={{ fontWeight: 600, marginBottom: 6 }}>Medications</div>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, border: '1px solid #ccc' }}>
                     <thead>
-                      <tr>
-                        <th style={{ textAlign: 'left', borderBottom: '1px solid #ddd', padding: '6px 4px' }}>Medicine</th>
-                        <th style={{ textAlign: 'left', borderBottom: '1px solid #ddd', padding: '6px 4px' }}>Frequency</th>
-                        <th style={{ textAlign: 'left', borderBottom: '1px solid #ddd', padding: '6px 4px' }}>Timing</th>
-                        <th style={{ textAlign: 'left', borderBottom: '1px solid #ddd', padding: '6px 4px' }}>Duration</th>
-                        <th style={{ textAlign: 'left', borderBottom: '1px solid #ddd', padding: '6px 4px' }}>Instructions</th>
-                        <th style={{ textAlign: 'left', borderBottom: '1px solid #ddd', padding: '6px 4px' }}>Qty</th>
+                      <tr style={{ backgroundColor: '#f5f5f5' }}>
+                        <th style={{ textAlign: 'center', border: '1px solid #ccc', padding: '6px 4px', width: '30px' }}>Sr.</th>
+                        <th style={{ textAlign: 'left', border: '1px solid #ccc', padding: '6px 4px' }}>Medicine</th>
+                        <th style={{ textAlign: 'center', border: '1px solid #ccc', padding: '6px 4px' }}>Frequency</th>
+                        <th style={{ textAlign: 'left', border: '1px solid #ccc', padding: '6px 4px' }}>Timing</th>
+                        <th style={{ textAlign: 'center', border: '1px solid #ccc', padding: '6px 4px' }}>Duration</th>
+                        <th style={{ textAlign: 'center', border: '1px solid #ccc', padding: '6px 4px', width: '35px' }}>Qty</th>
+                        <th style={{ textAlign: 'left', border: '1px solid #ccc', padding: '6px 4px' }}>Instructions</th>
                       </tr>
                     </thead>
                     <tbody>
                       {meds.map((m, idx) => (
                         <tr key={`print-med-${idx}`}>
-                          <td style={{ borderBottom: '1px solid #eee', padding: '6px 4px' }}>
+                          <td style={{ border: '1px solid #ddd', padding: '6px 4px', textAlign: 'center' }}>{idx + 1}</td>
+                          <td style={{ border: '1px solid #ddd', padding: '6px 4px' }}>
                             <div style={{ fontWeight: 600 }}>{m.brand || m.name}</div>
                             {m.composition && <div style={{ color: '#666', fontSize: 11 }}>{m.composition}</div>}
                           </td>
-                          <td style={{ borderBottom: '1px solid #eee', padding: '6px 4px' }}>{m.frequency}</td>
-                          <td style={{ borderBottom: '1px solid #eee', padding: '6px 4px' }}>{translateTiming(m.timing, language)}</td>
-                          <td style={{ borderBottom: '1px solid #eee', padding: '6px 4px' }}>{m.duration}</td>
-                          <td style={{ borderBottom: '1px solid #eee', padding: '6px 4px' }}>{translateInstruction(m.instructions, language)}</td>
-                          <td style={{ borderBottom: '1px solid #eee', padding: '6px 4px' }}>{m.qty}</td>
+                          <td style={{ border: '1px solid #ddd', padding: '6px 4px', textAlign: 'center' }}>{m.frequency}</td>
+                          <td style={{ border: '1px solid #ddd', padding: '6px 4px' }}>{translateTiming(m.timing, language)}</td>
+                          <td style={{ border: '1px solid #ddd', padding: '6px 4px', textAlign: 'center' }}>{m.duration}</td>
+                          <td style={{ border: '1px solid #ddd', padding: '6px 4px', textAlign: 'center' }}>{m.qty}</td>
+                          <td style={{ border: '1px solid #ddd', padding: '6px 4px' }}>{translateInstruction(m.instructions, language)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -5705,8 +6763,9 @@ export default function PrescriptionPad() {
                             localStorage.setItem('custom_exam_templates', JSON.stringify(updated));
                             addToast('Template deleted', 'info');
                           }}
-                          className="absolute top-1 right-1 text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition text-xs p-1"
-                        >×</button>
+                          className="absolute top-1 right-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition text-sm px-1.5 py-0.5"
+                          title="Delete template"
+                        >✕</button>
                       </div>
                     ))}
                   </div>
@@ -5877,7 +6936,7 @@ export default function PrescriptionPad() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => {
+                    onClick={async () => {
                       const entry = {
                         test_name: labParamFormTest.test_name,
                         test_code: labParamFormTest.test_code,
@@ -5895,6 +6954,21 @@ export default function PrescriptionPad() {
                           reference_range: p.reference_range || ''
                         }))
                       };
+                      // Immediately save to DB so it persists and syncs with Patient Overview
+                      try {
+                        const resp = await api.post(`/api/labs/${patientId}`, {
+                          test_name: entry.test_name,
+                          result_value: entry.result_value,
+                          result_unit: entry.result_unit,
+                          reference_range: entry.reference_range,
+                          test_category: entry.category || 'GENERAL',
+                          result_date: new Date().toISOString().split('T')[0],
+                          report_group: 'Prescription'
+                        });
+                        entry.id = resp.data.id;
+                      } catch (err) {
+                        console.error('Failed to immediately save lab result:', err);
+                      }
                       setLabResultEntries(prev => [...prev, entry]);
                       addToast(`${labParamFormTest.test_name} added with results`, 'success');
                       setLabParamFormTest(null);
@@ -6240,6 +7314,23 @@ export default function PrescriptionPad() {
                               </span>
                             )}
                           </div>
+                          <button
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              if (!confirm('Delete this template?')) return;
+                              try {
+                                await api.delete(`/api/medications-templates/${template.id}`);
+                                setMedicationsTemplates(prev => prev.filter(t => t.id !== template.id));
+                                addToast('Template deleted', 'success');
+                              } catch (err) {
+                                addToast('Failed to delete template', 'error');
+                              }
+                            }}
+                            className="text-red-400 hover:text-red-600 p-1 hover:bg-red-50 rounded"
+                            title="Delete template"
+                          >
+                            <FiX size={14} />
+                          </button>
                         </div>
 
                         {template.description && (
@@ -6448,7 +7539,7 @@ export default function PrescriptionPad() {
                   <li>• <span className="font-medium">{symptoms.length}</span> symptoms</li>
                   <li>• <span className="font-medium">{diagnoses.length}</span> diagnoses</li>
                   <li>• Advice & precautions</li>
-                  <li>• Follow-up: {followUp.days || 'Not set'} days</li>
+                  <li>• Follow-up: {(typeof followUp.days === 'object' ? '' : followUp.days) || 'Not set'} days</li>
                 </ul>
               </div>
             </div>

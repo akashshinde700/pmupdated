@@ -16,30 +16,18 @@ export default function Billing() {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <HeaderBar title="Billing" />
 
-      <div className="bg-white border rounded shadow-sm p-6">
+      {/* Top-level tab bar */}
+      <div className="bg-white border rounded shadow-sm px-4 pb-0 overflow-hidden">
         <Tabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
-
-        {activeTab === 'payments' && (
-          <div>
-            <Payments />
-          </div>
-        )}
-
-        {activeTab === 'receipts' && (
-          <div>
-            <Receipts />
-          </div>
-        )}
-
-        {activeTab === 'templates' && (
-          <div>
-            <ReceiptTemplates />
-          </div>
-        )}
       </div>
+
+      {/* Tab content — each sub-page manages its own card layout */}
+      {activeTab === 'payments'  && <Payments />}
+      {activeTab === 'receipts'  && <Receipts />}
+      {activeTab === 'templates' && <ReceiptTemplates />}
     </div>
   );
 }

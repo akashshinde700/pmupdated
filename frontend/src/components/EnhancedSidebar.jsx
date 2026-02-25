@@ -10,34 +10,17 @@ import {
   FiActivity,
   FiBook,
   FiSettings,
-  FiBell,
   FiUser,
-  FiGrid,
-  FiMessageSquare,
   FiX,
   FiCalendar,
   FiShield,
   FiCloud,
-  FiLayout,
   FiClock,
-  FiDownload,
   FiZap,
   FiChevronDown,
   FiChevronUp,
-  FiTrendingUp,
-  FiFileText,
-  FiMail,
-  FiPhone,
-  FiMapPin,
-  FiStar,
-  FiAward,
-  FiTarget,
-  FiBriefcase,
   FiTool,
-  FiDatabase,
-  FiLock,
-  FiCheckCircle,
-  FiAlertCircle
+  FiDatabase
 } from 'react-icons/fi';
 
 // Enhanced role-based navigation items with better organization
@@ -117,7 +100,7 @@ const getNavigationItems = (userRole) => {
     { 
       label: 'Labs', 
       icon: <FiDatabase />, 
-      to: '/labs', 
+      to: '/lab-investigations', 
       description: 'Laboratory investigations',
       badge: null,
       roles: ['admin', 'doctor', 'subadmin']
@@ -190,7 +173,7 @@ const getNavigationItems = (userRole) => {
     { 
       label: 'My Schedule', 
       icon: <FiCalendar />, 
-      to: '/doctor-schedule', 
+      to: '/appointments', 
       description: 'Personal appointment schedule',
       badge: null,
       roles: ['doctor']
@@ -466,19 +449,16 @@ export default function EnhancedSidebar({ onClose }) {
         )}
       </nav>
 
-      {/* Footer with quick actions */}
+      {/* Footer */}
       <div className="p-3 border-t border-blue-900">
-        <div className="flex items-center justify-around">
-          <button className="w-10 h-10 rounded-full bg-primary/20 hover:bg-primary/30 flex items-center justify-center transition-colors" title="Messages">
-            <FiMessageSquare size={16} />
-          </button>
-          <button className="w-10 h-10 rounded-full bg-primary/20 hover:bg-primary/30 flex items-center justify-center transition-colors" title="Notifications">
-            <FiBell size={16} />
-          </button>
-          <button className="w-10 h-10 rounded-full bg-primary/20 hover:bg-primary/30 flex items-center justify-center transition-colors" title="Support">
-            <FiPhone size={16} />
-          </button>
-        </div>
+        <NavLink
+          to="/profile"
+          onClick={onClose}
+          className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-blue-800/50 text-gray-200 hover:text-white transition-all"
+        >
+          <FiUser size={16} />
+          <span className="text-sm font-medium">My Profile</span>
+        </NavLink>
       </div>
     </aside>
   );

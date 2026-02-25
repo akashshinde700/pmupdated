@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { useApiClient } from '../contexts/ApiContext';
-import { useAuth } from '../contexts/AuthContext';
-import { useToast } from '../contexts/ToastContext';
+import { useApiClient } from '../api/client';
+import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
 
 export default function PatientQueue() {
   const api = useApiClient();

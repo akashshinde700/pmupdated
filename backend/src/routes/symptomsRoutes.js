@@ -84,9 +84,41 @@ router.get('/search', authenticateToken, async (req, res) => {
       console.error('ICD symptoms search error:', e.message);
     }
 
+    // 4. Search doctor's custom symptoms (highest priority)
+    let doctorSymptoms = [];
+    try {
+      const doctorId = req.user?.doctorId || req.user?.id || null;
+      if (doctorId) {
+        const [rows] = await db.query(
+          `SELECT symptom_name as symptom, usage_count
+           FROM doctor_symptoms
+           WHERE doctor_id = ? AND LOWER(symptom_name) LIKE ?
+           ORDER BY usage_count DESC, symptom_name ASC
+           LIMIT 10`,
+          [doctorId, like]
+        );
+        doctorSymptoms = rows;
+      }
+    } catch (e) {
+      console.error('Doctor symptoms search error:', e.message);
+    }
+
     // Combine results with dedup
     const seen = new Set();
     const symptoms = [];
+
+    // Add doctor's custom symptoms first (highest priority)
+    for (const r of doctorSymptoms) {
+      const key = (r.symptom || '').toLowerCase();
+      if (key && !seen.has(key)) {
+        seen.add(key);
+        symptoms.push({
+          symptom: r.symptom,
+          source: 'custom',
+          usage_count: r.usage_count
+        });
+      }
+    }
 
     // Add mapping results first (they have medication data)
     for (const r of mappingResults) {
@@ -234,6 +266,33 @@ router.get('/:symptom/related', authenticateToken, async (req, res) => {
       error: 'Failed to get related data',
       details: error.message
     });
+  }
+});
+
+/**
+ * Save a custom symptom for future suggestions
+ * POST /api/symptoms
+ */
+router.post('/', authenticateToken, async (req, res) => {
+  try {
+    const { symptom_name } = req.body;
+    if (!symptom_name || !symptom_name.trim()) {
+      return res.status(400).json({ error: 'Symptom name is required' });
+    }
+    const doctorId = req.user?.doctorId || req.user?.id;
+    if (!doctorId) return res.status(401).json({ error: 'Doctor ID not found' });
+
+    const db = getDb();
+    await db.query(
+      `INSERT INTO doctor_symptoms (doctor_id, symptom_name, usage_count)
+       VALUES (?, ?, 1)
+       ON DUPLICATE KEY UPDATE usage_count = usage_count + 1`,
+      [doctorId, symptom_name.trim()]
+    );
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Save symptom error:', error);
+    res.status(500).json({ error: 'Failed to save symptom' });
   }
 });
 

@@ -91,6 +91,8 @@ const swaggerSpec = require('./config/swagger');
 const staffDashboardRoutes = require('./routes/staffDashboardRoutes');
 const padConfigurationRoutes = require('./routes/padConfigurationRoutes');
 const medicalHistoryRoutes = require('./routes/medicalHistoryRoutes');
+const exportRoutes = require('./routes/exportRoutes');
+const doctorStaffRoutes = require('./routes/doctorStaffRoutes');
 
 const app = express();
 app.set("trust proxy", 1); // Enable trust proxy for nginx reverse proxy
@@ -235,6 +237,8 @@ app.use('/api/appointment-intents', appointmentIntentRoutes);
 app.use('/api/diagnosis-suggestion', authenticateToken, diagnosisSuggestionRoutes);
 app.use('/api/prescriptions', prescriptionRoutes); // Auth handled inside route file (PDF route is public)
 app.use('/api/bills', authenticateToken, billRoutes);
+const certificateTypeRoutes = require('./routes/certificateTypeRoutes');
+app.use('/api/certificate-types', authenticateToken, certificateTypeRoutes);
 app.use('/api/staff-billing', authenticateToken, staffBillingRoutes);
 app.use('/api/doctor-billing', authenticateToken, doctorBillingRoutes);
 app.use('/api/patient-queue', authenticateToken, patientQueueRoutes);
@@ -250,11 +254,14 @@ if (env.nodeEnv === 'development') {
 } else {
   app.use('/api/abha', authenticateToken, abhaRoutes);
 }
-app.use('/api/analytics', authenticateToken, requireRole('admin'), analyticsRoutes);
+app.use('/api/analytics', authenticateToken, requireRole('admin', 'doctor'), analyticsRoutes);
 app.use('/api/labs', authenticateToken, labRoutes);
 app.use('/api/lab-investigations', authenticateToken, labRoutes); // Alias for frontend compatibility
 app.use('/api/patient-data', authenticateToken, patientDataRoutes);
 app.use('/api/audit', authenticateToken, requireRole('admin'), auditRoutes);
+// Public doctor landing page (no auth required)
+const { getLandingPageData } = require('./controllers/doctorController');
+app.get('/api/doctors/:doctorId/landing', getLandingPageData);
 app.use('/api/doctors', authenticateToken, doctorRoutes);
 app.use('/api/clinics', authenticateToken, clinicRoutes);
 app.use('/api/permissions', authenticateToken, requireRole('admin'), permissionRoutes);
@@ -288,7 +295,7 @@ app.use('/api/medical', authenticateToken, medicalRoutes);
 app.use('/api/smart-prescription', authenticateToken, smartPrescriptionRoutes);
 app.use('/api/opd', authenticateToken, opdRoutes);
 app.use('/api/qr', qrRoutes); // Mixed - some public, some protected routes
-app.use('/api/queue', queueRoutes);
+app.use('/api/queue', authenticateToken, queueRoutes);
 app.use('/api/billing', authenticateToken, billingRoutes);
 app.use('/api/clinical', authenticateToken, clinicalRoutes);
 app.use('/api/injection-templates', authenticateToken, injectionTemplateRoutes);
@@ -304,6 +311,8 @@ app.use('/api/logs', logsRoutes); // Logging endpoint - mixed public/protected r
 app.use('/api/staff-dashboard', authenticateToken, staffDashboardRoutes); // Staff dashboard routes
 app.use('/api/pad-config', padConfigurationRoutes); // Prescription pad configuration routes
 app.use('/api/medical-history', medicalHistoryRoutes); // Patient medical history for prescription pad
+app.use('/api/exports', authenticateToken, exportRoutes);
+app.use('/api/doctor-staff', authenticateToken, doctorStaffRoutes);
 
 // CSRF Token Endpoint - Disabled due to csurf deprecation
 // Consider implementing alternative CSRF protection if needed

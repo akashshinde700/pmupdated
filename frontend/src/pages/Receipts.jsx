@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useReactToPrint } from 'react-to-print';
-import { FiDownload } from 'react-icons/fi';
+import { FiDownload, FiTrash2 } from 'react-icons/fi';
 import HeaderBar from '../components/HeaderBar';
 import Modal from '../components/Modal';
 import { useApiClient } from '../api/client';
@@ -15,6 +15,18 @@ import { pickArray } from '../utils/apiResponse';
 const formatCurrency = (value) => {
   const num = parseFloat(value) || 0;
   return num.toFixed(2);
+};
+
+const getPaymentStatusBadge = (status) => {
+  const map = {
+    paid:      { label: 'Paid',      cls: 'bg-green-100 text-green-800' },
+    completed: { label: 'Paid',      cls: 'bg-green-100 text-green-800' },
+    partial:   { label: 'Partial',   cls: 'bg-blue-100 text-blue-800' },
+    pending:   { label: 'Pending',   cls: 'bg-orange-100 text-orange-800' },
+    cancelled: { label: 'Cancelled', cls: 'bg-red-100 text-red-800' },
+    failed:    { label: 'Failed',    cls: 'bg-red-100 text-red-800' },
+  };
+  return map[status] || { label: status || 'Pending', cls: 'bg-orange-100 text-orange-800' };
 };
 
 export default function Receipts() {
@@ -54,6 +66,7 @@ export default function Receipts() {
   const [editingService, setEditingService] = useState(null); // service being edited
   const [showAddServiceForm, setShowAddServiceForm] = useState(false);
   const [newServiceForm, setNewServiceForm] = useState({ service_name: '', category: '', default_price: 0 });
+  const [unbilledVisits, setUnbilledVisits] = useState([]);
 
   // Print ref for react-to-print
   const printRef = useRef(null);
@@ -74,6 +87,8 @@ export default function Receipts() {
     additional_discount: 0,
     payment_method: 'cash',
     payment_id: '',
+    payment_status: 'pending',
+    amount_paid: '',
     notes: '',
     remarks: '',
     cash_amount: '',
@@ -153,6 +168,17 @@ export default function Receipts() {
     }
   }, [api]);
 
+  // Fetch unbilled visits
+  const fetchUnbilledVisits = useCallback(async () => {
+    try {
+      const res = await api.get('/api/bills/unbilled-visits');
+      console.log('Unbilled visits fetched:', res.data);
+      setUnbilledVisits(res.data?.unbilledVisits || []);
+    } catch (error) {
+      console.error('Failed to fetch unbilled visits:', error);
+    }
+  }, [api]);
+
   const fetchPatients = useCallback(async () => {
     try {
       const res = await api.get('/api/patients?limit=100');
@@ -213,7 +239,8 @@ export default function Receipts() {
     fetchPatients();
     fetchReceiptTemplates();
     fetchServices();
-  }, [fetchClinicSettings, fetchReceipts, fetchPatients, fetchReceiptTemplates, fetchServices, searchParams]);
+    fetchUnbilledVisits();
+  }, [fetchClinicSettings, fetchReceipts, fetchPatients, fetchReceiptTemplates, fetchServices, fetchUnbilledVisits, searchParams]);
 
   // Handle URL parameters (edit mode, quick create, etc.)
   useEffect(() => {
@@ -277,9 +304,9 @@ export default function Receipts() {
         ...prev,
         patient_id: patientId,
         services: [{
-          service: full ? 'Consultation' : 'Quick Payment',
+          service_name: full ? 'Consultation' : 'Quick Payment',
           qty: 1,
-          amount: parsedAmount,
+          unit_price: parsedAmount,
           discount: 0,
           total: parsedAmount
         }]
@@ -461,8 +488,12 @@ export default function Receipts() {
       additional_discount: 0,
       payment_method: 'cash',
       payment_id: '',
+      payment_status: 'pending',
+      amount_paid: '',
       notes: '',
-      remarks: ''
+      remarks: '',
+      cash_amount: '',
+      upi_amount: ''
     });
   };
 
@@ -489,9 +520,19 @@ export default function Receipts() {
         discount: parseFloat(receiptForm.discount) || 0,
         additional_discount: parseFloat(receiptForm.additional_discount) || 0,
         total_amount: total,
+        amount_paid: parseFloat(receiptForm.amount_paid) || 0,
+        balance_due: Math.max(0, total - (parseFloat(receiptForm.amount_paid) || 0)),
         payment_method: receiptForm.payment_method,
         payment_id: receiptForm.payment_id || null,
-        payment_status: 'pending',
+        payment_status: receiptForm.payment_status || 'pending',
+        ...(
+          (receiptForm.payment_method === 'cash+upi' || receiptForm.payment_method === 'cash+card')
+            ? {
+                cash_component:  parseFloat(receiptForm.cash_amount) || 0,
+                other_component: parseFloat(receiptForm.upi_amount)  || 0,
+              }
+            : {}
+        ),
         notes: (receiptForm.payment_method === 'cash+upi' || receiptForm.payment_method === 'cash+card')
           ? `${receiptForm.notes || ''}${receiptForm.notes ? ' | ' : ''}Split: Cash ₹${receiptForm.cash_amount || 0} + ${receiptForm.payment_method === 'cash+upi' ? 'UPI' : 'Card'} ₹${receiptForm.upi_amount || 0}`
           : (receiptForm.notes || ''),
@@ -585,8 +626,7 @@ export default function Receipts() {
   const selectedPatient = patients.find(p => p.id == receiptForm.patient_id);
 
   return (
-    <div className="space-y-6">
-      <HeaderBar title="Receipts" />
+    <div className="space-y-6 pt-2">
 
       {/* Search and Create Section */}
       <div className="bg-white border rounded shadow-sm p-4">
@@ -733,13 +773,9 @@ export default function Receipts() {
                       }
                     </td>
                     <td className="px-4 py-3 text-sm">
-                      <span className={`inline-flex px-2 py-1 text-xs rounded-full ${
-                        receipt.payment_status === 'completed'
-                          ? 'bg-green-100 text-green-800'
-                          : 'bg-orange-100 text-orange-800'
-                      }`}>
-                        {receipt.payment_status === 'completed' ? 'Paid' : 'Pending'}
-                      </span>
+                      {(() => { const b = getPaymentStatusBadge(receipt.payment_status); return (
+                        <span className={`inline-flex px-2 py-1 text-xs rounded-full ${b.cls}`}>{b.label}</span>
+                      ); })()}
                     </td>
                     <td className="px-4 py-3 text-sm">
                       {new Date(receipt.created_at).toLocaleDateString()}
@@ -1220,6 +1256,51 @@ export default function Receipts() {
             )}
           </div>
 
+          {/* Payment Status + Amount Paid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-2">Payment Status</label>
+              <select
+                className="w-full px-3 py-2 border rounded"
+                value={receiptForm.payment_status || 'pending'}
+                onChange={(e) => setReceiptForm({ ...receiptForm, payment_status: e.target.value })}
+              >
+                <option value="pending">Pending</option>
+                <option value="paid">Paid</option>
+                <option value="partial">Partial</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-2">Amount Paid (₹)</label>
+              <input
+                type="number"
+                className="w-full px-3 py-2 border rounded"
+                min="0"
+                step="0.01"
+                placeholder="0.00"
+                value={receiptForm.amount_paid || ''}
+                onChange={(e) => {
+                  const paid = parseFloat(e.target.value) || 0;
+                  const { total } = calculateTotals();
+                  let autoStatus = receiptForm.payment_status;
+                  if (paid >= total && total > 0) autoStatus = 'paid';
+                  else if (paid > 0 && paid < total) autoStatus = 'partial';
+                  else if (paid === 0) autoStatus = 'pending';
+                  setReceiptForm({ ...receiptForm, amount_paid: e.target.value, payment_status: autoStatus });
+                }}
+              />
+              {(() => {
+                const { total } = calculateTotals();
+                const paid = parseFloat(receiptForm.amount_paid) || 0;
+                const remaining = Math.max(0, total - paid);
+                return remaining > 0 && paid > 0 ? (
+                  <p className="text-xs text-orange-600 mt-1">Remaining: ₹{remaining.toFixed(2)}</p>
+                ) : null;
+              })()}
+            </div>
+          </div>
+
           {/* Remarks */}
           <div>
             <label className="block text-sm font-medium mb-2">Remarks / Notes</label>
@@ -1423,13 +1504,22 @@ export default function Receipts() {
                     </div>
                     <div>
                       <span className="font-medium">Status:</span>
-                      <span className={`ml-2 ${
-                        selectedReceipt.payment_status === 'completed' ? 'text-green-600' : 'text-orange-600'
-                      }`}>
-                        {selectedReceipt.payment_status === 'completed' ? 'Paid' : 'Pending'}
-                      </span>
+                      <span className={`ml-2 font-medium ${
+                        ['paid','completed'].includes(selectedReceipt.payment_status) ? 'text-green-600' :
+                        selectedReceipt.payment_status === 'partial' ? 'text-blue-600' :
+                        ['cancelled','failed'].includes(selectedReceipt.payment_status) ? 'text-red-600' : 'text-orange-600'
+                      }`}>{getPaymentStatusBadge(selectedReceipt.payment_status).label}</span>
                     </div>
                   </div>
+                  {selectedReceipt.amount_paid > 0 && (
+                    <div className="text-sm mb-2">
+                      <span className="font-medium">Amount Paid:</span>
+                      <span className="ml-2 text-green-700 font-medium">₹{formatCurrency(selectedReceipt.amount_paid)}</span>
+                      {parseFloat(selectedReceipt.balance_due) > 0 && (
+                        <span className="ml-3 text-orange-600 font-medium">Balance Due: ₹{formatCurrency(selectedReceipt.balance_due)}</span>
+                      )}
+                    </div>
+                  )}
                   {selectedReceipt.payment_id && (
                     <div className="text-sm mb-2">
                       <span className="font-medium">Payment ID:</span>
@@ -1762,13 +1852,9 @@ export default function Receipts() {
                         }
                       </td>
                       <td className="px-4 py-3 text-sm">
-                        <span className={`inline-flex px-2 py-1 text-xs rounded-full ${
-                          receipt.payment_status === 'completed'
-                            ? 'bg-green-100 text-green-800'
-                            : 'bg-orange-100 text-orange-800'
-                        }`}>
-                          {receipt.payment_status === 'completed' ? 'Paid' : 'Pending'}
-                        </span>
+                        {(() => { const b = getPaymentStatusBadge(receipt.payment_status); return (
+                          <span className={`inline-flex px-2 py-1 text-xs rounded-full ${b.cls}`}>{b.label}</span>
+                        ); })()}
                       </td>
                       <td className="px-4 py-3 text-sm">
                         {new Date(receipt.created_at).toLocaleDateString('en-IN')}
@@ -2258,18 +2344,51 @@ export default function Receipts() {
               )}
             </div>
 
-            {/* Payment Status */}
-            <div>
-              <label className="block text-sm font-medium mb-2">Payment Status</label>
-              <select
-                className="w-full px-3 py-2 border rounded"
-                value={editingReceipt.payment_status || 'pending'}
-                onChange={(e) => setEditingReceipt({ ...editingReceipt, payment_status: e.target.value })}
-              >
-                <option value="pending">Pending</option>
-                <option value="completed">Completed</option>
-                <option value="failed">Failed</option>
-              </select>
+            {/* Payment Status + Amount Paid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-2">Payment Status</label>
+                <select
+                  className="w-full px-3 py-2 border rounded"
+                  value={editingReceipt.payment_status || 'pending'}
+                  onChange={(e) => setEditingReceipt({ ...editingReceipt, payment_status: e.target.value })}
+                >
+                  <option value="pending">Pending</option>
+                  <option value="paid">Paid</option>
+                  <option value="partial">Partial</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">Amount Paid (₹)</label>
+                <input
+                  type="number"
+                  className="w-full px-3 py-2 border rounded"
+                  min="0"
+                  step="0.01"
+                  placeholder="0.00"
+                  value={editingReceipt.amount_paid || ''}
+                  onChange={(e) => {
+                    const paid = parseFloat(e.target.value) || 0;
+                    const total = parseFloat(editingReceipt.total_amount) || 0;
+                    let autoStatus = editingReceipt.payment_status;
+                    if (paid >= total && total > 0) autoStatus = 'paid';
+                    else if (paid > 0 && paid < total) autoStatus = 'partial';
+                    else if (paid === 0) autoStatus = 'pending';
+                    setEditingReceipt({ ...editingReceipt, amount_paid: e.target.value, payment_status: autoStatus });
+                  }}
+                />
+                {(() => {
+                  const total = parseFloat(editingReceipt.total_amount) || 0;
+                  const paid = parseFloat(editingReceipt.amount_paid) || 0;
+                  const remaining = Math.max(0, total - paid);
+                  return remaining > 0 ? (
+                    <p className="text-xs text-orange-600 mt-1">Remaining: ₹{remaining.toFixed(2)}</p>
+                  ) : paid > 0 ? (
+                    <p className="text-xs text-green-600 mt-1">Fully Paid</p>
+                  ) : null;
+                })()}
+              </div>
             </div>
 
             {/* Remarks */}
@@ -2300,15 +2419,26 @@ export default function Receipts() {
                     const taxAmount = (subtotal * (parseFloat(editingReceipt.tax) || 0)) / 100;
                     const total = subtotal + taxAmount - (parseFloat(editingReceipt.discount) || 0);
 
+                    const amountPaid = parseFloat(editingReceipt.amount_paid) || 0;
                     const updateData = {
                       template_id: editingReceipt.template_id ? parseInt(editingReceipt.template_id) : null,
                       amount: subtotal,
                       tax: parseFloat(editingReceipt.tax) || 0,
                       discount: parseFloat(editingReceipt.discount) || 0,
                       total_amount: total,
+                      amount_paid: amountPaid,
+                      balance_due: Math.max(0, total - amountPaid),
                       payment_method: editingReceipt.payment_method || 'cash',
                       payment_id: editingReceipt.payment_id || null,
                       payment_status: editingReceipt.payment_status || 'pending',
+                      ...(
+                        (editingReceipt.payment_method === 'cash+upi' || editingReceipt.payment_method === 'cash+card')
+                          ? {
+                              cash_component:  parseFloat(editingReceipt.cash_amount) || 0,
+                              other_component: parseFloat(editingReceipt.upi_amount)  || 0,
+                            }
+                          : {}
+                      ),
                       notes: editingReceipt.notes || null,
                       remarks: editingReceipt.remarks || null,
                       // Send service_items in the exact backend format

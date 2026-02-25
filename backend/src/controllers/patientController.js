@@ -1,6 +1,7 @@
 const { getDb } = require('../config/db');
 const { clearCache } = require('../middleware/cache');
 const { sendSuccess, sendError } = require('../utils/responseHelper');
+const { generateUHID } = require('../utils/uhidHelper');
 
 async function listPatients(req, res) {
   try {
@@ -83,6 +84,7 @@ async function listPatients(req, res) {
         p.name,
         p.gender,
         p.dob,
+        p.age_years,
         p.phone,
         p.email,
         p.blood_group,
@@ -150,7 +152,10 @@ async function getPatient(req, res) {
     if (!rows.length) {
       return res.status(404).json({ error: 'Patient not found', searchedId: id });
     }
-    
+
+    // Debug: log the patient record returned to help diagnose missing age_years
+    try { console.log('getPatient returning:', rows[0]); } catch (e) { /* ignore logging errors */ }
+
     res.json(rows[0]);
   } catch (error) {
     res.status(500).json({ error: 'Failed to get patient', details: error.message });
@@ -183,7 +188,8 @@ async function addPatient(req, res) {
       clinic_id,
       is_vip,
       vip_tier,
-      priority
+      priority,
+      age_years
     } = req.body;
 
     // Validate required fields
@@ -238,21 +244,31 @@ async function addPatient(req, res) {
 
     console.log('🔍 Final primary_doctor_id:', primaryDoctorId);
 
-    // Generate patient_id if not provided
-    const generatedPatientId = patient_id || `P${Date.now()}${Math.floor(Math.random() * 1000)}`;
+    // Generate patient_id with doctor-based prefix: DRA1, DRB1, DRC1, etc.
+    let generatedPatientId = patient_id;
+    if (!generatedPatientId) {
+      try {
+        generatedPatientId = await generateUHID(db, primaryDoctorId);
+        console.log('Generated UHID:', generatedPatientId);
+      } catch (uhidErr) {
+        console.error('UHID generation error, falling back:', uhidErr.message);
+        generatedPatientId = `DRA${Date.now()}`;
+      }
+    }
     const [result] = await db.execute(
       `INSERT INTO patients (
-          patient_id, name, email, phone, dob, gender, blood_group,
+          patient_id, name, email, phone, dob, age_years, gender, blood_group,
           address, city, state, pincode, emergency_contact_name, emergency_contact_phone,
           medical_conditions, allergies, current_medications, clinic_id,
           primary_doctor_id, is_vip, vip_tier, priority, created_by
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         generatedPatientId,
         name || null,
         email || null,
         phone || null,
         dob || null,
+        age_years ? parseInt(age_years, 10) : null,
         mappedGender,
         blood_group || null,
         address || null,
@@ -279,9 +295,13 @@ async function addPatient(req, res) {
     // Clear cache to ensure fresh data on next fetch
     clearCache('/api/patients');
 
+    // Return the full created patient record so frontend callers immediately
+    // have access to fields like `age_years` and `dob` without an extra fetch.
+    const [createdRows] = await db.execute('SELECT * FROM patients WHERE id = ?', [result.insertId]);
+    const createdPatient = (createdRows && createdRows[0]) ? createdRows[0] : { id: result.insertId, patient_id: generatedPatientId };
+
     res.status(201).json({
-      id: result.insertId,
-      patient_id: generatedPatientId,
+      patient: createdPatient,
       message: 'Patient added successfully'
     });
   } catch (error) {
@@ -311,6 +331,7 @@ async function updatePatient(req, res) {
       email,
       phone,
       dob,
+      age_years,
       gender,
       blood_group,
       address,
@@ -339,7 +360,7 @@ async function updatePatient(req, res) {
     let whereValue = isNumericId ? parseInt(id, 10) : id;
 
     const query = `UPDATE patients SET
-        patient_id = ?, name = ?, email = ?, phone = ?, dob = ?, gender = ?,
+        patient_id = ?, name = ?, email = ?, phone = ?, dob = ?, age_years = ?, gender = ?,
         blood_group = ?, address = ?, city = ?, state = ?, pincode = ?,
         emergency_contact_name = ?, emergency_contact_phone = ?, medical_conditions = ?,
         allergies = ?, current_medications = ?, updated_at = CURRENT_TIMESTAMP
@@ -351,6 +372,7 @@ async function updatePatient(req, res) {
         email || null,
         phone || null,
         dob || null,
+        age_years != null ? parseInt(age_years, 10) : null,
         mappedGender,
         blood_group || null,
         address || null,

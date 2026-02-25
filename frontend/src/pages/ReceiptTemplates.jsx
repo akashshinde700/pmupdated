@@ -158,8 +158,7 @@ export default function ReceiptTemplates() {
   };
 
   return (
-    <div className="space-y-6">
-      <HeaderBar title="Receipt Templates" />
+    <div className="space-y-6 pt-2">
 
       <div className="bg-white border rounded shadow-sm p-4">
         <div className="flex items-center justify-between mb-4">

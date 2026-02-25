@@ -8,7 +8,10 @@ const {
   getDoctorById,
   updateDoctor,
   deleteDoctor,
-  getDoctorByUserId
+  getDoctorByUserId,
+  getAffiliations,
+  addAffiliation,
+  deleteAffiliation
 } = require('../controllers/doctorController');
 const {
   exportDoctorCSV,
@@ -87,14 +90,22 @@ router.get(
 );
 
 // -------------------------
+// Landing Page & Affiliations
+// -------------------------
+// Note: /:doctorId/landing is mounted as a public route in app.js (no auth)
+router.get('/:doctorId/affiliations', getAffiliations);
+router.post('/:doctorId/affiliations', authenticateToken, addAffiliation);
+router.delete('/:doctorId/affiliations/:id', authenticateToken, deleteAffiliation);
+
+// -------------------------
 // CRUD endpoints
 // -------------------------
 
 router.post(
-  '/', 
-  authenticateToken, 
-  requireAdmin, 
-  auditLogger('DOCTOR'), 
+  '/',
+  authenticateToken,
+  requireAdmin,
+  auditLogger('DOCTOR'),
   addDoctor
 );
 

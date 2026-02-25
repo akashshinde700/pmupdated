@@ -1,4 +1,5 @@
 const { getDb } = require('../config/db');
+const { generateUHID } = require('../utils/uhidHelper');
 
 // Search patients for queue
 exports.searchPatients = async (req, res) => {
@@ -82,6 +83,7 @@ exports.searchPatients = async (req, res) => {
 // Register new patient and add to queue
 exports.registerNewPatientAndQueue = async (req, res) => {
   try {
+    console.log('registerNewPatientAndQueue payload:', req.body);
     const db = getDb();
     const {
       name,
@@ -99,16 +101,13 @@ exports.registerNewPatientAndQueue = async (req, res) => {
     await db.beginTransaction();
 
     try {
-      // Generate patient ID
-      const [lastPatient] = await db.execute(
-        'SELECT patient_id FROM patients ORDER BY id DESC LIMIT 1'
-      );
-
-      let newPatientId = 'P1001';
-      if (lastPatient.length > 0) {
-        const lastId = lastPatient[0].patient_id;
-        const lastNumber = parseInt(lastId.replace('P', ''));
-        newPatientId = `P${lastNumber + 1}`;
+      // Generate patient ID with doctor prefix
+      let newPatientId;
+      try {
+        const dId = doctor_id || (req.user?.role === 'doctor' ? req.user.doctor_id : null);
+        newPatientId = await generateUHID(db, dId);
+      } catch {
+        newPatientId = 'DRA' + Date.now();
       }
 
       // Get doctor_id from request body or logged-in user
@@ -133,6 +132,14 @@ exports.registerNewPatientAndQueue = async (req, res) => {
       `, [newPatientId, name, age, gender === 'Male' ? 'M' : gender === 'Female' ? 'F' : gender === 'Other' ? 'O' : 'U', phone, address, email, blood_group, finalDoctorId, clinicId]);
       
       const patientId = patientResult.insertId;
+
+      // Debug: fetch and log the inserted patient row to verify age_years saved
+      try {
+        const [created] = await db.execute('SELECT * FROM patients WHERE id = ?', [patientId]);
+        console.log('Inserted patient row:', created[0]);
+      } catch (logErr) {
+        console.error('Failed to fetch inserted patient for debug:', logErr.message);
+      }
       
       // Add to queue
       const queueResult = await addToQueue(db, {
