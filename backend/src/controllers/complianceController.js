@@ -9,7 +9,7 @@ async function logCompliance(req, res) {
   try {
     const payload = req.body || {};
     // For now, just log and acknowledge. In future we can persist to DB.
-    console.log('Compliance log received', { user: req.user && req.user.id, payload });
+    // console.log('Compliance log received', { user: req.user && req.user.id, payload });
     sendCreated(res, null, 'Compliance logged');
   } catch (err) {
     console.error('Error logging compliance:', err);

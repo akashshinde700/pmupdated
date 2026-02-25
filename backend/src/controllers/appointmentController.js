@@ -8,10 +8,10 @@ async function listAppointments(req, res) {
   let whereClause = '';
   let params = [];
   try {
-    console.log('🔍 listAppointments called');
-    console.log('🔍 Request headers:', req.headers.authorization ? 'Token present' : 'No token');
-    console.log('🔍 User object:', req.user);
-    console.log('🔍 User role:', req.user?.role);
+    // console.log('🔍 listAppointments called');
+    // console.log('🔍 Request headers:', req.headers.authorization ? 'Token present' : 'No token');
+    // console.log('🔍 User object:', req.user);
+    // console.log('🔍 User role:', req.user?.role);
     
     const { date, status, doctor_id, start_date, end_date, page = 1, limit = 50 } = req.query;
     const limitNum = Math.min(parseInt(limit, 10) || 50, 100); // Cap at 100
@@ -24,20 +24,20 @@ async function listAppointments(req, res) {
 
     // If doctor is logged in, filter by their doctor_id or clinic_id
     if (req.user && typeof req.user === 'object' && req.user.role === 'doctor') {
-      console.log('🔍 Doctor user found:', { user_id: req.user.id, doctor_id: req.user.doctor_id, clinic_id: req.user.clinic_id });
+      // console.log('🔍 Doctor user found:', { user_id: req.user.id, doctor_id: req.user.doctor_id, clinic_id: req.user.clinic_id });
       if (req.user.doctor_id) {
         whereClause += ' AND a.doctor_id = ?';
         params.push(req.user.doctor_id);
-        console.log('🔍 Added doctor_id filter:', req.user.doctor_id);
+        // console.log('🔍 Added doctor_id filter:', req.user.doctor_id);
       } else if (req.user.clinic_id) {
         whereClause += ' AND a.clinic_id = ?';
         params.push(req.user.clinic_id);
-        console.log('🔍 Added clinic_id filter:', req.user.clinic_id);
+        // console.log('🔍 Added clinic_id filter:', req.user.clinic_id);
       } else {
-        console.log('🔍 No doctor_id or clinic_id found in user object');
+        // console.log('🔍 No doctor_id or clinic_id found in user object');
       }
     } else {
-      console.log('🔍 No doctor user found or user not set, using default query');
+      // console.log('🔍 No doctor user found or user not set, using default query');
     }
 
     // Add manual doctor_id filter if provided
@@ -68,17 +68,17 @@ async function listAppointments(req, res) {
       params.push(status);
     }
 
-    console.log('🔍 Final parameters:', params);
-    console.log('🔍 Limit:', parseInt(limit, 10) || 50);
-    console.log('🔍 Offset:', parseInt(offset, 10) || 0);
-    console.log('🔍 limitNum:', limitNum);
-    console.log('🔍 offset:', offset);
+    // console.log('🔍 Final parameters:', params);
+    // console.log('🔍 Limit:', parseInt(limit, 10) || 50);
+    // console.log('🔍 Offset:', parseInt(offset, 10) || 0);
+    // console.log('🔍 limitNum:', limitNum);
+    // console.log('🔍 offset:', offset);
 
     // Main query - simplified to fix SQL parameter issues
     const safeLimit = Number(limitNum);
     const safeOffset = Number(offset);
-    console.log('🔍 Executing main query with params:', params);
-    console.log('🔍 Using LIMIT/OFFSET:', { safeLimit, safeOffset });
+    // console.log('🔍 Executing main query with params:', params);
+    // console.log('🔍 Using LIMIT/OFFSET:', { safeLimit, safeOffset });
     const [appointments] = await db.execute(`
       SELECT 
         a.id,
@@ -133,7 +133,7 @@ async function listAppointments(req, res) {
       LIMIT ${safeLimit} OFFSET ${safeOffset}
     `, params);
 
-    console.log('🔍 Query successful, results:', appointments.length);
+    // console.log('🔍 Query successful, results:', appointments.length);
     
     // Count query
     const [countResult] = await db.execute(`
@@ -141,7 +141,7 @@ async function listAppointments(req, res) {
     `, params);
     const total = countResult[0]?.total || 0;
     
-    console.log('🔍 Sending response');
+    // console.log('🔍 Sending response');
     return sendSuccess(res, {
       appointments: appointments,
       pagination: {
@@ -224,9 +224,9 @@ async function getAppointment(req, res) {
 
 async function addAppointment(req, res) {
   try {
-    console.log('🔍 Appointment creation request received');
-    console.log('🔍 Request body:', JSON.stringify(req.body, null, 2));
-    console.log('🔍 User:', req.user);
+    // console.log('🔍 Appointment creation request received');
+    // console.log('🔍 Request body:', JSON.stringify(req.body, null, 2));
+    // console.log('🔍 User:', req.user);
     
     const {
       patient_id,      // This should be the database ID (INT)
@@ -275,29 +275,29 @@ async function addAppointment(req, res) {
 
     // Map appointment_type to arrival_type if not provided
     let finalArrivalType = arrival_type;
-    console.log('🔍 Original arrival_type:', arrival_type);
-    console.log('🔍 Original appointment_type:', appointment_type);
+    // console.log('🔍 Original arrival_type:', arrival_type);
+    // console.log('🔍 Original appointment_type:', appointment_type);
     
     if (!finalArrivalType && appointment_type) {
       // Map frontend consultation types to backend arrival types
       if (appointment_type === 'offline') {
         finalArrivalType = 'walk-in'; // Offline appointments become walk-in
-        console.log('🔍 Mapped offline -> walk-in');
+        // console.log('🔍 Mapped offline -> walk-in');
       } else if (appointment_type === 'online') {
         finalArrivalType = 'online'; // Online appointments stay online
-        console.log('🔍 Mapped online -> online');
+        // console.log('🔍 Mapped online -> online');
       } else {
         finalArrivalType = 'walk-in'; // Default fallback
-        console.log('🔍 Used default walk-in');
+        // console.log('🔍 Used default walk-in');
       }
     } else if (finalArrivalType) {
-      console.log('🔍 Using provided arrival_type:', finalArrivalType);
+      // console.log('🔍 Using provided arrival_type:', finalArrivalType);
     } else {
       finalArrivalType = 'walk-in'; // Default fallback
-      console.log('🔍 Used default fallback walk-in');
+      // console.log('🔍 Used default fallback walk-in');
     }
     
-    console.log('🔍 Final arrival_type:', finalArrivalType);
+    // console.log('🔍 Final arrival_type:', finalArrivalType);
 
     // Check for duplicate appointment
     let duplicateQuery = `
@@ -399,7 +399,7 @@ async function updateAppointmentStatus(req, res) {
 
     await db.execute(updateQuery, params);
 
-    // Update patient statistics if appointment is completed
+    // Update patient statistics and sync queue status if appointment is completed
     if (status === 'completed') {
       try {
         const [appt] = await db.execute('SELECT patient_id, clinic_id FROM appointments WHERE id = ?', [id]);
@@ -408,6 +408,15 @@ async function updateAppointmentStatus(req, res) {
         }
       } catch (statsErr) {
         // Warning logged silently - don't fail the main operation
+      }
+      // Sync queue entry status to completed
+      try {
+        await db.execute(
+          'UPDATE queue SET status = ?, completed_at = NOW() WHERE appointment_id = ? AND status != ?',
+          ['completed', id, 'completed']
+        );
+      } catch (queueErr) {
+        // Queue sync failed silently
       }
     }
 
@@ -672,7 +681,7 @@ async function updatePaymentStatus(req, res) {
     const { id } = req.params;
     const { payment_status } = req.body;
 
-    console.log('🔍 updatePaymentStatus called:', { id, payment_status });
+    // console.log('🔍 updatePaymentStatus called:', { id, payment_status });
 
     if (!payment_status) {
       return res.status(400).json({ error: 'Payment status is required' });
@@ -683,7 +692,7 @@ async function updatePaymentStatus(req, res) {
       return res.status(400).json({ error: 'Invalid payment status' });
     }
 
-    console.log('🔍 Payment status is valid:', payment_status);
+    // console.log('🔍 Payment status is valid:', payment_status);
 
     const db = getDb();
 
@@ -693,12 +702,12 @@ async function updatePaymentStatus(req, res) {
       [id]
     );
 
-    console.log('🔍 Bills found for appointment:', bills.length);
+    // console.log('🔍 Bills found for appointment:', bills.length);
 
     let billId;
 
     if (bills.length === 0) {
-      console.log('🔍 No bills found for appointment, checking patient bills...');
+      // console.log('🔍 No bills found for appointment, checking patient bills...');
 
       // Fallback: try to find a bill by the appointment's patient_id (some bills may not have appointment_id set)
       const [appts] = await db.execute(
@@ -707,14 +716,14 @@ async function updatePaymentStatus(req, res) {
       );
 
       if (appts.length === 0) {
-        console.log('❌ Appointment not found');
+        // console.log('❌ Appointment not found');
         return res.status(404).json({ error: 'Appointment not found' });
       }
 
       const { patient_id: patientDbId } = appts[0];
 
       if (!patientDbId) {
-        console.log('❌ No patient associated with this appointment');
+        // console.log('❌ No patient associated with this appointment');
         return res.status(404).json({ error: 'No patient associated with this appointment' });
       }
 
@@ -725,21 +734,21 @@ async function updatePaymentStatus(req, res) {
       );
 
       if (patientBills.length === 0) {
-        console.log('ℹ️ No bill found for this appointment. Please create a receipt first.');
+        // console.log('ℹ️ No bill found for this appointment. Please create a receipt first.');
         return res.status(404).json({
           error: 'No bill found for this appointment. Please create a receipt first.',
           code: 'NO_BILL_FOUND'
         });
       } else {
         billId = patientBills[0].id;
-        console.log('🔧 Using existing patient bill ID:', billId);
+        // console.log('🔧 Using existing patient bill ID:', billId);
       }
     } else {
       billId = bills[0].id;
-      console.log('🔧 Using existing appointment bill ID:', billId);
+      // console.log('🔧 Using existing appointment bill ID:', billId);
     }
 
-    console.log('🔧 Updating bill payment status to:', payment_status, 'for bill ID:', billId);
+    // console.log('🔧 Updating bill payment status to:', payment_status, 'for bill ID:', billId);
 
     // Update the bill's payment status
     await db.execute(
@@ -747,7 +756,7 @@ async function updatePaymentStatus(req, res) {
       [payment_status, billId]
     );
 
-    console.log('✅ Payment status updated successfully');
+    // console.log('✅ Payment status updated successfully');
 
     res.json({ message: 'Payment status updated successfully', payment_status, bill_id: billId });
   } catch (error) {

@@ -523,7 +523,7 @@ export default function Patients() {
                                 if (window.confirm(`Delete patient ${p.name}?\n\nWarning: This will also delete all related appointments, bills, and medical records.`)) {
                                   try {
                                     const response = await api.delete(`/api/patients/${p.id}`);
-                                    console.log('Delete response:', response.data);
+                                    // console.log('Delete response:', response.data);
                                     addToast(response.data.message || 'Patient deleted successfully', 'success');
 
                                     // Immediately remove from local state for instant UI update
@@ -575,7 +575,7 @@ export default function Patients() {
           </div>
           <button
             onClick={() => {
-              console.log('Add New Patient clicked');
+              // console.log('Add New Patient clicked');
               setShowAddPatientModal(true);
             }}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"

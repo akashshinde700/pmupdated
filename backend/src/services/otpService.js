@@ -50,7 +50,7 @@ class OTPService {
 
       // Development: print OTP to console for testing
       if (String(process.env.NODE_ENV || '').toLowerCase() !== 'production') {
-        console.log(`🔐 DEVELOPMENT OTP for ${email}: ${otp}`);
+        // console.log(`🔐 DEVELOPMENT OTP for ${email}: ${otp}`);
       }
 
       const db = getDb();

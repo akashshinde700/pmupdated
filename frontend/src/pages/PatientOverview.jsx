@@ -146,7 +146,7 @@ export default function PatientOverview() {
   useEffect(() => {
     const handlePatientDataRefresh = (event) => {
       if (event.detail?.patientId && parseInt(event.detail.patientId) === parseInt(id)) {
-        console.log('Patient data refresh event received:', event.detail);
+        // console.log('Patient data refresh event received:', event.detail);
         fetchPatientData();
         addToast('Lab results updated from prescription', 'success');
       }

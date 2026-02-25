@@ -12,8 +12,8 @@ async function generateExternalPatientId(db, doctorId) {
 
 async function addAppointmentIntent(req, res) {
   try {
-    console.log('🔍 Appointment Intent request received');
-    console.log('🔍 Request body:', JSON.stringify(req.body, null, 2));
+    // console.log('🔍 Appointment Intent request received');
+    // console.log('🔍 Request body:', JSON.stringify(req.body, null, 2));
     
     const { full_name, phone, email, speciality, preferred_date, preferred_time, message, auto_create, arrival_type, appointment_type, doctor_id: reqDoctorId } = req.body;
 
@@ -26,23 +26,23 @@ async function addAppointmentIntent(req, res) {
     // Map arrival_type / appointment_type to correct database values
     // DB expects: 'walk-in' or 'online' (not 'offline')
     let finalArrivalType = arrival_type || appointment_type || 'walk-in';
-    console.log('🔍 Original arrival_type:', arrival_type);
-    console.log('🔍 Original appointment_type:', appointment_type);
+    // console.log('🔍 Original arrival_type:', arrival_type);
+    // console.log('🔍 Original appointment_type:', appointment_type);
 
     // Map 'offline' to 'walk-in' (frontend sends 'offline', DB expects 'walk-in')
     if (finalArrivalType === 'offline') {
       finalArrivalType = 'walk-in';
-      console.log('🔍 Mapped offline -> walk-in');
+      // console.log('🔍 Mapped offline -> walk-in');
     } else if (finalArrivalType === 'online') {
       // 'online' stays as 'online'
-      console.log('🔍 Keeping online as online');
+      // console.log('🔍 Keeping online as online');
     } else if (!['walk-in', 'online', 'scheduled'].includes(finalArrivalType)) {
       // Unknown value, default to walk-in
       finalArrivalType = 'walk-in';
-      console.log('🔍 Unknown value, defaulting to walk-in');
+      // console.log('🔍 Unknown value, defaulting to walk-in');
     }
 
-    console.log('🔍 Final arrival_type:', finalArrivalType);
+    // console.log('🔍 Final arrival_type:', finalArrivalType);
 
     // If auto_create is true, create patient and appointment directly
     if (auto_create) {
@@ -292,7 +292,7 @@ async function convertToAppointment(req, res) {
       if (patients.length > 0 && patients[0].email) {
         // This would be called asynchronously in production
         // For now, we'll just log it
-        console.log('Would send appointment confirmation email to:', patients[0].email);
+        // console.log('Would send appointment confirmation email to:', patients[0].email);
       }
     } catch (notifError) {
       console.error('Notification error (non-critical):', notifError);

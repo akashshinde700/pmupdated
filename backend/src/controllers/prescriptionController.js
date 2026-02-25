@@ -259,9 +259,9 @@ async function listPrescriptions(req, res) {
  */
 async function addPrescription(req, res) {
   try {
-    console.log('🔍 Prescription save request received');
-    console.log('🔍 Request body:', JSON.stringify(req.body, null, 2));
-    console.log('🔍 User:', req.user);
+    // console.log('🔍 Prescription save request received');
+    // console.log('🔍 Request body:', JSON.stringify(req.body, null, 2));
+    // console.log('🔍 User:', req.user);
     
     const {
       patient_id,
@@ -674,7 +674,7 @@ async function addPrescription(req, res) {
 
     // 8) Update queue status when prescription is created (End Visit)
     try {
-      console.log('🔍 Updating queue status for patient:', patient_id);
+      // console.log('🔍 Updating queue status for patient:', patient_id);
       
       // Update queue status to 'completed' and set end_time
       const [queueUpdate] = await db.execute(
@@ -691,9 +691,9 @@ async function addPrescription(req, res) {
       );
       
       if (queueUpdate.affectedRows > 0) {
-        console.log('✅ Queue status updated to completed for patient:', patient_id);
+        // console.log('✅ Queue status updated to completed for patient:', patient_id);
       } else {
-        console.log('ℹ️ No active queue entry found for patient:', patient_id);
+        // console.log('ℹ️ No active queue entry found for patient:', patient_id);
       }
     } catch (queueError) {
       console.error('⚠️ Error updating queue status:', queueError);
@@ -1349,7 +1349,7 @@ async function searchPrescriptions(req, res) {
  */
 async function endVisit(req, res) {
   try {
-    console.log('🔍 End visit request received');
+    // console.log('🔍 End visit request received');
     const { patient_id, doctor_id, notes } = req.body;
     
     if (!patient_id || !doctor_id) {
@@ -1374,14 +1374,14 @@ async function endVisit(req, res) {
     );
     
     if (queueUpdate.affectedRows > 0) {
-      console.log('✅ Visit ended and queue status updated for patient:', patient_id);
+      // console.log('✅ Visit ended and queue status updated for patient:', patient_id);
       res.json({ 
         message: 'Visit ended successfully',
         patient_id,
         doctor_id
       });
     } else {
-      console.log('ℹ️ No active queue entry found for patient:', patient_id);
+      // console.log('ℹ️ No active queue entry found for patient:', patient_id);
       res.status(404).json({ 
         error: 'No active visit found for this patient',
         patient_id

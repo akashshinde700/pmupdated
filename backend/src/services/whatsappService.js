@@ -8,7 +8,7 @@
 async function sendWhatsAppTemplateMessage(to, templateName, message) {
   // Frontend now handles WhatsApp via direct links (wa.me)
   // This function is deprecated but kept to avoid breaking existing code
-  console.log('WhatsApp notification requested (handled by frontend):', { to, message });
+  // console.log('WhatsApp notification requested (handled by frontend):', { to, message });
   return {
     success: true,
     message: 'WhatsApp notifications are handled by frontend via direct links',

@@ -92,7 +92,7 @@ async function getTemplateById(req, res) {
 // POST /api/prescription-templates
 async function createTemplate(req, res) {
   try {
-    console.log('createTemplate payload:', req.body);
+    // console.log('createTemplate payload:', req.body);
     const {
       template_name,
       name, // fallback
@@ -141,7 +141,7 @@ async function createTemplate(req, res) {
       clinicId,
       userId
     ];
-    console.log('createTemplate params:', params);
+    // console.log('createTemplate params:', params);
 
     const [result] = await db.execute(
       `INSERT INTO prescription_templates (
@@ -152,7 +152,7 @@ async function createTemplate(req, res) {
       params
     );
 
-    console.log('createTemplate result insertId:', result.insertId);
+    // console.log('createTemplate result insertId:', result.insertId);
     // Return created template id for frontend convenience
     res.status(201).json({
       message: 'Template created successfully',

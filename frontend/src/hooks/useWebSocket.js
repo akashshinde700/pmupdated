@@ -19,7 +19,7 @@ const useWebSocket = () => {
       const ws = new WebSocket(`${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`);
       
       ws.onopen = () => {
-        console.log('🔌 WebSocket connected');
+        // console.log('🔌 WebSocket connected');
         setConnected(true);
         setSocket(ws);
         reconnectAttemptsRef.current = 0;
@@ -42,22 +42,22 @@ const useWebSocket = () => {
           // Handle different message types
           switch (data.type) {
             case 'broadcast':
-              console.log('🔌 Broadcast received:', data.message);
+              // console.log('🔌 Broadcast received:', data.message);
               break;
             case 'appointment_update':
               // Handle appointment updates
-              console.log('🔌 Appointment update:', data.data);
+              // console.log('🔌 Appointment update:', data.data);
               break;
             case 'new_bill':
               // Handle new bill notifications
-              console.log('🔌 New bill:', data.data);
+              // console.log('🔌 New bill:', data.data);
               break;
             case 'queue_update':
               // Handle queue updates
-              console.log('🔌 Queue update:', data.data);
+              // console.log('🔌 Queue update:', data.data);
               break;
             default:
-              console.log('🔌 Message received:', data);
+              // console.log('🔌 Message received:', data);
           }
         } catch (error) {
           console.error('Failed to parse WebSocket message:', error);
@@ -65,7 +65,7 @@ const useWebSocket = () => {
       };
 
       ws.onclose = (event) => {
-        console.log('🔌 WebSocket disconnected:', event.code, event.reason);
+        // console.log('🔌 WebSocket disconnected:', event.code, event.reason);
         setConnected(false);
         setSocket(null);
         
@@ -74,7 +74,7 @@ const useWebSocket = () => {
           reconnectAttemptsRef.current++;
           const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current), 30000);
           
-          console.log(`🔌 Reconnecting in ${delay}ms... (attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts})`);
+          // console.log(`🔌 Reconnecting in ${delay}ms... (attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts})`);
           
           reconnectTimeoutRef.current = setTimeout(() => {
             connect();

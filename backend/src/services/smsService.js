@@ -18,7 +18,7 @@ async function sendSMS(phone, message) {
   const text = String(message || '');
 
   if (provider === 'disabled' || provider === 'off') {
-    console.log(`[SMS DISABLED] Would send SMS to ${phone}: ${text.substring(0, 50)}...`);
+    // console.log(`[SMS DISABLED] Would send SMS to ${phone}: ${text.substring(0, 50)}...`);
     return {
       success: false,
       message: 'SMS service is disabled. Configure SMS_PROVIDER and provider credentials in .env',

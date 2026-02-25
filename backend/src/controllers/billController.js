@@ -69,7 +69,7 @@ async function getClinicSettings(req, res) {
 // List bills - simplified version
 async function listBills(req, res) {
   try {
-    console.log('🔍 listBills called with query:', req.query);
+    // console.log('🔍 listBills called with query:', req.query);
     const {
       page = 1,
       limit = 50,
@@ -86,7 +86,7 @@ async function listBills(req, res) {
     const limitNum = Math.min(parseInt(limit, 10) || 50, 100);
     const offset = (parseInt(page, 10) - 1) * limitNum;
     const db = getDb();
-    console.log('🔍 Database connection obtained');
+    // console.log('🔍 Database connection obtained');
 
     // Build WHERE clause
     let whereSql = 'WHERE 1=1';
@@ -160,7 +160,7 @@ async function listBills(req, res) {
       ORDER BY b.bill_date DESC
       LIMIT ${limitNum} OFFSET ${offset}
     `, params);
-    console.log('🔍 Simple query successful, results:', bills.length);
+    // console.log('🔍 Simple query successful, results:', bills.length);
     
     const [countResult] = await db.execute(
       `SELECT COUNT(*) as total FROM bills b LEFT JOIN patients p ON b.patient_id = p.id ${whereSql}`,
@@ -168,7 +168,7 @@ async function listBills(req, res) {
     );
     const total = countResult[0]?.total || 0;
     
-    console.log('🔍 Sending response');
+    // console.log('🔍 Sending response');
     return sendSuccess(res, {
       bills: bills,
       pagination: {
@@ -187,13 +187,13 @@ async function listBills(req, res) {
 
 async function getUnbilledVisits(req, res) {
   try {
-    console.log('🔍 getUnbilledVisits called with query:', req.query);
+    // console.log('🔍 getUnbilledVisits called with query:', req.query);
     const { start_date, end_date, page = 1, limit = 50 } = req.query;
     const db = getDb();
     const limitNum = Math.min(parseInt(limit, 10) || 50, 100);
     const offset = (parseInt(page, 10) - 1) * limitNum;
     
-    console.log('🔍 Database connection obtained');
+    // console.log('🔍 Database connection obtained');
 
     // Get unbilled visits from queue table
     let whereSql = "WHERE q.visit_status = 'unbilled' AND q.status = 'completed'";
@@ -228,9 +228,9 @@ async function getUnbilledVisits(req, res) {
     );
     const total = countResult[0]?.total || 0;
     
-    console.log('🔍 Query successful, results:', visits.length);
+    // console.log('🔍 Query successful, results:', visits.length);
     
-    console.log('🔍 Sending response');
+    // console.log('🔍 Sending response');
     return sendSuccess(res, {
       visits: visits,
       pagination: {
@@ -477,8 +477,8 @@ async function addBill(req, res) {
     const billId = result.insertId;
 
     // Save bill items (prefer explicit items; otherwise map service_items)
-    console.log('🔍 DEBUG: Items received:', items);
-    console.log('🔍 DEBUG: ServiceItems received:', serviceItems);
+    // console.log('🔍 DEBUG: Items received:', items);
+    // console.log('🔍 DEBUG: ServiceItems received:', serviceItems);
     
     const normalizedItems = (items.length > 0 ? items : serviceItems).map((it, idx) => {
       const quantity = it.quantity ?? it.qty ?? 1;
@@ -488,13 +488,13 @@ async function addBill(req, res) {
       const taxAmount = it.tax_amount ?? 0;
       const totalPrice = it.total_price ?? it.total ?? (Number(quantity || 1) * Number(unitPrice || 0) - Number(discountAmount || 0));
       
-      console.log(`🔍 DEBUG: Processing item ${idx}:`, {
-        original: it,
-        quantity,
-        unitPrice,
-        discountAmount,
-        totalPrice
-      });
+      // console.log(`🔍 DEBUG: Processing item ${idx}:`, {
+        // original: it,
+        // quantity,
+        // unitPrice,
+        // discountAmount,
+        // totalPrice
+      // });
       
       return {
         service_id: it.service_id ?? null,
@@ -510,7 +510,7 @@ async function addBill(req, res) {
     });
 
     if (normalizedItems.length > 0) {
-      console.log('🔍 DEBUG: Inserting bill items:', normalizedItems.length, 'items');
+      // console.log('🔍 DEBUG: Inserting bill items:', normalizedItems.length, 'items');
       for (const it of normalizedItems) {
         try {
           await db.execute(
@@ -531,14 +531,14 @@ async function addBill(req, res) {
               it.sort_order
             ]
           );
-          console.log('✅ DEBUG: Bill item inserted successfully:', it.service_name, it.total_price);
+          // console.log('✅ DEBUG: Bill item inserted successfully:', it.service_name, it.total_price);
         } catch (itemError) {
           console.error('❌ DEBUG: Failed to insert bill item:', it, itemError);
           throw itemError;
         }
       }
     } else {
-      console.log('⚠️ DEBUG: No normalized items to insert');
+      // console.log('⚠️ DEBUG: No normalized items to insert');
     }
 
     // Update patient statistics (best-effort — don't fail bill creation if SP is missing)

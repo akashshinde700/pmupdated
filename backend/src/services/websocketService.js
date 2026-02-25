@@ -20,7 +20,7 @@ class WebSocketService {
       this.handleConnection(ws, req);
     });
 
-    console.log('🔌 WebSocket server initialized');
+    // console.log('🔌 WebSocket server initialized');
   }
 
   async handleConnection(ws, req) {
@@ -75,7 +75,7 @@ class WebSocketService {
       this.joinRoom(ws.clientId, `role_${ws.userRole}`);
       
       this.sendSuccess(ws, 'Authenticated successfully');
-      console.log(`🔌 Client ${ws.clientId} authenticated as user ${ws.userId} (${ws.userRole})`);
+      // console.log(`🔌 Client ${ws.clientId} authenticated as user ${ws.userId} (${ws.userRole})`);
       
     } catch (error) {
       console.error('WebSocket authentication failed:', error);
@@ -96,7 +96,7 @@ class WebSocketService {
     // Remove from clients map
     this.clients.delete(ws.clientId);
     
-    console.log(`🔌 Client ${ws.clientId} disconnected`);
+    // console.log(`🔌 Client ${ws.clientId} disconnected`);
   }
 
   joinRoom(clientId, roomName) {

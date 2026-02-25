@@ -203,7 +203,7 @@ const LandingPage = () => {
           setHospitals(data.affiliations);
         }
       } catch (err) {
-        console.log('Using default landing page data');
+        // console.log('Using default landing page data');
       }
     };
     fetchLandingData();
@@ -222,7 +222,7 @@ const LandingPage = () => {
           setGoogleRating(response.data.rating);
         }
       } catch (err) {
-        console.log('Google reviews not available, using fallback testimonials');
+        // console.log('Google reviews not available, using fallback testimonials');
       } finally {
         setLoadingReviews(false);
       }
@@ -365,8 +365,8 @@ const LandingPage = () => {
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="h-11 w-11 rounded-full bg-gradient-to-br from-blue-600 to-blue-700 flex items-center justify-center text-white font-bold text-lg shadow-md">
-              Om
-            </div>
+              DJ
+</div>
             <div>
               <p className="font-bold text-gray-900 text-base">{clinicInfo.name}</p>
               <p className="text-xs text-blue-600 font-medium">{doctorInfo.name}</p>

@@ -125,7 +125,9 @@ export default function Queue() {
       // Add appointments
       appointmentsData.forEach(apt => {
         const inQueue = queueData.some(q => q.appointment_id === apt.id);
-        const aptDate = apt.appointment_date || (apt.check_in_time ? apt.check_in_time.split('T')[0] : null);
+        const aptDate = apt.appointment_date
+          ? apt.appointment_date.toString().split('T')[0].split(' ')[0]
+          : (apt.check_in_time ? apt.check_in_time.split('T')[0] : null);
 
         // If caller requested completed status, include appointments that are completed
         if (extraParams && extraParams.status === 'completed') {
@@ -373,21 +375,13 @@ export default function Queue() {
 
       addToast(`Status updated to ${newStatus}`, 'success');
 
-      // Auto-navigate to create receipt when appointment is completed
-      if (newStatus === 'completed' && apt) {
-        setTimeout(() => {
-          const pid = resolvePatientDbId(apt);
-          if (!pid) return;
-          // Only include appointment ID if it's a valid appointment (not walk-in)
-          const appointmentParam = apt.source !== 'walkin' && apt.id ? `&appointment=${apt.id}` : '';
-          navigate(`/receipts?patient=${pid}${appointmentParam}&quick=true`);
-        }, 1000); // Wait 1 second to show the success message
-      }
+      // Refresh queue data to reflect the updated status
+      setTimeout(() => fetchAppointments(), 500);
     } catch (err) {
       console.error('Update status error:', err);
       addToast(err.response?.data?.error || 'Failed to update status', 'error');
     }
-  }, [api, addToast, calculateStats, navigate]);
+  }, [api, addToast, calculateStats, fetchAppointments]);
 
   // Update payment status
   const updatePaymentStatus = useCallback(async (appointmentId, newPaymentStatus) => {
@@ -2001,25 +1995,28 @@ Thank you!`;
                                     <button
                                       onClick={async () => {
                                         setOpenMenuId(null);
+                                        const pid = resolvePatientDbId(apt);
+                                        if (!pid) return;
+                                        // Open window immediately (in user gesture context) to avoid popup blocking
+                                        const waWindow = window.open('about:blank', '_blank');
                                         try {
-                                          const pid = resolvePatientDbId(apt);
-                                          if (!pid) return;
                                           const res = await api.get(`/api/prescriptions?patient_id=${pid}&limit=1`);
                                           const rx = res.data?.data?.prescriptions?.[0] || res.data?.prescriptions?.[0];
                                           if (rx) {
-                                            const phone = apt.patient_phone || apt.phone || '';
+                                            const phone = apt.contact || apt.patient_phone || apt.phone || '';
                                             const cleanPhone = phone.replace(/\D/g, '');
                                             const pdfUrl = window.location.origin + '/api/pdf/prescription/' + rx.id;
                                             const msg = encodeURIComponent(
                                               'Hello ' + (apt.patient_name || '') + ',\n\n' +
-                                              'Your prescription from ' + (rx.clinic_name || 'our clinic') + ':\n\n' +
+                                              'Your prescription from ' + (apt.clinic_name || rx.clinic_name || 'our clinic') + ':\n\n' +
                                               'View/Download Prescription:\n' + pdfUrl
                                             );
-                                            window.open('https://wa.me/' + (cleanPhone.startsWith('91') ? cleanPhone : '91' + cleanPhone) + '?text=' + msg, '_blank');
+                                            waWindow.location.href = 'https://wa.me/' + (cleanPhone.startsWith('91') ? cleanPhone : '91' + cleanPhone) + '?text=' + msg;
                                           } else {
+                                            waWindow.close();
                                             addToast('No prescription found to send', 'info');
                                           }
-                                        } catch { addToast('Failed to send prescription', 'error'); }
+                                        } catch { waWindow.close(); addToast('Failed to send prescription', 'error'); }
                                       }}
                                       className="w-full px-4 py-2.5 text-left text-sm hover:bg-green-50 hover:text-green-700 flex items-center gap-3 transition-colors border-b border-slate-100"
                                     >
@@ -2031,19 +2028,14 @@ Thank you!`;
                                     </button>
                                     {/* Print Bill PDF */}
                                     <button
-                                      onClick={async () => {
+                                      onClick={() => {
                                         setOpenMenuId(null);
-                                        try {
-                                          const pid = resolvePatientDbId(apt);
-                                          if (!pid) return;
-                                          const res = await api.get(`/api/bills?patient_id=${pid}&limit=1`);
-                                          const bill = res.data?.data?.bills?.[0] || res.data?.bills?.[0];
-                                          if (bill) {
-                                            window.open(`/api/pdf/bill/${bill.id}`, '_blank');
-                                          } else {
-                                            addToast('No bill found for this patient', 'info');
-                                          }
-                                        } catch { addToast('Failed to find bill', 'error'); }
+                                        const billId = apt.bill_id;
+                                        if (!billId) {
+                                          addToast('No bill found for this patient', 'info');
+                                          return;
+                                        }
+                                        window.open(`/api/pdf/bill/${billId}`, '_blank');
                                       }}
                                       className="w-full px-4 py-2.5 text-left text-sm hover:bg-orange-50 hover:text-orange-700 flex items-center gap-3 transition-colors border-b border-slate-100"
                                     >
@@ -2054,19 +2046,14 @@ Thank you!`;
                                     </button>
                                     {/* Edit Bill */}
                                     <button
-                                      onClick={async () => {
+                                      onClick={() => {
                                         setOpenMenuId(null);
-                                        try {
-                                          const pid = resolvePatientDbId(apt);
-                                          if (!pid) return;
-                                          const res = await api.get(`/api/bills?patient_id=${pid}&limit=1`);
-                                          const bill = res.data?.data?.bills?.[0] || res.data?.bills?.[0];
-                                          if (bill) {
-                                            navigate(`/receipts?edit=true&billId=${bill.id}`);
-                                          } else {
-                                            addToast('No bill found to edit', 'info');
-                                          }
-                                        } catch { addToast('Failed to find bill', 'error'); }
+                                        const billId = apt.bill_id;
+                                        if (!billId) {
+                                          addToast('No bill found to edit', 'info');
+                                          return;
+                                        }
+                                        navigate(`/receipts?edit=true&billId=${billId}`);
                                       }}
                                       className="w-full px-4 py-2.5 text-left text-sm hover:bg-yellow-50 hover:text-yellow-700 flex items-center gap-3 transition-colors border-b border-slate-100"
                                     >
@@ -2077,29 +2064,23 @@ Thank you!`;
                                     </button>
                                     {/* Send Bill on WhatsApp */}
                                     <button
-                                      onClick={async () => {
+                                      onClick={() => {
                                         setOpenMenuId(null);
-                                        try {
-                                          const pid = resolvePatientDbId(apt);
-                                          if (!pid) return;
-                                          const res = await api.get(`/api/bills?patient_id=${pid}&limit=1`);
-                                          const bill = res.data?.data?.bills?.[0] || res.data?.bills?.[0];
-                                          if (bill) {
-                                            const phone = apt.patient_phone || apt.phone || '';
-                                            const cleanPhone = phone.replace(/\D/g, '');
-                                            const pdfUrl = window.location.origin + '/api/pdf/bill/' + bill.id;
-                                            const msg = encodeURIComponent(
-                                              'Hello ' + (apt.patient_name || '') + ',\n\n' +
-                                              'Your bill from ' + (bill.clinic_name || 'our clinic') + ':\n' +
-                                              'Bill #: ' + (bill.bill_number || bill.id) + '\n' +
-                                              'Amount: Rs.' + (parseFloat(bill.total_amount) || 0).toFixed(2) + '\n\n' +
-                                              'View/Download Receipt:\n' + pdfUrl
-                                            );
-                                            window.open('https://wa.me/' + (cleanPhone.startsWith('91') ? cleanPhone : '91' + cleanPhone) + '?text=' + msg, '_blank');
-                                          } else {
-                                            addToast('No bill found to send', 'info');
-                                          }
-                                        } catch { addToast('Failed to send bill', 'error'); }
+                                        const billId = apt.bill_id;
+                                        const phone = apt.contact || apt.patient_phone || apt.phone || '';
+                                        const cleanPhone = phone.replace(/\D/g, '');
+                                        if (!billId) {
+                                          addToast('No bill found to send', 'info');
+                                          return;
+                                        }
+                                        const pdfUrl = window.location.origin + '/api/pdf/bill/' + billId;
+                                        const msg = encodeURIComponent(
+                                          'Hello ' + (apt.patient_name || '') + ',\n\n' +
+                                          'Your bill from ' + (apt.clinic_name || 'our clinic') + ':\n' +
+                                          'Amount: Rs.' + (parseFloat(apt.bill_total) || 0).toFixed(2) + '\n\n' +
+                                          'View/Download Receipt:\n' + pdfUrl
+                                        );
+                                        window.open('https://wa.me/' + (cleanPhone.startsWith('91') ? cleanPhone : '91' + cleanPhone) + '?text=' + msg, '_blank');
                                       }}
                                       className="w-full px-4 py-2.5 text-left text-sm hover:bg-green-50 hover:text-green-700 flex items-center gap-3 rounded-b-lg transition-colors"
                                     >

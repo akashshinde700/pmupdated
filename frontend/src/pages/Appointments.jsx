@@ -88,11 +88,11 @@ export default function Appointments() {
   const fetchFollowUpPatients = async () => {
     setLoading(true);
     try {
-      console.log('Fetching follow-ups from /api/appointments/followups');
+      // console.log('Fetching follow-ups from /api/appointments/followups');
       const res = await api.get('/api/appointments/followups');
-      console.log('Follow-ups response:', res.data);
+      // console.log('Follow-ups response:', res.data);
       const followUps = res.data?.data?.followups || res.data?.followups || [];
-      console.log('Follow-ups count:', followUps.length);
+      // console.log('Follow-ups count:', followUps.length);
       setFollowUpPatients(followUps);
     } catch (error) {
       console.error('Failed to fetch follow-up patients:', error);

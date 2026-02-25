@@ -26,27 +26,27 @@ async function initRedis() {
       retryStrategy: () => null
     });
     
-    client.on('connect', () => console.log('✅ Redis connected'));
+    // client.on('connect', () => console.log('✅ Redis connected'));
     client.on('error', (err) => {
-      console.log('⚠️ Redis connection error:', err.message);
+      // console.log('⚠️ Redis connection error:', err.message);
     });
     
     client.on('close', () => {
-      console.log('⚠️ Redis connection closed');
+      // console.log('⚠️ Redis connection closed');
     });
     
     // Attempt connection; if it fails, return null and continue without Redis
     try {
       await client.connect();
       await client.ping();
-      console.log('✅ Redis connection established');
+      // console.log('✅ Redis connection established');
       return client;
     } catch (error) {
-      console.log('⚠️ Redis not available, running without cache (memory-only mode)');
+      // console.log('⚠️ Redis not available, running without cache (memory-only mode)');
       return null;
     }
   } catch (error) {
-    console.log('⚠️ Redis not available, running without cache (memory-only mode)');
+    // console.log('⚠️ Redis not available, running without cache (memory-only mode)');
     return null;
   }
 }
@@ -81,7 +81,7 @@ async function initDb() {
     const connection = await pool.getConnection();
     await connection.ping();
     connection.release();
-    console.log('✅ Database connection established');
+    // console.log('✅ Database connection established');
 
     // Initialize Redis if available
     redisClient = await initRedis();

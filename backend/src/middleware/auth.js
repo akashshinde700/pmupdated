@@ -29,17 +29,17 @@ const optionalAuth = (req, res, next) => {
 
   if (!token) {
     // No token - continue without user context
-    console.log('🔍 User: Public access');
+    // console.log('🔍 User: Public access');
     return next();
   }
 
   jwt.verify(token, env.jwtSecret || process.env.JWT_SECRET, (err, user) => {
     if (err) {
       // Invalid token - continue without user context
-      console.log('🔍 User: Invalid token, public access');
+      // console.log('🔍 User: Invalid token, public access');
       return next();
     }
-    console.log('🔍 User authenticated:', { id: user.id, role: user.role });
+    // console.log('🔍 User authenticated:', { id: user.id, role: user.role });
     req.user = user;
     next();
   });

@@ -133,7 +133,7 @@ export default function PadConfiguration() {
     
     localStorage.setItem('padConfiguration', JSON.stringify(config));
     addToast('Pad configuration saved successfully', 'success');
-    console.log('Saving pad configuration:', config);
+    // console.log('Saving pad configuration:', config);
   };
 
   const handleCancel = () => {

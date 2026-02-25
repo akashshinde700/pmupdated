@@ -77,15 +77,15 @@ export default function BookAppointmentModal({ isOpen, onClose, patientId: initi
     try {
       // If logged-in user is a doctor, fetch doctors from same clinic
       if (user && user.role === 'doctor') {
-        console.log('Fetching doctor data for logged-in doctor, user ID:', user.id);
+        // console.log('Fetching doctor data for logged-in doctor, user ID:', user.id);
         const res = await api.get(`/api/doctors/by-user/${user.id}`);
-        console.log('Doctor data received:', res.data);
+        // console.log('Doctor data received:', res.data);
 
         if (res.data && res.data.clinic_id) {
           // Fetch all doctors from the same clinic
-          console.log('Fetching doctors from clinic ID:', res.data.clinic_id);
+          // console.log('Fetching doctors from clinic ID:', res.data.clinic_id);
           const clinicDoctorsRes = await api.get(`/api/doctors?clinic_id=${res.data.clinic_id}`);
-          console.log('Clinic doctors:', clinicDoctorsRes.data);
+          // console.log('Clinic doctors:', clinicDoctorsRes.data);
 
           const doctorsList = clinicDoctorsRes.data.doctors || clinicDoctorsRes.data || [];
           setDoctors(doctorsList.map(doc => ({
@@ -115,7 +115,7 @@ export default function BookAppointmentModal({ isOpen, onClose, patientId: initi
   };
 
   const handleBook = async () => {
-    console.log('Booking appointment with:', { patientId, doctorId, selectedDate, selectedTime });
+    // console.log('Booking appointment with:', { patientId, doctorId, selectedDate, selectedTime });
 
     if (!patientId || !doctorId || !selectedDate || !selectedTime) {
       const missingFields = [];
@@ -141,7 +141,7 @@ export default function BookAppointmentModal({ isOpen, onClose, patientId: initi
         status: 'scheduled'
       };
 
-      console.log('Sending appointment data:', appointmentData);
+      // console.log('Sending appointment data:', appointmentData);
 
       await api.post('/api/appointments', appointmentData);
 
@@ -205,7 +205,7 @@ export default function BookAppointmentModal({ isOpen, onClose, patientId: initi
 
   const sendWhatsAppNotification = () => {
     if (!patientPhone) {
-      console.log('No patient phone number available for WhatsApp notification');
+      // console.log('No patient phone number available for WhatsApp notification');
       return;
     }
 

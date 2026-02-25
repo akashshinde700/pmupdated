@@ -63,7 +63,7 @@ export default function EditAppointmentModal({ isOpen, onClose, appointment, onS
         doctor_id: parseInt(selectedDoctorId, 10)
       };
 
-      console.log('Updating appointment:', appointment.id, updateData);
+      // console.log('Updating appointment:', appointment.id, updateData);
 
       await api.put(`/api/appointments/${appointment.id}`, updateData);
 

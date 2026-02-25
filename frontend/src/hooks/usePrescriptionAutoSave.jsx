@@ -48,7 +48,7 @@ export default function usePrescriptionAutoSave({
       await api.post('/api/prescriptions/draft', draftData);
 
       lastSavedRef.current = new Date();
-      console.log('Draft auto-saved at', lastSavedRef.current.toLocaleTimeString());
+      // console.log('Draft auto-saved at', lastSavedRef.current.toLocaleTimeString());
 
       // Silent save - no toast notification to avoid annoying user
       // showToast('Draft saved', 'success');
@@ -78,7 +78,7 @@ export default function usePrescriptionAutoSave({
       const response = await api.get('/api/prescriptions/draft', { params });
 
       if (response.data?.draft) {
-        console.log('Draft loaded:', response.data.draft);
+        // console.log('Draft loaded:', response.data.draft);
         showToast('Previous draft loaded', 'info');
         return response.data.draft;
       }
@@ -98,7 +98,7 @@ export default function usePrescriptionAutoSave({
 
     try {
       await api.delete(`/api/prescriptions/draft/${draftId}`);
-      console.log('Draft cleared');
+      // console.log('Draft cleared');
     } catch (error) {
       console.error('Failed to clear draft:', error);
     }

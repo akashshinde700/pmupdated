@@ -36,7 +36,7 @@ export default function EnhancedHeaderBar({ title, onToggleSidebar }) {
     e.preventDefault();
     if (searchQuery.trim()) {
       // Implement global search functionality
-      console.log('Searching for:', searchQuery);
+      // console.log('Searching for:', searchQuery);
       // Navigate to search results page
       window.location.href = `/search?q=${encodeURIComponent(searchQuery)}`;
     }

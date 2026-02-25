@@ -83,7 +83,7 @@ exports.searchPatients = async (req, res) => {
 // Register new patient and add to queue
 exports.registerNewPatientAndQueue = async (req, res) => {
   try {
-    console.log('registerNewPatientAndQueue payload:', req.body);
+    // console.log('registerNewPatientAndQueue payload:', req.body);
     const db = getDb();
     const {
       name,
@@ -136,7 +136,7 @@ exports.registerNewPatientAndQueue = async (req, res) => {
       // Debug: fetch and log the inserted patient row to verify age_years saved
       try {
         const [created] = await db.execute('SELECT * FROM patients WHERE id = ?', [patientId]);
-        console.log('Inserted patient row:', created[0]);
+        // console.log('Inserted patient row:', created[0]);
       } catch (logErr) {
         console.error('Failed to fetch inserted patient for debug:', logErr.message);
       }

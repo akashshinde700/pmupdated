@@ -4,7 +4,7 @@ import { useToast } from '../hooks/useToast';
 import { useAuth } from '../context/AuthContext';
 
 export default function AddPatientModal({ isOpen, onClose, onSuccess }) {
-  console.log('AddPatientModal isOpen:', isOpen);
+  // console.log('AddPatientModal isOpen:', isOpen);
   const api = useApiClient();
   const { addToast } = useToast();
   const { user } = useAuth(); // Get logged-in user
@@ -116,7 +116,7 @@ export default function AddPatientModal({ isOpen, onClose, onSuccess }) {
           priority: 0
         });
 
-        console.log('Queue response:', queueResponse.data);
+        // console.log('Queue response:', queueResponse.data);
         addToast(`Patient added! Token #${queueResponse.data.token_number || 'N/A'} - Queued for treatment`, 'success');
       } catch (aptError) {
         console.error('Appointment/Queue creation failed:', aptError);

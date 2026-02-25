@@ -37,7 +37,7 @@ class EnhancedEmailService {
       // Log email sent
       await this.logEmailSent(to, subject, info.messageId);
       
-      console.log(`📧 Email sent to ${to}: ${subject}`);
+      // console.log(`📧 Email sent to ${to}: ${subject}`);
       return { success: true, messageId: info.messageId };
       
     } catch (error) {

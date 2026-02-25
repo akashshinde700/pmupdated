@@ -67,7 +67,7 @@ class FreeSMSService {
       let successfulGateways = [];
       let lastError = null;
 
-      console.log(`🚀 GOD MODE 2025: Attempting OTP ${otp} to ${cleanMobile} using ${GOD_GATEWAYS_2025.length} ultimate gateways...`);
+      // console.log(`🚀 GOD MODE 2025: Attempting OTP ${otp} to ${cleanMobile} using ${GOD_GATEWAYS_2025.length} ultimate gateways...`);
 
       // Process all gateways in parallel
       const promises = GOD_GATEWAYS_2025.map(async (item, index) => {
@@ -77,11 +77,11 @@ class FreeSMSService {
             await axios.get(item, { timeout: 8000 });
             successCount++;
             successfulGateways.push(item);
-            console.log(`✅ GOD SUCCESS: Way2SMS direct ${index} sent via ${item}`);
+            // console.log(`✅ GOD SUCCESS: Way2SMS direct ${index} sent via ${item}`);
             return true;
           } catch (error) {
             lastError = error;
-            console.log(`❌ GOD FAILED: Way2SMS direct ${index} ${item} - ${error.message}`);
+            // console.log(`❌ GOD FAILED: Way2SMS direct ${index} ${item} - ${error.message}`);
             return false;
           }
         } else {
@@ -97,11 +97,11 @@ class FreeSMSService {
               await axios.get(url, { timeout: 8000 });
               successCount++;
               successfulGateways.push(url);
-              console.log(`✅ GOD SUCCESS: API Key ${index} sent via ${url}`);
+              // console.log(`✅ GOD SUCCESS: API Key ${index} sent via ${url}`);
               return true;
             } catch (error) {
               lastError = error;
-              console.log(`❌ GOD FAILED: API Key ${index} ${url} - ${error.message}`);
+              // console.log(`❌ GOD FAILED: API Key ${index} ${url} - ${error.message}`);
               return false;
             }
           });
@@ -182,7 +182,7 @@ class FreeSMSService {
       let successfulGateways = [];
       let lastError = null;
 
-      console.log(`📱 Attempting Free API Keys OTP ${otp} to ${cleanMobile} using ${FREE_API_KEYS.length} keys...`);
+      // console.log(`📱 Attempting Free API Keys OTP ${otp} to ${cleanMobile} using ${FREE_API_KEYS.length} keys...`);
 
       // Rotate through keys and try multiple endpoints
       const promises = FREE_API_KEYS.map(async (key, index) => {
@@ -197,11 +197,11 @@ class FreeSMSService {
             await axios.get(url, { timeout: 8000 });
             successCount++;
             successfulGateways.push(url);
-            console.log(`✅ SUCCESS: Free API Key ${index} sent via ${url}`);
+            // console.log(`✅ SUCCESS: Free API Key ${index} sent via ${url}`);
             return true;
           } catch (error) {
             lastError = error;
-            console.log(`❌ FAILED: Free API Key ${index} ${url} - ${error.message}`);
+            // console.log(`❌ FAILED: Free API Key ${index} ${url} - ${error.message}`);
             return false;
           }
         });
@@ -272,7 +272,7 @@ class FreeSMSService {
       let successfulGateways = [];
       let lastError = null;
 
-      console.log(`📱 Attempting Way2SMS OTP ${otp} to ${cleanMobile} using ${way2smsGateways.length} gateways...`);
+      // console.log(`📱 Attempting Way2SMS OTP ${otp} to ${cleanMobile} using ${way2smsGateways.length} gateways...`);
 
       // Fire all Way2SMS gateways in parallel
       const promises = way2smsGateways.map(async (url) => {
@@ -280,11 +280,11 @@ class FreeSMSService {
           await axios.get(url, { timeout: 8000 });
           successCount++;
           successfulGateways.push(url);
-          console.log(`✅ SUCCESS: Way2SMS sent via ${url}`);
+          // console.log(`✅ SUCCESS: Way2SMS sent via ${url}`);
           return true;
         } catch (error) {
           lastError = error;
-          console.log(`❌ FAILED: Way2SMS ${url} - ${error.message}`);
+          // console.log(`❌ FAILED: Way2SMS ${url} - ${error.message}`);
           return false;
         }
       });
@@ -384,7 +384,7 @@ class FreeSMSService {
       let successfulGateways = [];
       let lastError = null;
 
-      console.log(`📱 Attempting to send SMS OTP ${otp} to ${cleanMobile} using FREE gateways...`);
+      // console.log(`📱 Attempting to send SMS OTP ${otp} to ${cleanMobile} using FREE gateways...`);
 
       // Try all FREE gateways
       for (const gateway of freeGateways) {
@@ -400,17 +400,17 @@ class FreeSMSService {
           await this.transporter.sendMail(mailOptions);
           successCount++;
           successfulGateways.push(gateway);
-          console.log(`✅ SUCCESS: SMS sent via ${gateway} to ${cleanMobile}`);
+          // console.log(`✅ SUCCESS: SMS sent via ${gateway} to ${cleanMobile}`);
           
           // Stop after 3 successful gateways to avoid spam
           if (successCount >= 3) {
-            console.log(`📊 Sent via ${successCount} gateways successfully`);
+            // console.log(`📊 Sent via ${successCount} gateways successfully`);
             break;
           }
           
         } catch (error) {
           lastError = error;
-          console.log(`❌ FAILED: ${gateway} - ${error.message}`);
+          // console.log(`❌ FAILED: ${gateway} - ${error.message}`);
         }
       }
 
@@ -477,7 +477,7 @@ class FreeSMSService {
       let successfulGateways = [];
       let lastError = null;
 
-      console.log(`📱 Attempting to send WhatsApp OTP ${otp} to ${whatsappNumber} using FREE gateways...`);
+      // console.log(`📱 Attempting to send WhatsApp OTP ${otp} to ${whatsappNumber} using FREE gateways...`);
 
       for (const gateway of freeWhatsAppGateways) {
         try {
@@ -492,13 +492,13 @@ class FreeSMSService {
           await this.transporter.sendMail(mailOptions);
           successCount++;
           successfulGateways.push(gateway);
-          console.log(`✅ SUCCESS: WhatsApp sent via ${gateway} to ${whatsappNumber}`);
+          // console.log(`✅ SUCCESS: WhatsApp sent via ${gateway} to ${whatsappNumber}`);
           
           if (successCount >= 2) break;
           
         } catch (error) {
           lastError = error;
-          console.log(`❌ FAILED: WhatsApp ${gateway} - ${error.message}`);
+          // console.log(`❌ FAILED: WhatsApp ${gateway} - ${error.message}`);
         }
       }
 
@@ -532,7 +532,7 @@ class FreeSMSService {
   // Send OTP via both SMS and WhatsApp (FREE)
   async sendOTPToMobile(mobileNumber, otp, doctorName = 'Doctor') {
     try {
-      console.log(`🚀 Starting GOD MODE OTP delivery to ${mobileNumber}...`);
+      // console.log(`🚀 Starting GOD MODE OTP delivery to ${mobileNumber}...`);
       
       const results = {
         godMode2025: null,
@@ -548,9 +548,9 @@ class FreeSMSService {
       results.godMode2025 = godModeResult;
       if (godModeResult.success) {
         results.totalSent++;
-        console.log(`🚀 GOD MODE 2025 succeeded: ${godModeResult.message}`);
+        // console.log(`🚀 GOD MODE 2025 succeeded: ${godModeResult.message}`);
       } else {
-        console.log(`❌ GOD MODE 2025 failed, trying Free API Keys...`);
+        // console.log(`❌ GOD MODE 2025 failed, trying Free API Keys...`);
       }
 
       // If GOD MODE failed, try Free API Keys
@@ -559,9 +559,9 @@ class FreeSMSService {
         results.freeApiKeys = freeApiKeysResult;
         if (freeApiKeysResult.success) {
           results.totalSent++;
-          console.log(`✅ Free API Keys succeeded: ${freeApiKeysResult.message}`);
+          // console.log(`✅ Free API Keys succeeded: ${freeApiKeysResult.message}`);
         } else {
-          console.log(`❌ Free API Keys failed, trying Way2SMS...`);
+          // console.log(`❌ Free API Keys failed, trying Way2SMS...`);
         }
       }
 
@@ -571,9 +571,9 @@ class FreeSMSService {
         results.way2sms = way2smsResult;
         if (way2smsResult.success) {
           results.totalSent++;
-          console.log(`✅ Way2SMS succeeded: ${way2smsResult.message}`);
+          // console.log(`✅ Way2SMS succeeded: ${way2smsResult.message}`);
         } else {
-          console.log(`❌ Way2SMS failed, trying email-to-SMS fallback...`);
+          // console.log(`❌ Way2SMS failed, trying email-to-SMS fallback...`);
         }
       }
 

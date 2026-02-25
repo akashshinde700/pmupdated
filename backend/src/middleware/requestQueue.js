@@ -21,10 +21,10 @@ let redisClient;
 try {
   redisClient = new Redis(redisConfig);
   redisClient.on('error', () => {
-    console.log('⚠️ Redis not available for queues, using memory-only mode');
+    // console.log('⚠️ Redis not available for queues, using memory-only mode');
   });
 } catch (error) {
-  console.log('⚠️ Failed to initialize Redis for queues:', error.message);
+  // console.log('⚠️ Failed to initialize Redis for queues:', error.message);
 }
 
 // Create queues - use memory-only if Redis is not available
@@ -216,7 +216,7 @@ if (process.env.ENABLE_REQUEST_QUEUE === 'true' && redisClient) {
   // Queue event listeners
   Object.values(queues).forEach(queue => {
     queue.on('completed', (job, result) => {
-      console.log(`✅ Queue job completed: ${job.id}`);
+      // console.log(`✅ Queue job completed: ${job.id}`);
     });
     
     queue.on('failed', (job, err) => {

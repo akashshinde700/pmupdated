@@ -7,10 +7,10 @@ const { getDb } = require('../config/db');
 async function getDiagnosesBySymptoms(req, res) {
   try {
     const { symptoms } = req.query;
-    console.log('🔍 Diagnosis suggestion request - symptoms:', symptoms);
+    // console.log('🔍 Diagnosis suggestion request - symptoms:', symptoms);
     
     if (!symptoms) {
-      console.log('❌ No symptoms provided');
+      // console.log('❌ No symptoms provided');
       return res.status(400).json({ success: false, error: 'Symptoms parameter required' });
     }
 
@@ -63,7 +63,7 @@ async function getDiagnosesBySymptoms(req, res) {
       }
     }
 
-    console.log(`✅ Diagnosis suggestion results: ${results.length} items`);
+    // console.log(`✅ Diagnosis suggestion results: ${results.length} items`);
     res.json({ success: true, data: results });
   } catch (error) {
     console.error('❌ Error in getDiagnosesBySymptoms:', error);

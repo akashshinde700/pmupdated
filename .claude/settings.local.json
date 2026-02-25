@@ -11,7 +11,18 @@
       "Bash(npm install:*)",
       "Bash(node:*)",
       "Bash(sshpass -p 'LASTrivon@8055' scp -o StrictHostKeyChecking=no -r \"c:/Users/ACER/Desktop/pm/pmupdated/frontend/dist\"/* root@72.60.206.56:/var/www/patient_management/frontend/dist/)",
-      "Bash(scp:*)"
+      "Bash(scp:*)",
+      "Bash(find:*)",
+      "Bash(powershell -Command \":*)",
+      "Bash(/tmp/replace_translations.py:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git remote set-url:*)",
+      "Bash(pip install:*)",
+      "Bash(pip --version:*)",
+      "Bash(PYTHONPATH=/tmp/paramiko_lib python:*)",
+      "Bash(PYTHONPATH=/tmp/paramiko_lib PYTHONIOENCODING=utf-8 python:*)"
     ]
   }
 }

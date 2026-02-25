@@ -37,7 +37,7 @@ function logEvent(eventType, data) {
     console.error('Failed to write WhatsApp log:', err);
   }
 
-  console.log(`[WhatsApp ${eventType}]`, data);
+  // console.log(`[WhatsApp ${eventType}]`, data);
 }
 
 /**

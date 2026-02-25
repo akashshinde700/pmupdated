@@ -209,7 +209,7 @@ const bookViaQR = async (req, res) => {
     if (existingPatient.length > 0) {
       patientDbId = existingPatient[0].id;
       patientUhid = existingPatient[0].patient_id;
-      console.log('Found existing patient:', patientDbId, patientUhid);
+      // console.log('Found existing patient:', patientDbId, patientUhid);
     } else {
       // Create new patient with auto-generated UHID
       let uhid;
@@ -226,7 +226,7 @@ const bookViaQR = async (req, res) => {
       );
       patientDbId = newPatient.insertId;
       patientUhid = uhid;
-      console.log('Created new patient:', patientDbId, patientUhid);
+      // console.log('Created new patient:', patientDbId, patientUhid);
     }
 
     // Determine appointment date and time
@@ -260,7 +260,7 @@ const bookViaQR = async (req, res) => {
       [patientDbId, doctorId, clinicId, appointmentId, tokenNumber]
     );
 
-    console.log(`QR Booking successful: Patient ${patientName} (${patientUhid}), Appointment #${appointmentId}, Token #${tokenNumber}`);
+    // console.log(`QR Booking successful: Patient ${patientName} (${patientUhid}), Appointment #${appointmentId}, Token #${tokenNumber}`);
 
     res.json({
       success: true,

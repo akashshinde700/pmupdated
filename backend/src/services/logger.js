@@ -63,7 +63,7 @@ class Logger {
   debug(message, data = {}) {
     if (this.currentLevel <= LOG_LEVELS.DEBUG) {
       const formatted = Logger.formatMessage('DEBUG', message, data);
-      console.log(formatted);
+      // console.log(formatted);
       Logger.writeToFile('app.log', formatted);
     }
   }
@@ -74,7 +74,7 @@ class Logger {
   info(message, data = {}) {
     if (this.currentLevel <= LOG_LEVELS.INFO) {
       const formatted = Logger.formatMessage('INFO', message, data);
-      console.log(formatted);
+      // console.log(formatted);
       Logger.writeToFile('app.log', formatted);
     }
   }
@@ -127,7 +127,7 @@ class Logger {
       // Send critical alerts via email or webhooks if configured
       if (process.env.CRITICAL_ALERT_EMAIL) {
         // TODO: Implement email notification
-        console.log('CRITICAL: Email notification not yet implemented');
+        // console.log('CRITICAL: Email notification not yet implemented');
       }
     }
   }

@@ -172,7 +172,7 @@ export default function Receipts() {
   const fetchUnbilledVisits = useCallback(async () => {
     try {
       const res = await api.get('/api/bills/unbilled-visits');
-      console.log('Unbilled visits fetched:', res.data);
+      // console.log('Unbilled visits fetched:', res.data);
       setUnbilledVisits(res.data?.unbilledVisits || []);
     } catch (error) {
       console.error('Failed to fetch unbilled visits:', error);
@@ -252,11 +252,11 @@ export default function Receipts() {
     const edit = searchParams.get('edit');
     const billId = searchParams.get('billId');
 
-    console.log('Receipt URL Params:', { quick, full, patientId, amount, receiptId, edit, billId });
+    // console.log('Receipt URL Params:', { quick, full, patientId, amount, receiptId, edit, billId });
 
     // Handle edit mode
     if (edit === 'true' && billId) {
-      console.log('Opening edit modal for bill:', billId);
+      // console.log('Opening edit modal for bill:', billId);
       // ALWAYS fetch the full bill detail for editing to ensure service_items are loaded
       const fetchBillForEdit = async () => {
         try {
@@ -298,7 +298,7 @@ export default function Receipts() {
     // Only show create modal if we have valid quick/full parameters with patient
     if (((quick || full) && patientId) && !receiptId && !edit) {
       const parsedAmount = parseFloat(amount) || 0;
-      console.log('Opening create modal for patient:', patientId);
+      // console.log('Opening create modal for patient:', patientId);
 
       setReceiptForm(prev => ({
         ...prev,
@@ -320,7 +320,7 @@ export default function Receipts() {
     
     // Show specific receipt if receiptId is provided
     if (receiptId) {
-      console.log('Loading specific receipt:', receiptId);
+      // console.log('Loading specific receipt:', receiptId);
       // Find and show the specific receipt
       const receipt = receipts.find(r => r.id === parseInt(receiptId));
       if (receipt) {
@@ -405,7 +405,7 @@ export default function Receipts() {
         notes: selectedTemplate.footer_content || '',
         remarks: selectedTemplate.header_content || ''
       });
-      console.log('Template selected:', selectedTemplate.template_name);
+      // console.log('Template selected:', selectedTemplate.template_name);
     } else {
       // Clear template
       setReceiptForm({
@@ -548,8 +548,8 @@ export default function Receipts() {
         }))
       };
 
-      console.log('🔍 DEBUG: Services being sent:', receiptData.service_items);
-      console.log('🔍 DEBUG: Original services form:', receiptForm.services);
+      // console.log('🔍 DEBUG: Services being sent:', receiptData.service_items);
+      // console.log('🔍 DEBUG: Original services form:', receiptForm.services);
 
       const res = await api.post('/api/bills', receiptData);
 
@@ -564,19 +564,19 @@ export default function Receipts() {
         ...receiptData // Merge with our form data as fallback
       };
 
-      console.log('🔍 DEBUG: Backend response:', res.data);
-      console.log('🔍 DEBUG: Backend bill data:', res.data.bill);
-      console.log('🔍 DEBUG: Service items from backend:', res.data.bill?.service_items);
-      console.log('🔍 DEBUG: receiptWithTemplate after merge:', receiptWithTemplate);
-      console.log('🔍 DEBUG: Final service_items:', receiptWithTemplate.service_items);
-      console.log('🔍 DEBUG: Total amount:', receiptWithTemplate.total_amount);
+      // console.log('🔍 DEBUG: Backend response:', res.data);
+      // console.log('🔍 DEBUG: Backend bill data:', res.data.bill);
+      // console.log('🔍 DEBUG: Service items from backend:', res.data.bill?.service_items);
+      // console.log('🔍 DEBUG: receiptWithTemplate after merge:', receiptWithTemplate);
+      // console.log('🔍 DEBUG: Final service_items:', receiptWithTemplate.service_items);
+      // console.log('🔍 DEBUG: Total amount:', receiptWithTemplate.total_amount);
 
-      console.log('🔍 DEBUG: receiptData.template_id =', receiptData.template_id);
-      console.log('🔍 DEBUG: receiptTemplates array =', receiptTemplates);
+      // console.log('🔍 DEBUG: receiptData.template_id =', receiptData.template_id);
+      // console.log('🔍 DEBUG: receiptTemplates array =', receiptTemplates);
 
       if (receiptData.template_id) {
         const selectedTemplate = receiptTemplates.find(t => t.id === parseInt(receiptData.template_id));
-        console.log('🔍 DEBUG: selectedTemplate found =', selectedTemplate);
+        // console.log('🔍 DEBUG: selectedTemplate found =', selectedTemplate);
 
         if (selectedTemplate) {
           receiptWithTemplate = {
@@ -586,7 +586,7 @@ export default function Receipts() {
             template_footer_image: selectedTemplate.footer_image,
             template_footer_content: selectedTemplate.footer_content
           };
-          console.log('🔍 DEBUG: receiptWithTemplate after merge =', receiptWithTemplate);
+          // console.log('🔍 DEBUG: receiptWithTemplate after merge =', receiptWithTemplate);
         } else {
           console.warn('⚠️ Template not found! template_id:', receiptData.template_id, 'Available templates:', receiptTemplates.map(t => t.id));
         }
@@ -596,9 +596,9 @@ export default function Receipts() {
       setShowCreateModal(false);
       setShowSuccessModal(true);
       
-      console.log('🔍 DEBUG: Receipt saved successfully:', receiptWithTemplate);
-      console.log('🔍 DEBUG: Service items in receipt:', receiptWithTemplate.service_items);
-      console.log('🔍 DEBUG: Services in receipt:', receiptWithTemplate.services);
+      // console.log('🔍 DEBUG: Receipt saved successfully:', receiptWithTemplate);
+      // console.log('🔍 DEBUG: Service items in receipt:', receiptWithTemplate.service_items);
+      // console.log('🔍 DEBUG: Services in receipt:', receiptWithTemplate.services);
       
       fetchReceipts();
       resetForm();

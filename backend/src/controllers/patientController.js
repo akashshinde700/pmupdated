@@ -5,12 +5,12 @@ const { generateUHID } = require('../utils/uhidHelper');
 
 async function listPatients(req, res) {
   try {
-    console.log('🔍 listPatients called with query:', req.query);
+    // console.log('🔍 listPatients called with query:', req.query);
     const { page = 1, limit = 10, search, gender, blood_group, city, state, tab = 0, doctor_id } = req.query;
     const limitNum = Math.min(parseInt(limit, 10) || 10, 100); // Cap at 100
     const offset = (parseInt(page, 10) - 1) * limitNum;
     const db = getDb();
-    console.log('🔍 Database connection obtained');
+    // console.log('🔍 Database connection obtained');
 
     // Build WHERE clause
     let whereClause = 'WHERE 1=1';
@@ -18,7 +18,7 @@ async function listPatients(req, res) {
 
     // If doctor is logged in, filter by primary_doctor_id (most accurate)
     if (req.user && req.user.role === 'doctor') {
-      console.log('🔍 Doctor user found:', { user_id: req.user.id, doctor_id: req.user.doctor_id, clinic_id: req.user.clinic_id });
+      // console.log('🔍 Doctor user found:', { user_id: req.user.id, doctor_id: req.user.doctor_id, clinic_id: req.user.clinic_id });
 
       let doctorId = req.user.doctor_id;
 
@@ -27,7 +27,7 @@ async function listPatients(req, res) {
         const [doctors] = await db.execute('SELECT id FROM doctors WHERE user_id = ?', [req.user.id]);
         if (doctors.length > 0) {
           doctorId = doctors[0].id;
-          console.log('🔍 Found doctor_id from doctors table:', doctorId);
+          // console.log('🔍 Found doctor_id from doctors table:', doctorId);
         }
       }
 
@@ -40,7 +40,7 @@ async function listPatients(req, res) {
       }
     } else {
       // For public access (no authentication), show all patients or filter by clinic_id if provided
-      console.log('🔍 Public access - showing all patients');
+      // console.log('🔍 Public access - showing all patients');
     }
 
     // Add manual doctor_id filter if provided
@@ -72,9 +72,9 @@ async function listPatients(req, res) {
       params.push(`%${city}%`);
     }
 
-    console.log('🔍 Final parameters:', params);
-    console.log('🔍 Limit:', parseInt(limit, 10) || 10);
-    console.log('🔍 Offset:', parseInt(offset, 10) || 0);
+    // console.log('🔍 Final parameters:', params);
+    // console.log('🔍 Limit:', parseInt(limit, 10) || 10);
+    // console.log('🔍 Offset:', parseInt(offset, 10) || 0);
     
     // Main query - trimmed fields for list view
     const [patients] = await db.execute(`
@@ -99,7 +99,7 @@ async function listPatients(req, res) {
       LIMIT ${limitNum} OFFSET ${offset}
     `, params);
 
-    console.log('🔍 Query successful, results:', patients.length);
+    // console.log('🔍 Query successful, results:', patients.length);
     
     // Count query - simplified without JOIN
     const [countResult] = await db.execute(`
@@ -107,7 +107,7 @@ async function listPatients(req, res) {
     `, params);
     const total = countResult[0]?.total || 0;
     
-    console.log('🔍 Sending response');
+    // console.log('🔍 Sending response');
     return sendSuccess(res, {
       patients: patients,
       pagination: {
@@ -154,7 +154,7 @@ async function getPatient(req, res) {
     }
 
     // Debug: log the patient record returned to help diagnose missing age_years
-    try { console.log('getPatient returning:', rows[0]); } catch (e) { /* ignore logging errors */ }
+    // try { console.log('getPatient returning:', rows[0]); } catch (e) { /* ignore logging errors */ }
 
     res.json(rows[0]);
   } catch (error) {
@@ -164,9 +164,9 @@ async function getPatient(req, res) {
 
 async function addPatient(req, res) {
   try {
-    console.log('🔍 Patient creation request received');
-    console.log('🔍 Request body:', JSON.stringify(req.body, null, 2));
-    console.log('🔍 User:', req.user);
+    // console.log('🔍 Patient creation request received');
+    // console.log('🔍 Request body:', JSON.stringify(req.body, null, 2));
+    // console.log('🔍 User:', req.user);
     
     const {
       patient_id,
@@ -215,25 +215,25 @@ async function addPatient(req, res) {
       'U': 'U'
     };
     const mappedGender = gender ? (genderMap[gender] || 'U') : 'U';
-    console.log('🔍 Original gender:', gender);
-    console.log('🔍 Mapped gender:', mappedGender);
+    // console.log('🔍 Original gender:', gender);
+    // console.log('🔍 Mapped gender:', mappedGender);
 
     const db = getDb();
 
     // Get clinic_id from request body, user context, or default to 2
     const patientClinicId = clinic_id || req.user?.clinic_id || 2;
-    console.log('🔍 Clinic ID:', patientClinicId);
+    // console.log('🔍 Clinic ID:', patientClinicId);
 
     // Set primary_doctor_id from logged-in doctor
     // If user is a doctor, look up their doctor_id from doctors table using user_id
     let primaryDoctorId = req.user?.doctor_id || null;
 
     if (!primaryDoctorId && req.user?.role === 'doctor' && req.user?.id) {
-      console.log('🔍 Looking up doctor_id for user_id:', req.user.id);
+      // console.log('🔍 Looking up doctor_id for user_id:', req.user.id);
       const [doctors] = await db.execute('SELECT id FROM doctors WHERE user_id = ?', [req.user.id]);
       if (doctors.length > 0) {
         primaryDoctorId = doctors[0].id;
-        console.log('🔍 Found doctor_id from doctors table:', primaryDoctorId);
+        // console.log('🔍 Found doctor_id from doctors table:', primaryDoctorId);
       }
     }
 
@@ -242,14 +242,14 @@ async function addPatient(req, res) {
       primaryDoctorId = req.body.doctor_id || req.body.primary_doctor_id || null;
     }
 
-    console.log('🔍 Final primary_doctor_id:', primaryDoctorId);
+    // console.log('🔍 Final primary_doctor_id:', primaryDoctorId);
 
     // Generate patient_id with doctor-based prefix: DRA1, DRB1, DRC1, etc.
     let generatedPatientId = patient_id;
     if (!generatedPatientId) {
       try {
         generatedPatientId = await generateUHID(db, primaryDoctorId);
-        console.log('Generated UHID:', generatedPatientId);
+        // console.log('Generated UHID:', generatedPatientId);
       } catch (uhidErr) {
         console.error('UHID generation error, falling back:', uhidErr.message);
         generatedPatientId = `DRA${Date.now()}`;
@@ -318,8 +318,8 @@ async function updatePatient(req, res) {
   try {
     const { id } = req.params;
     
-    console.log('🔍 Update patient request for ID:', id);
-    console.log('🔍 Request body:', req.body);
+    // console.log('🔍 Update patient request for ID:', id);
+    // console.log('🔍 Request body:', req.body);
     
     if (!id || id === 'undefined') {
       return res.status(400).json({ error: 'Valid Patient ID is required' });
@@ -345,8 +345,8 @@ async function updatePatient(req, res) {
       current_medications
     } = req.body;
 
-    console.log('🔍 Emergency contact name:', emergency_contact_name);
-    console.log('🔍 Emergency contact phone:', emergency_contact_phone);
+    // console.log('🔍 Emergency contact name:', emergency_contact_name);
+    // console.log('🔍 Emergency contact phone:', emergency_contact_phone);
 
     // Map gender to DB ENUM values (M, F, O, U)
     const genderMap = { 'Male': 'M', 'Female': 'F', 'Other': 'O', 'M': 'M', 'F': 'F', 'O': 'O', 'U': 'U' };
@@ -387,12 +387,12 @@ async function updatePatient(req, res) {
         whereValue
     ];
 
-    console.log('🔍 Update query:', query);
-    console.log('🔍 Query params:', queryParams);
+    // console.log('🔍 Update query:', query);
+    // console.log('🔍 Query params:', queryParams);
 
     const [result] = await db.execute(query, queryParams);
 
-    console.log('🔍 Update result:', result);
+    // console.log('🔍 Update result:', result);
 
     if (result.affectedRows === 0) {
       return res.status(404).json({ error: 'Patient not found' });

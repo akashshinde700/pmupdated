@@ -24,9 +24,9 @@ exports.getTodayQueue = async (req, res) => {
     const doctorId = req.user?.doctor_id || req.query.doctor_id;
     const db = getDb();
 
-    console.log('🔍 getTodayQueue called');
-    console.log('🔍 Doctor ID:', doctorId);
-    console.log('🔍 User:', req.user?.id ? `User ${req.user.id}` : 'Public access');
+    // console.log('🔍 getTodayQueue called');
+    // console.log('🔍 Doctor ID:', doctorId);
+    // console.log('🔍 User:', req.user?.id ? `User ${req.user.id}` : 'Public access');
 
     try {
       // Simple query to check if queue table exists and has data

@@ -2138,16 +2138,16 @@ export default function PrescriptionPad() {
       if (patient?.age) params.append('age', patient.age);
       if (patient?.weight) params.append('weight', patient.weight);
 
-      console.log('🔍 Fetching smart suggestions with params:', params.toString());
+      // console.log('🔍 Fetching smart suggestions with params:', params.toString());
       const res = await api.get(`/api/smart-prescription/suggestions?${params}`);
-      console.log('📊 Smart suggestions response:', res.data);
+      // console.log('📊 Smart suggestions response:', res.data);
       
       if (res.data?.success) {
-        console.log('✅ Smart suggestions data:', res.data.data);
+        // console.log('✅ Smart suggestions data:', res.data.data);
         setSmartSuggestions(res.data.data);
         setShowSmartSuggestions(true);
       } else {
-        console.log('❌ Smart suggestions failed:', res.data);
+        // console.log('❌ Smart suggestions failed:', res.data);
       }
     } catch (error) {
       console.error('Error fetching smart suggestions:', error);
@@ -2316,7 +2316,7 @@ export default function PrescriptionPad() {
             return;
           }
         } catch (err) {
-          console.log('User is not a doctor, trying fallback...');
+          // console.log('User is not a doctor, trying fallback...');
         }
       }
 
@@ -2475,7 +2475,7 @@ export default function PrescriptionPad() {
               ...Object.fromEntries(Object.entries(newVitals).filter(([_, v]) => v !== ''))
             }));
           }
-          console.log('Auto-filled vitals from records:', newVitals);
+          // console.log('Auto-filled vitals from records:', newVitals);
         }
       } catch (err) {
         console.error('Failed to fetch vitals:', err);
@@ -2667,7 +2667,7 @@ export default function PrescriptionPad() {
       if (appointmentData) {
         const { appointmentId } = JSON.parse(appointmentData);
         if (appointmentId) {
-          console.log('Loading appointment ID from sessionStorage:', appointmentId);
+          // console.log('Loading appointment ID from sessionStorage:', appointmentId);
           setMeta(prev => ({ ...prev, appointment_id: appointmentId }));
         }
       }
@@ -4265,7 +4265,7 @@ export default function PrescriptionPad() {
   // ========================================
   const handleSpecialtyDataChange = (data) => {
     setSpecialtyData(data);
-    console.log('Specialty data updated:', data);
+    // console.log('Specialty data updated:', data);
   };
 
   // ========================================
@@ -4400,11 +4400,11 @@ export default function PrescriptionPad() {
         }
       };
 
-      console.log('Saving prescription:', requestBody);
+      // console.log('Saving prescription:', requestBody);
 
       const response = await api.post('/api/prescriptions', requestBody);
       
-      console.log('Prescription saved:', response.data);
+      // console.log('Prescription saved:', response.data);
       addToast('Prescription saved successfully', 'success');
 
       // Save vitals to patient's vitals record
@@ -4418,7 +4418,7 @@ export default function PrescriptionPad() {
             blood_pressure: vitals.blood_pressure || null,
             spo2: vitals.spo2 || null
           });
-          console.log('Vitals saved to patient record');
+          // console.log('Vitals saved to patient record');
         }
       } catch (vitalErr) {
         console.warn('Could not save vitals to patient record:', vitalErr);
@@ -4443,7 +4443,7 @@ export default function PrescriptionPad() {
               });
             }
           }
-          console.log('Lab results synced to patient overview:', labResultEntries.length);
+          // console.log('Lab results synced to patient overview:', labResultEntries.length);
           // Trigger refresh in PatientOverview by emitting a custom event
           window.dispatchEvent(new CustomEvent('patientDataRefresh', { detail: { patientId: parsedPatientId } }));
         }

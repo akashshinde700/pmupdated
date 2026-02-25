@@ -938,7 +938,7 @@ export const SplitViewLayout = ({
  * Call this in PrescriptionPad.jsx useEffect or during component init
  */
 export const initializePrescriptionEnhancements = () => {
-  console.log('✅ All PrescriptionPad enhancements initialized');
+  // console.log('✅ All PrescriptionPad enhancements initialized');
   return {
     smartCombos: true,
     recentlyUsed: true,
