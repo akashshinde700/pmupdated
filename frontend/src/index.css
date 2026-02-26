@@ -335,3 +335,215 @@ html.dark-mode [role="listbox"] {
   background-color: #1e293b !important;
   border-color: #334155 !important;
 }
+
+/* ============================================
+ * QUEUE PAGE - DARK MODE IMPROVEMENTS
+ * ============================================ */
+
+/* Status row backgrounds in dark mode */
+html.dark-mode .border-l-emerald-500.bg-emerald-50\/40,
+html.dark-mode [class*="border-l-emerald"] {
+  background-color: rgba(16, 185, 129, 0.08) !important;
+}
+html.dark-mode .border-l-amber-500.bg-amber-50\/40,
+html.dark-mode [class*="border-l-amber"] {
+  background-color: rgba(245, 158, 11, 0.08) !important;
+}
+html.dark-mode .border-l-red-400.bg-red-50\/30,
+html.dark-mode [class*="border-l-red"] {
+  background-color: rgba(239, 68, 68, 0.06) !important;
+}
+html.dark-mode .border-l-blue-500 {
+  background-color: transparent !important;
+}
+
+/* Summary card top borders - keep them colored in dark mode */
+html.dark-mode .border-t-blue-500  { border-top-color: #3b82f6 !important; }
+html.dark-mode .border-t-orange-500 { border-top-color: #f97316 !important; }
+html.dark-mode .border-t-emerald-500 { border-top-color: #10b981 !important; }
+html.dark-mode .border-t-purple-500 { border-top-color: #a855f7 !important; }
+
+/* Queue rounded-2xl containers */
+html.dark-mode .rounded-2xl {
+  background-color: #1e293b !important;
+  border-color: #334155 !important;
+}
+
+/* Status badge colors - keep readable in dark mode */
+html.dark-mode .bg-blue-100    { background-color: rgba(59, 130, 246, 0.15) !important; }
+html.dark-mode .bg-green-100   { background-color: rgba(16, 185, 129, 0.15) !important; }
+html.dark-mode .bg-yellow-100  { background-color: rgba(245, 158, 11, 0.15) !important; }
+html.dark-mode .bg-red-100     { background-color: rgba(239, 68, 68, 0.15) !important; }
+html.dark-mode .bg-emerald-100 { background-color: rgba(16, 185, 129, 0.15) !important; }
+html.dark-mode .bg-orange-100  { background-color: rgba(249, 115, 22, 0.15) !important; }
+html.dark-mode .bg-purple-100  { background-color: rgba(168, 85, 247, 0.15) !important; }
+
+/* Text colors for status badges */
+html.dark-mode .text-blue-800  { color: #93c5fd !important; }
+html.dark-mode .text-green-800 { color: #6ee7b7 !important; }
+html.dark-mode .text-yellow-800 { color: #fde68a !important; }
+html.dark-mode .text-red-800   { color: #fca5a5 !important; }
+html.dark-mode .text-emerald-800 { color: #6ee7b7 !important; }
+html.dark-mode .text-orange-700 { color: #fdba74 !important; }
+html.dark-mode .text-purple-800 { color: #d8b4fe !important; }
+
+/* Sidebar gradient — keep it as-is (already dark) */
+/* Table header gradient — darken */
+html.dark-mode .from-slate-50.to-slate-100 {
+  background: linear-gradient(to right, #1e293b, #334155) !important;
+}
+
+/* Divide lines in table */
+html.dark-mode .divide-y > * + * {
+  border-top-color: #334155 !important;
+}
+
+/* Lab Results section in dark mode */
+html.dark-mode .bg-slate-50.text-xs.font-semibold {
+  background-color: #1e293b !important;
+}
+
+/* Compact view card borders */
+html.dark-mode .border-green-200 { border-color: rgba(16, 185, 129, 0.3) !important; }
+html.dark-mode .border-red-200   { border-color: rgba(239, 68, 68, 0.3)  !important; }
+
+/* ============================================
+ * ALL DASHBOARDS - DARK MODE IMPROVEMENTS
+ * ============================================ */
+
+/* ── Light gradient card headers (blue, emerald, amber, indigo, teal) ── */
+html.dark-mode .from-blue-50,
+html.dark-mode .from-blue-50.to-indigo-50 {
+  background: linear-gradient(to right, #1a2744, #1e253e) !important;
+}
+html.dark-mode .from-emerald-50,
+html.dark-mode .from-emerald-50.to-teal-50 {
+  background: linear-gradient(to right, #0f2d23, #0d2a28) !important;
+}
+html.dark-mode .from-amber-50,
+html.dark-mode .from-amber-50.to-yellow-50 {
+  background: linear-gradient(to right, #2a1e0a, #221d10) !important;
+}
+html.dark-mode .from-violet-50,
+html.dark-mode .from-purple-50 {
+  background: linear-gradient(to right, #1e1533, #1a1230) !important;
+}
+html.dark-mode .from-red-50,
+html.dark-mode .from-rose-50 {
+  background: linear-gradient(to right, #2a1010, #271212) !important;
+}
+html.dark-mode .from-slate-50.to-slate-100,
+html.dark-mode .from-slate-50 {
+  background: linear-gradient(to right, #1e293b, #273348) !important;
+}
+html.dark-mode .from-indigo-50 {
+  background: linear-gradient(to right, #1a1e3e, #18223a) !important;
+}
+
+/* ── Light tinted patient / appointment cards ── */
+html.dark-mode .bg-blue-50\/30,
+html.dark-mode [class*="bg-blue-50"] {
+  background-color: rgba(59, 130, 246, 0.07) !important;
+}
+html.dark-mode .bg-amber-50\/40,
+html.dark-mode [class*="bg-amber-50"] {
+  background-color: rgba(245, 158, 11, 0.07) !important;
+}
+html.dark-mode .bg-emerald-50\/40,
+html.dark-mode [class*="bg-emerald-50"] {
+  background-color: rgba(16, 185, 129, 0.07) !important;
+}
+html.dark-mode .bg-indigo-50,
+html.dark-mode [class*="bg-indigo-50"] {
+  background-color: rgba(99, 102, 241, 0.07) !important;
+}
+html.dark-mode .bg-violet-50,
+html.dark-mode [class*="bg-violet-50"] {
+  background-color: rgba(139, 92, 246, 0.07) !important;
+}
+html.dark-mode .bg-red-50\/30,
+html.dark-mode [class*="bg-red-50"] {
+  background-color: rgba(239, 68, 68, 0.07) !important;
+}
+html.dark-mode .bg-teal-50 {
+  background-color: rgba(20, 184, 166, 0.07) !important;
+}
+
+/* ── Hover states on cards (patient rows) ── */
+html.dark-mode .hover\:bg-blue-50\/30:hover  { background-color: rgba(59,130,246,0.10) !important; }
+html.dark-mode .hover\:bg-amber-50\/70:hover { background-color: rgba(245,158,11,0.10) !important; }
+html.dark-mode .hover\:bg-emerald-50\/40:hover { background-color: rgba(16,185,129,0.10) !important; }
+html.dark-mode .hover\:bg-emerald-50\/70:hover { background-color: rgba(16,185,129,0.12) !important; }
+
+/* ── Border accents on cards ── */
+html.dark-mode .border-blue-200   { border-color: rgba(59,130,246,0.3)   !important; }
+html.dark-mode .border-amber-200  { border-color: rgba(245,158,11,0.3)   !important; }
+html.dark-mode .border-violet-200 { border-color: rgba(139,92,246,0.3)   !important; }
+html.dark-mode .border-gray-100   { border-color: #334155 !important; }
+html.dark-mode .border-blue-50    { border-color: rgba(59,130,246,0.15)  !important; }
+html.dark-mode .border-emerald-50 { border-color: rgba(16,185,129,0.15)  !important; }
+
+/* ── StatCard icon backgrounds ── */
+html.dark-mode .bg-blue-100   { background-color: rgba(59,130,246,0.15)  !important; }
+html.dark-mode .bg-amber-100  { background-color: rgba(245,158,11,0.15)  !important; }
+html.dark-mode .bg-emerald-100{ background-color: rgba(16,185,129,0.15)  !important; }
+html.dark-mode .bg-violet-100 { background-color: rgba(139,92,246,0.15)  !important; }
+html.dark-mode .bg-orange-100 { background-color: rgba(249,115,22,0.15)  !important; }
+
+/* ── StatCard value text colors ── */
+html.dark-mode .text-blue-700   { color: #93c5fd !important; }
+html.dark-mode .text-blue-600   { color: #60a5fa !important; }
+html.dark-mode .text-amber-700  { color: #fcd34d !important; }
+html.dark-mode .text-amber-600  { color: #fbbf24 !important; }
+html.dark-mode .text-emerald-700{ color: #6ee7b7 !important; }
+html.dark-mode .text-emerald-600{ color: #34d399 !important; }
+html.dark-mode .text-violet-700 { color: #c4b5fd !important; }
+html.dark-mode .text-violet-600 { color: #a78bfa !important; }
+
+/* ── Page-level backgrounds ── */
+html.dark-mode .bg-gray-50.min-h-screen { background-color: #0f172a !important; }
+
+/* ── Loading spinner background ── */
+html.dark-mode .flex.items-center.justify-center.min-h-screen {
+  background-color: #0f172a !important;
+}
+
+/* ── Modal / dialog dark mode ── */
+html.dark-mode .bg-white.rounded-2xl,
+html.dark-mode .bg-white.rounded-xl {
+  background-color: #1e293b !important;
+  border-color: #334155 !important;
+}
+
+/* ── Table striping in dashboards ── */
+html.dark-mode tbody tr:nth-child(even) {
+  background-color: rgba(30,41,59,0.6) !important;
+}
+
+/* ── Badge / pill backgrounds ── */
+html.dark-mode .bg-blue-50  { background-color: rgba(59,130,246,0.12) !important; }
+html.dark-mode .bg-green-50 { background-color: rgba(16,185,129,0.12) !important; }
+html.dark-mode .bg-amber-50 { background-color: rgba(245,158,11,0.12) !important; }
+html.dark-mode .bg-red-50   { background-color: rgba(239,68,68,0.12)  !important; }
+html.dark-mode .bg-purple-50{ background-color: rgba(168,85,247,0.12) !important; }
+html.dark-mode .bg-orange-50{ background-color: rgba(249,115,22,0.12) !important; }
+
+/* ── Text in light badges ── */
+html.dark-mode .text-blue-600  { color: #93c5fd !important; }
+html.dark-mode .text-green-600 { color: #6ee7b7 !important; }
+html.dark-mode .text-red-600   { color: #fca5a5 !important; }
+html.dark-mode .text-amber-600 { color: #fde68a !important; }
+html.dark-mode .text-gray-400  { color: #64748b !important; }
+html.dark-mode .text-gray-300  { color: #475569 !important; }
+
+/* ── Receipts / Payments page ── */
+html.dark-mode .bg-white.shadow { background-color: #1e293b !important; }
+html.dark-mode .text-gray-900   { color: #f1f5f9 !important; }
+
+/* ── DoctorSettings, Prescription Pad ── */
+html.dark-mode label { color: #cbd5e1 !important; }
+html.dark-mode .text-sm.font-medium { color: #e2e8f0; }
+
+/* ── Scrollable list container backgrounds ── */
+html.dark-mode .overflow-y-auto { background-color: inherit; }
+html.dark-mode .divide-y.divide-gray-50 > * + * { border-top-color: #334155 !important; }
