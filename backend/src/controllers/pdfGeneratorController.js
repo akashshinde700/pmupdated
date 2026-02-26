@@ -151,7 +151,7 @@ exports.generatePrescriptionPDF = async (req, res) => {
       SELECT
         p.id, p.patient_id, p.doctor_id, p.prescribed_date, p.template_id,
         p.chief_complaint, p.advice, p.diagnosis,
-        p.patient_notes, p.lab_advice, p.lab_remarks,
+        p.lab_advice, p.lab_remarks,
         pa.name as patient_name, pa.phone as patient_phone, pa.patient_id as uhid,
         pa.dob, pa.age_years, pa.gender,
         u.name as doctor_name, d.specialization, d.qualification, d.user_id as doctor_user_id,
@@ -451,10 +451,7 @@ exports.generatePrescriptionPDF = async (req, res) => {
     }
 
     // --- LAB ADVICE / INVESTIGATIONS ---
-    // Also include patient_notes that start with "Investigations:" here
-    const notesIsInvestigation = prescription.patient_notes && /^investigations?:/i.test(prescription.patient_notes.trim());
-    const investigationExtra = notesIsInvestigation ? prescription.patient_notes.replace(/^investigations?:\s*/i, '').trim() : '';
-    if (prescription.lab_advice || investigationExtra) {
+    if (prescription.lab_advice) {
       y += 2;
       doc.setFont(undefined, 'bold');
       doc.setFontSize(9);
@@ -462,44 +459,11 @@ exports.generatePrescriptionPDF = async (req, res) => {
       const labLabelW = doc.getTextWidth('Investigations:') + 2;
       doc.setFont(undefined, 'normal');
       doc.setFontSize(8);
-      let combinedInv = '';
-      if (prescription.lab_advice) {
-        combinedInv += prescription.lab_advice.replace(/^Investigations?:\s*/i, '').trim();
-      }
-      if (investigationExtra) {
-        combinedInv += (combinedInv ? '\n' : '') + investigationExtra;
-      }
-      const splitLab = doc.splitTextToSize(combinedInv, pageWidth - 14 - labLabelW);
+      // Strip "Investigations:" prefix if present in the data itself
+      let labText = prescription.lab_advice.replace(/^Investigations?:\s*/i, '').trim();
+      const splitLab = doc.splitTextToSize(labText, pageWidth - 14 - labLabelW);
       doc.text(splitLab, 12 + labLabelW, y);
       y += splitLab.length * 4;
-    }
-
-    // --- LAB REMARKS ---
-    if (prescription.lab_remarks) {
-      y += 2;
-      doc.setFont(undefined, 'bold');
-      doc.setFontSize(9);
-      doc.text('Lab Remarks:', 12, y);
-      const labRLabelW = doc.getTextWidth('Lab Remarks:') + 2;
-      doc.setFont(undefined, 'normal');
-      doc.setFontSize(8);
-      const splitLabR = doc.splitTextToSize(prescription.lab_remarks, pageWidth - 14 - labRLabelW);
-      doc.text(splitLabR, 12 + labRLabelW, y);
-      y += splitLabR.length * 4;
-    }
-
-    // --- PATIENT NOTES --- (only if it does NOT start with "Investigations:")
-    if (prescription.patient_notes && !notesIsInvestigation) {
-      y += 2;
-      doc.setFont(undefined, 'bold');
-      doc.setFontSize(9);
-      doc.text('Notes:', 12, y);
-      const notesLabelW = doc.getTextWidth('Notes:') + 2;
-      doc.setFont(undefined, 'normal');
-      doc.setFontSize(8);
-      const splitNotes = doc.splitTextToSize(prescription.patient_notes, pageWidth - 14 - notesLabelW);
-      doc.text(splitNotes, 12 + notesLabelW, y);
-      y += splitNotes.length * 4;
     }
 
     // --- DOCTOR SIGNATURE ---

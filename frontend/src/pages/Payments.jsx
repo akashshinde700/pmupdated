@@ -337,6 +337,29 @@ export default function Payments() {
 
       {/* Overall summary cards removed as requested */}
 
+      {/* ── Payment Method Breakdown ──────────────────────────────── */}
+      <section>
+        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2 px-1">Collected by Payment Method</p>
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          {[
+            { label: 'Cash',         value: summary.methods.cash,  icon: '💵', color: 'text-green-700' },
+            { label: 'UPI / GPay',   value: summary.methods.upi,   icon: '📱', color: 'text-purple-700' },
+            { label: 'Card',         value: summary.methods.card,  icon: '💳', color: 'text-blue-700' },
+            { label: 'Bank Transfer',value: summary.methods.bank,  icon: '🏦', color: 'text-indigo-700' },
+            { label: 'Other',        value: summary.methods.other, icon: '•••', color: 'text-slate-600' },
+          ].map(m => (
+            <div key={m.label} className="p-3 bg-white rounded shadow-sm border flex items-center gap-3">
+              <span className="text-xl">{m.icon}</span>
+              <div>
+                <p className="text-xs text-slate-400">{m.label}</p>
+                <p className={`text-base font-bold ${m.color}`}>
+                  ₹{m.value.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
 
       {/* ── Search & Filters ─────────────────────────────────────── */}
       <section className="bg-white rounded shadow-sm border p-4 space-y-3">

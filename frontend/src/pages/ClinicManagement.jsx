@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import HeaderBar from '../components/HeaderBar';
 import { useApiClient } from '../api/client';
 import { useToast } from '../hooks/useToast';
 import { useAuth } from '../hooks/useAuth';
@@ -10,7 +11,17 @@ export default function ClinicManagement() {
   const { user, setUser } = useAuth();
   const [clinics, setClinics] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [switching, setSwitching] = useState(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showSwitchModal, setShowSwitchModal] = useState(false);
+  const [form, setForm] = useState({
+    name: '',
+    address: '',
+    city: '',
+    state: '',
+    pincode: '',
+    phone: '',
+    email: ''
+  });
 
   const fetchClinics = useCallback(async () => {
     setLoading(true);
@@ -24,166 +35,233 @@ export default function ClinicManagement() {
     }
   }, [api, addToast]);
 
-  useEffect(() => { fetchClinics(); }, [fetchClinics]);
+  useEffect(() => {
+    fetchClinics();
+  }, [fetchClinics]);
+
+  const handleCreate = async (e) => {
+    e.preventDefault();
+    try {
+      await api.post('/api/clinics', form);
+      addToast('Clinic created successfully', 'success');
+      setShowCreateModal(false);
+      setForm({ name: '', address: '', city: '', state: '', pincode: '', phone: '', email: '' });
+      fetchClinics();
+    } catch (err) {
+      addToast(err.response?.data?.error || 'Failed to create clinic', 'error');
+    }
+  };
 
   const handleSwitch = async (clinicId) => {
-    setSwitching(clinicId);
     try {
       await api.post('/api/clinics/switch', { clinic_id: clinicId });
       addToast('Clinic switched successfully', 'success');
-      if (setUser) setUser({ ...user, clinic_id: clinicId });
+      setShowSwitchModal(false);
+      // Update user context with new clinic
+      if (setUser) {
+        setUser({ ...user, clinic_id: clinicId });
+      }
+      // Reload page to reflect clinic change
       window.location.reload();
     } catch (err) {
       addToast(err.response?.data?.error || 'Failed to switch clinic', 'error');
-    } finally {
-      setSwitching(null);
     }
   };
 
   return (
     <RequireRole allowed={['admin', 'doctor', 'staff']}>
       <div className="min-h-screen bg-gray-50">
-
-        {/* ── Hero Banner ── */}
-        <div className="bg-gradient-to-r from-blue-700 via-blue-600 to-indigo-700 px-6 py-8">
-          <div className="max-w-5xl mx-auto">
-            <h1 className="text-2xl font-bold text-white">Clinic Management</h1>
-            <p className="text-blue-200 text-sm mt-0.5">Manage and switch between your clinics</p>
+        <HeaderBar title="Clinic Management" />
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div className="mb-6">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">Clinics</h1>
+              <p className="text-gray-600 mt-1">Manage clinics and switch between them</p>
+            </div>
           </div>
-        </div>
 
-        <div className="max-w-5xl mx-auto px-4 py-8">
-
-          {/* ── Loading ── */}
-          {loading && (
-            <div className="flex flex-col items-center justify-center py-20 text-gray-400">
-              <div className="w-10 h-10 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin mb-3" />
-              <p className="text-sm">Loading clinics…</p>
+          {loading ? (
+            <div className="text-center py-12">
+              <div className="text-lg text-gray-600">Loading clinics...</div>
+            </div>
+          ) : clinics.length === 0 ? (
+            <div className="bg-white rounded-lg shadow-sm p-12 text-center">
+              <p className="text-gray-600">No clinics found</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {clinics.map((clinic) => (
+                <div key={clinic.id} className="bg-white rounded-lg shadow-sm p-6">
+                  <div className="flex items-start justify-between mb-4">
+                    <h3 className="text-xl font-semibold">{clinic.name}</h3>
+                    {user?.clinic_id === clinic.id && (
+                      <span className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full">Current</span>
+                    )}
+                  </div>
+                  <div className="space-y-2 text-sm text-gray-600">
+                    {clinic.address && <p>{clinic.address}</p>}
+                    {(clinic.city || clinic.state) && (
+                      <p>{[clinic.city, clinic.state, clinic.pincode].filter(Boolean).join(', ')}</p>
+                    )}
+                    {clinic.phone && <p>📞 {clinic.phone}</p>}
+                    {clinic.email && <p>✉️ {clinic.email}</p>}
+                  </div>
+                  {user?.clinic_id !== clinic.id && (
+                    <button
+                      onClick={() => handleSwitch(clinic.id)}
+                      className="mt-4 w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                    >
+                      Switch to this Clinic
+                    </button>
+                  )}
+                </div>
+              ))}
             </div>
           )}
 
-          {/* ── Empty State ── */}
-          {!loading && clinics.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-24">
-              <div className="w-16 h-16 rounded-2xl bg-blue-50 flex items-center justify-center mb-4">
-                <svg viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="1.5" className="w-8 h-8">
-                  <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
-                  <polyline points="9 22 9 12 15 12 15 22"/>
-                </svg>
+          {/* Create Clinic Modal */}
+          {showCreateModal && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+              <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+                <div className="p-6 border-b">
+                  <h2 className="text-2xl font-semibold">Create New Clinic</h2>
+                </div>
+                <form onSubmit={handleCreate} className="p-6 space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Clinic Name *</label>
+                    <input
+                      type="text"
+                      required
+                      value={form.name}
+                      onChange={(e) => setForm({ ...form, name: e.target.value })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Address</label>
+                    <textarea
+                      value={form.address}
+                      onChange={(e) => setForm({ ...form, address: e.target.value })}
+                      rows={3}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">City</label>
+                      <input
+                        type="text"
+                        value={form.city}
+                        onChange={(e) => setForm({ ...form, city: e.target.value })}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">State</label>
+                      <input
+                        type="text"
+                        value={form.state}
+                        onChange={(e) => setForm({ ...form, state: e.target.value })}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Pincode</label>
+                      <input
+                        type="text"
+                        value={form.pincode}
+                        onChange={(e) => setForm({ ...form, pincode: e.target.value })}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Phone</label>
+                      <input
+                        type="tel"
+                        value={form.phone}
+                        onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
+                    <input
+                      type="email"
+                      value={form.email}
+                      onChange={(e) => setForm({ ...form, email: e.target.value })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div className="flex gap-3 pt-4">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowCreateModal(false);
+                        setForm({ name: '', address: '', city: '', state: '', pincode: '', phone: '', email: '' });
+                      }}
+                      className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                    >
+                      Create Clinic
+                    </button>
+                  </div>
+                </form>
               </div>
-              <h3 className="text-gray-700 font-semibold text-lg mb-1">No clinics found</h3>
-              <p className="text-gray-400 text-sm">Contact your administrator to add clinics</p>
             </div>
           )}
 
-          {/* ── Clinic Cards ── */}
-          {!loading && clinics.length > 0 && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              {clinics.map((clinic) => {
-                const isCurrent = user?.clinic_id === clinic.id;
-                const initials = clinic.name?.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase() || 'CL';
-                return (
-                  <div
-                    key={clinic.id}
-                    className={`bg-white rounded-2xl shadow-sm border-2 transition-all duration-200 overflow-hidden
-                      ${isCurrent ? 'border-blue-500 shadow-blue-100 shadow-md' : 'border-gray-100 hover:border-blue-200 hover:shadow-md'}`}
-                  >
-                    {/* Card Top */}
-                    <div className={`px-5 py-4 flex items-center gap-3 ${isCurrent ? 'bg-gradient-to-r from-blue-600 to-indigo-600' : 'bg-gradient-to-r from-gray-50 to-slate-50'}`}>
-                      <div className={`w-11 h-11 rounded-xl flex items-center justify-center font-bold text-sm flex-shrink-0
-                        ${isCurrent ? 'bg-white/20 text-white' : 'bg-white text-blue-600 border border-gray-200'}`}>
-                        {initials}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h3 className={`font-semibold text-sm truncate ${isCurrent ? 'text-white' : 'text-gray-800'}`}>
-                          {clinic.name}
-                        </h3>
-                        {isCurrent && (
-                          <span className="inline-flex items-center gap-1 text-xs text-blue-100 font-medium mt-0.5">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3 h-3">
-                              <polyline points="20 6 9 17 4 12"/>
-                            </svg>
-                            Active Clinic
-                          </span>
+          {/* Switch Clinic Modal */}
+          {showSwitchModal && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+              <div className="bg-white rounded-lg max-w-md w-full">
+                <div className="p-6 border-b">
+                  <h2 className="text-2xl font-semibold">Switch Clinic</h2>
+                </div>
+                <div className="p-6 space-y-3 max-h-96 overflow-y-auto">
+                  {clinics.map((clinic) => (
+                    <div
+                      key={clinic.id}
+                      className={`p-4 border rounded-lg cursor-pointer hover:bg-gray-50 ${
+                        user?.clinic_id === clinic.id ? 'border-blue-500 bg-blue-50' : ''
+                      }`}
+                      onClick={() => handleSwitch(clinic.id)}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className="font-semibold">{clinic.name}</h3>
+                          <p className="text-sm text-gray-600">
+                            {[clinic.city, clinic.state].filter(Boolean).join(', ')}
+                          </p>
+                        </div>
+                        {user?.clinic_id === clinic.id && (
+                          <span className="text-blue-600 font-medium">Current</span>
                         )}
                       </div>
                     </div>
-
-                    {/* Card Body */}
-                    <div className="px-5 py-4 space-y-2.5">
-                      {clinic.address && (
-                        <div className="flex items-start gap-2.5 text-sm text-gray-600">
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-4 h-4 mt-0.5 flex-shrink-0 text-gray-400">
-                            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/>
-                          </svg>
-                          <span className="leading-snug">
-                            {clinic.address}
-                            {(clinic.city || clinic.state) && (
-                              <span className="block text-gray-400 text-xs mt-0.5">
-                                {[clinic.city, clinic.state, clinic.pincode].filter(Boolean).join(', ')}
-                              </span>
-                            )}
-                          </span>
-                        </div>
-                      )}
-                      {clinic.phone && (
-                        <div className="flex items-center gap-2.5 text-sm text-gray-600">
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-4 h-4 flex-shrink-0 text-gray-400">
-                            <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.81a19.79 19.79 0 01-3.07-8.68A2 2 0 012 .18h3a2 2 0 012 1.72 12.05 12.05 0 00.7 2.81 2 2 0 01-.45 2.11L6.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.91.339 1.85.573 2.81.7A2 2 0 0122 14.92z"/>
-                          </svg>
-                          {clinic.phone}
-                        </div>
-                      )}
-                      {clinic.email && (
-                        <div className="flex items-center gap-2.5 text-sm text-gray-600">
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-4 h-4 flex-shrink-0 text-gray-400">
-                            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>
-                          </svg>
-                          <span className="truncate">{clinic.email}</span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Card Footer */}
-                    <div className="px-5 pb-4">
-                      {isCurrent ? (
-                        <div className="w-full flex items-center justify-center gap-2 py-2.5 bg-blue-50 text-blue-600 rounded-xl text-sm font-medium">
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4">
-                            <polyline points="20 6 9 17 4 12"/>
-                          </svg>
-                          Currently Active
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => handleSwitch(clinic.id)}
-                          disabled={switching === clinic.id}
-                          className="w-full flex items-center justify-center gap-2 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold transition-colors disabled:opacity-60"
-                        >
-                          {switching === clinic.id ? (
-                            <>
-                              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                              Switching…
-                            </>
-                          ) : (
-                            <>
-                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
-                                <polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/>
-                              </svg>
-                              Switch to this Clinic
-                            </>
-                          )}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-
+                  ))}
+                </div>
+                <div className="p-6 border-t">
+                  <button
+                    onClick={() => setShowSwitchModal(false)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>
-
       </div>
     </RequireRole>
   );
 }
+

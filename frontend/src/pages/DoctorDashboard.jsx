@@ -3,7 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../hooks/useToast';
+import useDragAndDrop from '../hooks/useDragAndDrop';
 import StatCard from '../components/StatCard';
+import ActionButton from '../components/ActionButton';
+import QueueColumn from '../components/QueueColumn';
+// MyGenieWidget removed from dashboard
 
 export default function DoctorDashboard() {
   const navigate = useNavigate();
@@ -11,287 +15,377 @@ export default function DoctorDashboard() {
   const { showToast } = useToast();
 
   const [loading, setLoading] = useState(true);
-  const [queue, setQueue] = useState({ waiting: [], in_progress: [], completed: [] });
-  const [stats, setStats] = useState({ today_total: 0, waiting: 0, completed: 0, avg_wait_time: 0 });
+  const [queue, setQueue] = useState({
+    waiting: [],
+    in_progress: [],
+    completed: []
+  });
+  const [stats, setStats] = useState({
+    today_total: 0,
+    waiting: 0,
+    completed: 0,
+    avg_wait_time: 0
+  });
 
-  const mapStatus = (s) => {
-    if (!s) return 'waiting';
-    if (s === 'completed') return 'completed';
-    if (s === 'in-progress' || s === 'in_progress') return 'in_progress';
-    return 'waiting'; // scheduled, checked-in, etc.
-  };
-
+  // Fetch queue data
   const fetchQueue = async () => {
     try {
-      const today = new Date().toISOString().split('T')[0];
-      const response = await api.get(`/api/appointments?date=${today}&limit=100`);
-      // sendSuccess wraps in { success: true, data: { appointments: [...] } }
-      const payload = response.data?.data || response.data;
-      const appts = payload?.appointments || (Array.isArray(payload) ? payload : []);
+      const response = await api.get('/api/queue/today');
+      const queueData = response.data;
 
-      const mapped = appts.map((a, idx) => ({
-        id: a.id,
-        patient_id: a.patient_id,
-        token_number: a.appointment_time ? a.appointment_time.slice(0, 5) : `${idx + 1}`,
-        status: mapStatus(a.status),
-        name: a.patient_name || '—',
-        age: a.patient_age,
-        gender: a.patient_gender,
-        phone: a.contact,
-        chief_complaint: a.reason_for_visit,
-        appointment_time: a.appointment_time,
-        waiting_time: a.checked_in_at
-          ? Math.max(0, Math.round((Date.now() - new Date(a.checked_in_at).getTime()) / 60000))
-          : undefined,
-      }));
-
+      // Organize by status
       const organized = {
-        waiting:     mapped.filter(p => p.status === 'waiting'),
-        in_progress: mapped.filter(p => p.status === 'in_progress'),
-        completed:   mapped.filter(p => p.status === 'completed'),
+        waiting: queueData.filter(p => p.status === 'waiting'),
+        in_progress: queueData.filter(p => p.status === 'in_progress'),
+        completed: queueData.filter(p => p.status === 'completed')
       };
+
       setQueue(organized);
+
+      // Calculate stats
       setStats({
-        today_total:   mapped.length,
-        waiting:       organized.waiting.length + organized.in_progress.length,
-        completed:     organized.completed.length,
-        avg_wait_time: 0,
+        today_total: queueData.length,
+        waiting: organized.waiting.length,
+        completed: organized.completed.length,
+        avg_wait_time: calculateAvgWaitTime(organized.completed)
       });
+
       setLoading(false);
     } catch (error) {
-      console.error('Failed to fetch appointments:', error);
-      if (typeof showToast === 'function') showToast('Failed to load dashboard data', 'error');
+      console.error('Failed to fetch queue:', error);
+      if (typeof showToast === 'function') showToast('Failed to load queue data', 'error');
       setLoading(false);
     }
   };
 
+  // Calculate average wait time
+  const calculateAvgWaitTime = (completedPatients) => {
+    if (completedPatients.length === 0) return 0;
+    const total = completedPatients.reduce((sum, p) => sum + (p.waiting_time || 0), 0);
+    return Math.round(total / completedPatients.length);
+  };
+
+  // Auto-refresh every 30 seconds
   useEffect(() => {
     fetchQueue();
     const interval = setInterval(fetchQueue, 30000);
     return () => clearInterval(interval);
   }, []);
 
-  const handlePatientClick = (patient) => navigate(`/patient-overview/${patient.patient_id}`);
+  // Add Patient inline modal/form state
+  const [showAddPatient, setShowAddPatient] = useState(false);
+  const [newPatient, setNewPatient] = useState({ name: '', phone: '', dob: '', gender: 'M' });
+  const [addingPatient, setAddingPatient] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searching, setSearching] = useState(false);
 
+  const handleCreateAndQueue = async () => {
+    if (!newPatient.name) return;
+    setAddingPatient(true);
+    try {
+      const res = await api.post('/api/patients', {
+        name: newPatient.name,
+        phone: newPatient.phone,
+        dob: newPatient.dob || null,
+        gender: newPatient.gender || null
+      });
+      const created = res.data;
+      const patientDbId = created.id;
+
+      // Add to queue
+      await api.post('/api/queue', { patient_id: patientDbId });
+      if (typeof showToast === 'function') showToast('Patient added and queued', 'success');
+      setShowAddPatient(false);
+      setNewPatient({ name: '', phone: '', dob: '', gender: 'M' });
+      fetchQueue();
+    } catch (err) {
+      console.error('Failed to add patient and queue:', err);
+      if (typeof showToast === 'function') showToast('Failed to add patient', 'error');
+    } finally {
+      setAddingPatient(false);
+    }
+  };
+
+  const handleSearchPatients = async () => {
+    if (!searchQuery) return;
+    setSearching(true);
+    try {
+      const res = await api.get(`/api/patients?search=${encodeURIComponent(searchQuery)}`);
+      setSearchResults(res.data || []);
+    } catch (err) {
+      console.error('Patient search failed', err);
+      if (typeof showToast === 'function') showToast('Patient search failed', 'error');
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const handleAddExistingToQueue = async (patient) => {
+    const patientId = patient.id || patient.patient_id || patient.patientId;
+    if (!patientId) return;
+    try {
+      await api.post('/api/queue', { patient_id: patientId });
+      if (typeof showToast === 'function') showToast('Patient added to queue', 'success');
+      setShowAddPatient(false);
+      setSearchQuery('');
+      setSearchResults([]);
+      fetchQueue();
+    } catch (err) {
+      console.error('Failed to add existing patient to queue', err);
+      if (typeof showToast === 'function') showToast('Failed to add patient to queue', 'error');
+    }
+  };
+
+  // Handle patient click
+  const handlePatientClick = (patient) => {
+    navigate(`/patient-overview/${patient.patient_id}`);
+  };
+
+  // Handle drag and drop
+  const { draggedItem, handleDragStart, handleDragEnd, handleDrop, handleDragOver } = useDragAndDrop({
+    onDrop: async (item, targetStatus) => {
+      try {
+        await api.patch(`/api/queue/${item.id}/status`, { status: targetStatus });
+        if (typeof showToast === 'function') showToast(`Patient moved to ${targetStatus}`, 'success');
+        fetchQueue();
+      } catch (error) {
+        console.error('Failed to update status:', error);
+        if (typeof showToast === 'function') showToast('Failed to update patient status', 'error');
+      }
+    }
+  });
+
+  // Handle Start Next Patient
+  const handleStartNext = async () => {
+    if (queue.waiting.length === 0) {
+      if (typeof showToast === 'function') showToast('No patients in queue', 'info');
+      return;
+    }
+
+    const nextPatient = queue.waiting[0];
+    try {
+      await api.patch(`/api/queue/${nextPatient.id}/status`, { status: 'in_progress' });
+      if (typeof showToast === 'function') showToast('Patient called', 'success');
+      fetchQueue();
+      navigate(`/orders/${nextPatient.patient_id}`);
+    } catch (error) {
+      console.error('Failed to start patient:', error);
+      if (typeof showToast === 'function') showToast('Failed to call patient', 'error');
+    }
+  };
+
+  // Handle Walk-in
+  const handleWalkIn = () => {
+    navigate('/patients?action=new');
+  };
+
+  // Handle Quick Rx
+  const handleQuickRx = () => {
+    navigate('/patients?action=search');
+  };
+
+  // Get greeting based on time
   const getGreeting = () => {
-    const h = new Date().getHours();
-    if (h < 12) return 'Good Morning';
-    if (h < 17) return 'Good Afternoon';
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good Morning';
+    if (hour < 17) return 'Good Afternoon';
     return 'Good Evening';
   };
 
-  const formatDate = () =>
-    new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50">
+      <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
-          <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-gray-500 text-sm font-medium">Loading dashboard…</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading dashboard...</p>
         </div>
       </div>
     );
   }
 
-  // All today's patients = waiting + in_progress + completed for display
-  const allWaiting = [...queue.in_progress, ...queue.waiting];
-
   return (
     <>
-      {/* ── Hero Header ─────────────────────────────────────────── */}
-      <div className="bg-gradient-to-r from-blue-700 via-blue-600 to-indigo-700 px-6 py-6 shadow-lg">
-        <div className="max-w-7xl mx-auto flex items-center justify-between flex-wrap gap-4">
-          <div>
-            <p className="text-blue-200 text-sm font-medium mb-0.5">{getGreeting()}</p>
-            <h1 className="text-2xl font-bold text-white tracking-tight">
-              Dr. {user?.name || 'Doctor'}
-            </h1>
-            <p className="text-blue-300 text-xs mt-1">{formatDate()}</p>
+    <div className="container mx-auto px-6 py-8">
+      {/* Header */}
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">
+          {getGreeting()}, Dr. {user?.name || 'Doctor'}
+        </h1>
+        <p className="text-gray-600">Here's what's happening today</p>
+      </div>
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+        <StatCard
+          icon="📊"
+          label="Total Today"
+          value={stats.today_total}
+          color="blue"
+        />
+        <StatCard
+          icon="⏳"
+          label="Waiting"
+          value={stats.waiting}
+          color="orange"
+        />
+        <StatCard
+          icon="✅"
+          label="Completed"
+          value={stats.completed}
+          color="green"
+        />
+        <StatCard
+          icon="⏱️"
+          label="Avg Wait Time"
+          value={stats.avg_wait_time}
+          subtext="minutes"
+          color="purple"
+        />
+      </div>
+
+      {/* Action Buttons */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+        <ActionButton
+          icon="▶️"
+          label="Start Next Patient"
+          description={queue.waiting.length > 0 ? `Token #${queue.waiting[0].token_number}` : 'No patients waiting'}
+          onClick={handleStartNext}
+          variant="primary"
+          disabled={queue.waiting.length === 0}
+        />
+        <ActionButton
+          icon="🚶"
+          label="Walk-in Patient"
+          description="Register new patient"
+          onClick={handleWalkIn}
+          variant="secondary"
+        />
+        <ActionButton
+          icon="📝"
+          label="Quick Prescription"
+          description="Find existing patient"
+          onClick={handleQuickRx}
+          variant="secondary"
+        />
+      </div>
+
+      {/* Kanban Queue */}
+      <div className="flex gap-4 overflow-x-auto pb-4">
+        <QueueColumn
+          title="Waiting"
+          patients={queue.waiting}
+          color="blue"
+          icon="⏳"
+          status="waiting"
+          onPatientClick={handlePatientClick}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+          onDrop={handleDrop}
+          onDragOver={handleDragOver}
+          draggedItem={draggedItem}
+        />
+        <QueueColumn
+          title="In Progress"
+          patients={queue.in_progress}
+          color="orange"
+          icon="🩺"
+          status="in_progress"
+          onPatientClick={handlePatientClick}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+          onDrop={handleDrop}
+          onDragOver={handleDragOver}
+          draggedItem={draggedItem}
+        />
+        <QueueColumn
+          title="Completed"
+          patients={queue.completed}
+          color="green"
+          icon="✅"
+          status="completed"
+          onPatientClick={handlePatientClick}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+          onDrop={handleDrop}
+          onDragOver={handleDragOver}
+          draggedItem={draggedItem}
+        />
+      </div>
+    </div>
+    {showAddPatient && (
+      <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+        <div className="bg-white rounded-lg p-6 w-full max-w-md">
+          <h3 className="text-lg font-semibold mb-3">Add Patient (Walk-in)</h3>
+          <div className="space-y-3">
+            <div className="flex gap-2">
+              <input
+                placeholder="Search existing patients by name or phone"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="flex-1 px-3 py-2 border rounded"
+              />
+              <button onClick={handleSearchPatients} className="px-3 py-2 bg-slate-100 border rounded" disabled={searching}>
+                {searching ? 'Searching…' : 'Search'}
+              </button>
+            </div>
+
+            {searchResults && searchResults.length > 0 && (
+              <div className="space-y-2 max-h-40 overflow-auto border rounded p-2 bg-slate-50">
+                {searchResults.map((p) => (
+                  <div key={p.id || p.patient_id || p.patientId} className="flex items-center justify-between p-2 bg-white rounded">
+                    <div>
+                      <div className="font-medium">{p.name || p.full_name}</div>
+                      <div className="text-xs text-slate-500">{p.phone || p.mobile || '-'}</div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => handleAddExistingToQueue(p)} className="px-3 py-1 bg-primary text-white rounded">Add to Queue</button>
+                      <button onClick={() => navigate(`/patient-overview/${p.id || p.patient_id || p.patientId}`)} className="px-3 py-1 border rounded">Open</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="pt-2 border-t"></div>
+
+            <input
+              value={newPatient.name}
+              onChange={(e) => setNewPatient(prev => ({ ...prev, name: e.target.value }))}
+              placeholder="Full name"
+              className="w-full px-3 py-2 border rounded"
+            />
+            <input
+              value={newPatient.phone}
+              onChange={(e) => setNewPatient(prev => ({ ...prev, phone: e.target.value }))}
+              placeholder="Phone"
+              className="w-full px-3 py-2 border rounded"
+            />
+            <div className="flex gap-2">
+              <input
+                type="date"
+                value={newPatient.dob}
+                onChange={(e) => setNewPatient(prev => ({ ...prev, dob: e.target.value }))}
+                className="px-3 py-2 border rounded w-1/2"
+              />
+              <select
+                value={newPatient.gender}
+                onChange={(e) => setNewPatient(prev => ({ ...prev, gender: e.target.value }))}
+                className="px-3 py-2 border rounded w-1/2"
+              >
+                <option value="M">M</option>
+                <option value="F">F</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
           </div>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={fetchQueue}
-              className="flex items-center gap-2 bg-white/15 hover:bg-white/25 text-white text-sm font-medium px-4 py-2 rounded-xl transition-colors"
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
-                <polyline points="23 4 23 10 17 10"/>
-                <path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/>
-              </svg>
-              Refresh
-            </button>
+          <div className="mt-4 flex justify-end gap-2">
+            <button onClick={() => setShowAddPatient(false)} className="px-3 py-2 border rounded">Cancel</button>
+            <button onClick={handleCreateAndQueue} disabled={addingPatient} className="px-3 py-2 bg-primary text-white rounded">{addingPatient ? 'Adding…' : 'Add & Queue'}</button>
           </div>
         </div>
       </div>
-
-      <div className="bg-gray-50 min-h-screen px-6 py-6">
-        <div className="max-w-7xl mx-auto space-y-6">
-
-          {/* ── Stats ───────────────────────────────────────────── */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <StatCard iconType="total"     label="Total Today"  value={stats.today_total}  color="blue"   />
-            <StatCard iconType="waiting"   label="Pending"      value={stats.waiting}       color="orange" />
-            <StatCard iconType="completed" label="Completed"    value={stats.completed}      color="green"  />
-            <StatCard iconType="time"      label="In Progress"  value={queue.in_progress.length} color="purple" />
-          </div>
-
-          {/* ── Queue Board ──────────────────────────────────────── */}
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">Today's Appointments</h2>
-              <span className="text-xs text-gray-400">Auto-refreshes every 30s</span>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-
-              {/* ── WAITING / IN-PROGRESS ── */}
-              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                {/* header */}
-                <div className="flex items-center justify-between px-5 py-4 border-b border-blue-50 bg-gradient-to-r from-blue-50 to-indigo-50">
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center shadow-sm">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" className="w-4 h-4">
-                        <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-                      </svg>
-                    </div>
-                    <div>
-                      <p className="font-semibold text-gray-800 text-sm">Pending / In Progress</p>
-                      <p className="text-xs text-gray-400">Scheduled for today</p>
-                    </div>
-                  </div>
-                  <span className="text-2xl font-bold text-blue-600">{allWaiting.length}</span>
-                </div>
-                {/* cards */}
-                <div className="p-4 space-y-3 overflow-y-auto" style={{ maxHeight: '420px' }}>
-                  {allWaiting.length === 0 ? (
-                    <div className="flex flex-col items-center py-10 text-gray-300">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-10 h-10 mb-2">
-                        <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-                      </svg>
-                      <p className="text-sm">No pending appointments</p>
-                    </div>
-                  ) : allWaiting.map((p, idx) => {
-                    const initials = p.name ? p.name.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase() : '?';
-                    const isInProgress = p.status === 'in_progress';
-                    const waitColor = p.waiting_time === undefined ? '' :
-                      p.waiting_time < 15 ? 'text-emerald-600 bg-emerald-50' :
-                      p.waiting_time < 30 ? 'text-amber-600 bg-amber-50' :
-                      'text-red-600 bg-red-50';
-                    return (
-                      <div key={p.id} onClick={() => handlePatientClick(p)}
-                        className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all duration-150 group ${
-                          isInProgress
-                            ? 'border-amber-200 bg-amber-50/40 hover:bg-amber-50/70 hover:shadow-sm'
-                            : 'border-gray-100 hover:border-blue-200 hover:bg-blue-50/30 hover:shadow-sm'
-                        }`}>
-                        {/* rank */}
-                        <div className={`flex-shrink-0 w-7 h-7 rounded-full text-xs font-bold flex items-center justify-center ${
-                          isInProgress ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'
-                        }`}>
-                          {idx + 1}
-                        </div>
-                        {/* avatar */}
-                        <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-white text-xs font-semibold shadow-sm bg-gradient-to-br ${
-                          isInProgress ? 'from-amber-400 to-orange-500' : 'from-blue-500 to-indigo-600'
-                        }`}>
-                          {initials}
-                        </div>
-                        {/* info */}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${
-                              isInProgress ? 'text-amber-700 bg-amber-100' : 'text-blue-600 bg-blue-100'
-                            }`}>{p.token_number}</span>
-                            <span className="font-semibold text-gray-900 text-sm truncate">{p.name}</span>
-                            {isInProgress && (
-                              <span className="text-xs font-semibold text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded-full">Active</span>
-                            )}
-                          </div>
-                          <p className="text-xs text-gray-400 mt-0.5">
-                            {p.age ? `${p.age}y` : ''}{p.age && p.gender ? ' · ' : ''}{p.gender === 'M' ? 'Male' : p.gender === 'F' ? 'Female' : p.gender || ''}
-                            {p.chief_complaint ? ` · ${p.chief_complaint}` : ''}
-                          </p>
-                        </div>
-                        {/* wait badge */}
-                        {p.waiting_time !== undefined && waitColor && (
-                          <span className={`flex-shrink-0 text-xs font-semibold px-2 py-1 rounded-lg ${waitColor}`}>
-                            {p.waiting_time}m
-                          </span>
-                        )}
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5 text-gray-300 flex-shrink-0 group-hover:text-blue-400 transition-colors">
-                          <polyline points="9 18 15 12 9 6"/>
-                        </svg>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* ── COMPLETED ── */}
-              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                {/* header */}
-                <div className="flex items-center justify-between px-5 py-4 border-b border-emerald-50 bg-gradient-to-r from-emerald-50 to-teal-50">
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-emerald-600 flex items-center justify-center shadow-sm">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" className="w-4 h-4">
-                        <polyline points="20 6 9 17 4 12"/>
-                      </svg>
-                    </div>
-                    <div>
-                      <p className="font-semibold text-gray-800 text-sm">Completed</p>
-                      <p className="text-xs text-gray-400">Seen today</p>
-                    </div>
-                  </div>
-                  <span className="text-2xl font-bold text-emerald-600">{queue.completed.length}</span>
-                </div>
-                {/* compact list */}
-                <div className="divide-y divide-gray-50 overflow-y-auto" style={{ maxHeight: '420px' }}>
-                  {queue.completed.length === 0 ? (
-                    <div className="flex flex-col items-center py-10 text-gray-300">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-10 h-10 mb-2">
-                        <polyline points="20 6 9 17 4 12"/>
-                      </svg>
-                      <p className="text-sm">No completed appointments</p>
-                    </div>
-                  ) : queue.completed.map((p) => {
-                    const initials = p.name ? p.name.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase() : '?';
-                    return (
-                      <div key={p.id} onClick={() => handlePatientClick(p)}
-                        className="flex items-center gap-3 px-4 py-3 hover:bg-emerald-50/40 cursor-pointer transition-colors group">
-                        {/* check */}
-                        <div className="flex-shrink-0 w-7 h-7 rounded-full bg-emerald-100 flex items-center justify-center">
-                          <svg viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2.5" className="w-3.5 h-3.5">
-                            <polyline points="20 6 9 17 4 12"/>
-                          </svg>
-                        </div>
-                        {/* avatar */}
-                        <div className="flex-shrink-0 w-9 h-9 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center text-white text-xs font-semibold">
-                          {initials}
-                        </div>
-                        {/* info */}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-xs font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">{p.token_number}</span>
-                            <span className="font-medium text-gray-800 text-sm truncate">{p.name}</span>
-                          </div>
-                          {p.chief_complaint && (
-                            <p className="text-xs text-gray-400 truncate mt-0.5">{p.chief_complaint}</p>
-                          )}
-                        </div>
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5 text-gray-200 flex-shrink-0 group-hover:text-emerald-400 transition-colors">
-                          <polyline points="9 18 15 12 9 6"/>
-                        </svg>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-            </div>
-          </div>
-
-        </div>
-      </div>
-
+    )}
     </>
   );
 }

@@ -357,29 +357,13 @@ const PrintPrescription = () => {
                   </thead>
                   <tbody>
                     {prescription.medicines.map((med, index) => (
-                      <React.Fragment key={index}>
-                        <tr className="border-t">
-                          <td className="px-4 py-2 text-sm">{index + 1}</td>
-                          <td className="px-4 py-2 text-sm font-medium">{med.name || med.brand || med.medicine_name}</td>
-                          <td className="px-4 py-2 text-sm">{med.dosage || '-'}</td>
-                          <td className="px-4 py-2 text-sm">{med.is_tapering ? 'Tapering' : (med.frequency || '-')}</td>
-                          <td className="px-4 py-2 text-sm">{med.duration || '-'}</td>
-                        </tr>
-                        {med.is_tapering && med.tapering_schedule && med.tapering_schedule.length > 0 && (
-                          <tr className="border-t bg-purple-50">
-                            <td></td>
-                            <td colSpan="4" className="px-4 py-1 text-xs text-purple-800">
-                              <span className="font-semibold">Tapering: </span>
-                              {med.tapering_schedule.map((step, si) => (
-                                <span key={si}>
-                                  {si > 0 && ' → '}
-                                  {step.dose} {step.frequency} for {step.duration_days} day{step.duration_days !== 1 ? 's' : ''}
-                                </span>
-                              ))}
-                            </td>
-                          </tr>
-                        )}
-                      </React.Fragment>
+                      <tr key={index} className="border-t">
+                        <td className="px-4 py-2 text-sm">{index + 1}</td>
+                        <td className="px-4 py-2 text-sm font-medium">{med.name || med.brand || med.medicine_name}</td>
+                        <td className="px-4 py-2 text-sm">{med.dosage || '-'}</td>
+                        <td className="px-4 py-2 text-sm">{med.frequency || '-'}</td>
+                        <td className="px-4 py-2 text-sm">{med.duration || '-'}</td>
+                      </tr>
                     ))}
                   </tbody>
                 </table>

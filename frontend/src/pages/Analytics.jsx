@@ -1,31 +1,38 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, AreaChart, Area,
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar
 } from 'recharts';
 
+// Color palette for charts
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#14B8A6', '#F97316'];
 
+// Utility function to format UTC date to IST
 const formatToIST = (dateString) => {
   if (!dateString) return dateString;
+
+  // Check if it's an ISO timestamp with Z (UTC)
   if (dateString.includes('T') && dateString.includes('Z')) {
     const date = new Date(dateString);
+    // Convert to IST (UTC+5:30)
     const istDate = new Date(date.getTime() + (5.5 * 60 * 60 * 1000));
-    return istDate.toISOString().split('T')[0];
+    return istDate.toISOString().split('T')[0]; // Return just the date part YYYY-MM-DD
   }
-  return dateString;
+
+  return dateString; // Return as-is if not a UTC timestamp
 };
 
+// Custom tooltip formatter for IST dates
 const CustomTooltip = ({ active, payload, label }) => {
   if (active && payload && payload.length) {
+    const formattedLabel = formatToIST(label);
     return (
-      <div className="bg-white px-4 py-3 border border-gray-200 rounded-xl shadow-lg">
-        <p className="font-semibold text-gray-700 mb-2 text-xs">{formatToIST(label)}</p>
+      <div className="bg-white p-3 border border-gray-300 rounded-lg shadow-lg">
+        <p className="font-semibold text-gray-700 mb-2">{formattedLabel}</p>
         {payload.map((entry, index) => (
-          <p key={index} style={{ color: entry.color }} className="text-xs font-medium">
-            {entry.name}: <span className="font-bold">{entry.value}</span>
+          <p key={index} style={{ color: entry.color }} className="text-sm">
+            {entry.name}: {entry.value}
           </p>
         ))}
       </div>
@@ -34,934 +41,1079 @@ const CustomTooltip = ({ active, payload, label }) => {
   return null;
 };
 
-const Spinner = () => (
-  <div className="flex items-center justify-center h-64">
-    <div className="flex flex-col items-center gap-3">
-      <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
-      <p className="text-sm text-gray-500 font-medium">Loading data…</p>
-    </div>
-  </div>
-);
-
-const ChartCard = ({ title, icon, children, className = '' }) => (
-  <div className={`bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden ${className}`}>
-    <div className="px-5 py-4 border-b border-gray-50 flex items-center gap-3">
-      <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600">
-        {icon}
-      </div>
-      <h3 className="font-semibold text-gray-800 text-sm">{title}</h3>
-    </div>
-    <div className="p-5">{children}</div>
-  </div>
-);
-
-const MetricCard = ({ label, value, icon, color, sub }) => {
-  const colors = {
-    blue:   { bg: 'bg-blue-50',   text: 'text-blue-600',   icon: 'bg-blue-100 text-blue-600'   },
-    green:  { bg: 'bg-emerald-50',text: 'text-emerald-600',icon: 'bg-emerald-100 text-emerald-600'},
-    purple: { bg: 'bg-purple-50', text: 'text-purple-600', icon: 'bg-purple-100 text-purple-600' },
-    amber:  { bg: 'bg-amber-50',  text: 'text-amber-600',  icon: 'bg-amber-100 text-amber-600'  },
-    red:    { bg: 'bg-red-50',    text: 'text-red-600',    icon: 'bg-red-100 text-red-600'      },
-    indigo: { bg: 'bg-indigo-50', text: 'text-indigo-600', icon: 'bg-indigo-100 text-indigo-600'},
-  };
-  const c = colors[color] || colors.blue;
-  return (
-    <div className={`${c.bg} rounded-2xl p-5 flex items-start gap-4 border border-white shadow-sm`}>
-      <div className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 ${c.icon}`}>
-        {icon}
-      </div>
-      <div className="min-w-0">
-        <p className="text-xs text-gray-500 font-medium truncate">{label}</p>
-        <p className={`text-2xl font-bold mt-0.5 ${c.text}`}>{value}</p>
-        {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
-      </div>
-    </div>
-  );
-};
-
-const FilterBar = ({ children }) => (
-  <div className="bg-white rounded-2xl shadow-sm border border-gray-100 px-5 py-4 flex flex-wrap items-end gap-4 mb-6">
-    {children}
-  </div>
-);
-
-const DateInput = ({ label, value, onChange }) => (
-  <div>
-    <label className="block text-xs font-medium text-gray-500 mb-1">{label}</label>
-    <input
-      type="date"
-      value={value}
-      onChange={onChange}
-      className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none focus:border-blue-400"
-    />
-  </div>
-);
-
-const ApplyBtn = ({ onClick }) => (
-  <button
-    onClick={onClick}
-    className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl transition-colors shadow-sm"
-  >
-    Apply
-  </button>
-);
-
-// ── SVG Icons ──────────────────────────────────────────────────────────────
-const IconCalendar = () => (
-  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-    <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
-  </svg>
-);
-const IconUsers = () => (
-  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-    <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/>
-  </svg>
-);
-const IconUserPlus = () => (
-  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-    <path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/>
-  </svg>
-);
-const IconCurrency = () => (
-  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-    <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/>
-  </svg>
-);
-const IconClock = () => (
-  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-    <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-  </svg>
-);
-const IconTrend = () => (
-  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-    <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>
-  </svg>
-);
-const IconPie = () => (
-  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-    <path d="M21.21 15.89A10 10 0 118 2.83"/><path d="M22 12A10 10 0 0012 2v10z"/>
-  </svg>
-);
-const IconBar = () => (
-  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-    <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/><line x1="2" y1="20" x2="22" y2="20"/>
-  </svg>
-);
-const IconPill = () => (
-  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-    <path d="M10.5 20.5L3.5 13.5a5 5 0 017.07-7.07l7 7a5 5 0 01-7.07 7.07z"/><line x1="8.5" y1="11.5" x2="15.5" y2="4.5"/>
-  </svg>
-);
-const IconHeart = () => (
-  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-    <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/>
-  </svg>
-);
-const IconDoor = () => (
-  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-    <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>
-  </svg>
-);
-const IconRefresh = () => (
-  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-    <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
-    <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
-  </svg>
-);
-const IconMapPin = () => (
-  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/>
-  </svg>
-);
-const IconReceipt = () => (
-  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>
-  </svg>
-);
-const IconStar = () => (
-  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-  </svg>
-);
-const IconStethoscope = () => (
-  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-    <path d="M4.8 2.3A.3.3 0 105 2H4a2 2 0 00-2 2v5a6 6 0 006 6v0a6 6 0 006-6V4a2 2 0 00-2-2h-1a.2.2 0 10.3.3"/>
-    <path d="M8 15v1a6 6 0 006 6v0a6 6 0 006-6v-4"/>
-    <circle cx="20" cy="10" r="2"/>
-  </svg>
-);
-// ────────────────────────────────────────────────────────────────────────────
-
-// Search input component
-const SearchInput = ({ value, onChange, placeholder }) => (
-  <div className="relative">
-    <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-      <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-    </svg>
-    <input
-      type="text"
-      value={value}
-      onChange={onChange}
-      placeholder={placeholder}
-      className="pl-9 pr-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none w-48"
-    />
-  </div>
-);
-
 export default function Analytics() {
-  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('overview');
   const [loading, setLoading] = useState(false);
 
-  // Global doctor filter
-  const [doctors, setDoctors] = useState([]);
-  const [doctorId, setDoctorId] = useState('');
-
+  // Overview data
   const [overview, setOverview] = useState(null);
   const [period, setPeriod] = useState('month');
 
+  // Visit analytics
   const [visitAnalytics, setVisitAnalytics] = useState(null);
   const [visitGroupBy, setVisitGroupBy] = useState('day');
   const [visitDateRange, setVisitDateRange] = useState({
-    start_date: new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0],
+    start_date: new Date(new Date().setDate(new Date().getDate() - 30)).toISOString().split('T')[0],
     end_date: new Date().toISOString().split('T')[0]
   });
 
+  // Medication analytics
   const [medicationAnalytics, setMedicationAnalytics] = useState(null);
   const [medDateRange, setMedDateRange] = useState({
-    start_date: new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0],
+    start_date: new Date(new Date().setDate(new Date().getDate() - 30)).toISOString().split('T')[0],
     end_date: new Date().toISOString().split('T')[0]
   });
-  const [medSearch, setMedSearch] = useState('');
 
+  // Symptoms analytics
   const [symptomsAnalytics, setSymptomsAnalytics] = useState(null);
-  const [symptomSearch, setSymptomSearch] = useState('');
 
+  // Payment analytics
   const [paymentAnalytics, setPaymentAnalytics] = useState(null);
   const [paymentDateRange, setPaymentDateRange] = useState({
-    start_date: new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0],
+    start_date: new Date(new Date().setDate(new Date().getDate() - 30)).toISOString().split('T')[0],
     end_date: new Date().toISOString().split('T')[0]
   });
 
+  // Demographics
   const [demographics, setDemographics] = useState(null);
   const [selectedStatus, setSelectedStatus] = useState(null);
   const [selectedAppointments, setSelectedAppointments] = useState([]);
   const [selectedLoading, setSelectedLoading] = useState(false);
-
-  // Load doctors list on mount
-  useEffect(() => {
-    api.get('/api/enhanced-analytics/doctors')
-      .then(r => setDoctors(r.data.doctors || []))
-      .catch(() => {});
-  }, []);
 
   const fetchSelectedAppointments = async (status) => {
     try {
       setSelectedLoading(true);
       const res = await api.get('/api/appointments', { params: { status, limit: 100 } });
       setSelectedAppointments(res.data.appointments || []);
-    } catch { setSelectedAppointments([]); }
-    finally { setSelectedLoading(false); }
+    } catch (error) {
+      console.error('Error fetching appointments for status', status, error);
+      setSelectedAppointments([]);
+    } finally {
+      setSelectedLoading(false);
+    }
   };
 
   const fetchOverview = async () => {
-    try { setLoading(true); const res = await api.get('/api/enhanced-analytics/dashboard/overview', { params: { period, ...(doctorId && { doctor_id: doctorId }) } }); setOverview(res.data); }
-    catch (e) { console.error(e); } finally { setLoading(false); }
+    try {
+      setLoading(true);
+      const res = await api.get('/api/enhanced-analytics/dashboard/overview', {
+        params: { period }
+      });
+      setOverview(res.data);
+    } catch (error) {
+      console.error('Error fetching overview:', error);
+    } finally {
+      setLoading(false);
+    }
   };
+
   const fetchVisitAnalytics = async () => {
-    try { setLoading(true); const res = await api.get('/api/enhanced-analytics/visits', { params: { ...visitDateRange, group_by: visitGroupBy, ...(doctorId && { doctor_id: doctorId }) } }); setVisitAnalytics(res.data); }
-    catch (e) { console.error(e); } finally { setLoading(false); }
+    try {
+      setLoading(true);
+      const res = await api.get('/api/enhanced-analytics/visits', {
+        params: {
+          start_date: visitDateRange.start_date,
+          end_date: visitDateRange.end_date,
+          group_by: visitGroupBy
+        }
+      });
+      setVisitAnalytics(res.data);
+    } catch (error) {
+      console.error('Error fetching visit analytics:', error);
+    } finally {
+      setLoading(false);
+    }
   };
+
   const fetchMedicationAnalytics = async () => {
-    try { setLoading(true); const res = await api.get('/api/enhanced-analytics/medications', { params: { ...medDateRange, ...(doctorId && { doctor_id: doctorId }), ...(medSearch && { search: medSearch }) } }); setMedicationAnalytics(res.data); }
-    catch (e) { console.error(e); } finally { setLoading(false); }
+    try {
+      setLoading(true);
+      const res = await api.get('/api/enhanced-analytics/medications', {
+        params: {
+          start_date: medDateRange.start_date,
+          end_date: medDateRange.end_date
+        }
+      });
+      setMedicationAnalytics(res.data);
+    } catch (error) {
+      console.error('Error fetching medication analytics:', error);
+    } finally {
+      setLoading(false);
+    }
   };
+
   const fetchSymptomsAnalytics = async () => {
-    try { setLoading(true); const res = await api.get('/api/enhanced-analytics/symptoms', { params: { ...medDateRange, ...(doctorId && { doctor_id: doctorId }), ...(symptomSearch && { search: symptomSearch }) } }); setSymptomsAnalytics(res.data); }
-    catch (e) { console.error(e); } finally { setLoading(false); }
+    try {
+      setLoading(true);
+      const res = await api.get('/api/enhanced-analytics/symptoms', {
+        params: {
+          start_date: medDateRange.start_date,
+          end_date: medDateRange.end_date
+        }
+      });
+      setSymptomsAnalytics(res.data);
+    } catch (error) {
+      console.error('Error fetching symptoms analytics:', error);
+    } finally {
+      setLoading(false);
+    }
   };
+
   const fetchPaymentAnalytics = async () => {
-    try { setLoading(true); const res = await api.get('/api/enhanced-analytics/payments', { params: paymentDateRange }); setPaymentAnalytics(res.data); }
-    catch (e) { console.error(e); } finally { setLoading(false); }
+    try {
+      setLoading(true);
+      const res = await api.get('/api/enhanced-analytics/payments', {
+        params: {
+          start_date: paymentDateRange.start_date,
+          end_date: paymentDateRange.end_date
+        }
+      });
+      setPaymentAnalytics(res.data);
+    } catch (error) {
+      console.error('Error fetching payment analytics:', error);
+    } finally {
+      setLoading(false);
+    }
   };
+
   const fetchDemographics = async () => {
-    try { setLoading(true); const res = await api.get('/api/enhanced-analytics/demographics'); setDemographics(res.data); }
-    catch (e) { console.error(e); } finally { setLoading(false); }
+    try {
+      setLoading(true);
+      const res = await api.get('/api/enhanced-analytics/demographics');
+      setDemographics(res.data);
+    } catch (error) {
+      console.error('Error fetching demographics:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
     switch (activeTab) {
-      case 'overview': fetchOverview(); break;
-      case 'visits': fetchVisitAnalytics(); break;
-      case 'medications': fetchMedicationAnalytics(); fetchSymptomsAnalytics(); break;
-      case 'payments': fetchPaymentAnalytics(); break;
-      case 'demographics': fetchDemographics(); break;
+      case 'overview':
+        fetchOverview();
+        break;
+      case 'visits':
+        fetchVisitAnalytics();
+        break;
+      case 'medications':
+        fetchMedicationAnalytics();
+        fetchSymptomsAnalytics();
+        break;
+      case 'payments':
+        fetchPaymentAnalytics();
+        break;
+      case 'demographics':
+        fetchDemographics();
+        break;
+      default:
+        break;
     }
   }, [activeTab]);
 
-  // ── TABS CONFIG ────────────────────────────────────────────────────────────
-  const tabs = [
-    { id: 'overview',     label: 'Overview',     icon: <IconPie /> },
-    { id: 'visits',       label: 'Visits',       icon: <IconTrend /> },
-    { id: 'medications',  label: 'Medications',  icon: <IconPill /> },
-    { id: 'payments',     label: 'Payments',     icon: <IconCurrency /> },
-    { id: 'demographics', label: 'Demographics', icon: <IconUsers /> },
-  ];
-
-  // ── OVERVIEW ───────────────────────────────────────────────────────────────
   const renderOverview = () => {
     const statusData = overview ? [
       { name: 'Scheduled', value: overview.scheduled_appointments || 0, color: '#3B82F6' },
       { name: 'Completed', value: overview.completed_appointments || 0, color: '#10B981' },
       { name: 'Cancelled', value: overview.cancelled_appointments || 0, color: '#EF4444' },
-      { name: 'No-Show',   value: overview.noshow_appointments || 0,    color: '#F59E0B' },
+      { name: 'No-Show', value: overview.noshow_appointments || 0, color: '#F59E0B' }
     ] : [];
+
     const arrivalData = overview ? [
-      { name: 'Online',    count: overview.online_arrivals    || 0 },
-      { name: 'Walk-in',   count: overview.walkin_arrivals    || 0 },
-      { name: 'Referral',  count: overview.referral_arrivals  || 0 },
-      { name: 'Emergency', count: overview.emergency_arrivals || 0 },
+      { name: 'Online', count: overview.online_arrivals || 0 },
+      { name: 'Walk-in', count: overview.walkin_arrivals || 0 },
+      { name: 'Referral', count: overview.referral_arrivals || 0 },
+      { name: 'Emergency', count: overview.emergency_arrivals || 0 }
     ] : [];
 
     return (
-      <div className="space-y-6">
-        <FilterBar>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Period</label>
-            <select
-              value={period}
-              onChange={(e) => setPeriod(e.target.value)}
-              className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-            >
-              <option value="today">Today</option>
-              <option value="week">Last 7 Days</option>
-              <option value="month">Last 30 Days</option>
-              <option value="3months">Last 3 Months</option>
-              <option value="year">Last Year</option>
-            </select>
-          </div>
-          {doctors.length > 0 && (
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Doctor</label>
-              <select
-                value={doctorId}
-                onChange={(e) => setDoctorId(e.target.value)}
-                className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-              >
-                <option value="">All Doctors</option>
-                {doctors.map(d => <option key={d.id} value={d.id}>{d.name}{d.specialization ? ` (${d.specialization})` : ''}</option>)}
-              </select>
-            </div>
-          )}
+      <div>
+        <div className="mb-6 flex items-center gap-4 bg-white p-4 rounded-lg shadow">
+          <label className="font-semibold text-gray-700">Period:</label>
+          <select
+            value={period}
+            onChange={(e) => setPeriod(e.target.value)}
+            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+          >
+            <option value="today">Today</option>
+            <option value="week">Last 7 Days</option>
+            <option value="month">Last 30 Days</option>
+            <option value="3months">Last 3 Months</option>
+            <option value="year">Last Year</option>
+          </select>
           <button
             onClick={fetchOverview}
-            className="flex items-center gap-2 px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl transition-colors shadow-sm"
+            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium shadow-md"
           >
-            <IconRefresh /> Refresh
+            🔄 Refresh
           </button>
-        </FilterBar>
+        </div>
 
-        {loading ? <Spinner /> : overview ? (
-          <>
-            {/* Metric Cards */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4">
-              <MetricCard label="Total Appointments" value={overview.total_appointments || 0}    icon={<IconCalendar />} color="blue" />
-              <MetricCard label="Total Patients"     value={overview.total_patients || 0}        icon={<IconUsers />}    color="green" />
-              <MetricCard label="New Patients"       value={overview.new_patients || 0}           icon={<IconUserPlus />} color="purple" />
-              <MetricCard label="Total Revenue"      value={`₹${overview.total_revenue || 0}`}   icon={<IconCurrency />} color="amber" />
-              <MetricCard label="Avg Wait Time"      value={`${overview.avg_waiting_time || 0}m`} icon={<IconClock />}    color="red" />
-              <MetricCard label="Avg Visit Time"     value={`${overview.avg_visit_duration || 0}m`} icon={<IconTrend />} color="indigo" />
+        {loading ? (
+          <div className="flex items-center justify-center h-96 bg-white rounded-lg shadow">
+            <div className="text-center">
+              <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent mb-4"></div>
+              <div className="text-lg font-medium text-gray-700">Loading analytics...</div>
+            </div>
+          </div>
+        ) : overview ? (
+          <div className="space-y-6">
+            {/* Key Metrics Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+              <div className="p-6 border rounded-xl bg-gradient-to-br from-blue-50 to-blue-100 shadow-lg hover:shadow-xl transition-shadow">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-semibold text-gray-700">Total Appointments</h3>
+                  <span className="text-2xl">📅</span>
+                </div>
+                <p className="text-4xl font-bold text-blue-600">{overview.total_appointments || 0}</p>
+              </div>
+
+              <div className="p-6 border rounded-xl bg-gradient-to-br from-green-50 to-green-100 shadow-lg hover:shadow-xl transition-shadow">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-semibold text-gray-700">Total Patients</h3>
+                  <span className="text-2xl">👥</span>
+                </div>
+                <p className="text-4xl font-bold text-green-600">{overview.total_patients || 0}</p>
+              </div>
+
+              <div className="p-6 border rounded-xl bg-gradient-to-br from-purple-50 to-purple-100 shadow-lg hover:shadow-xl transition-shadow">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-semibold text-gray-700">New Patients</h3>
+                  <span className="text-2xl">✨</span>
+                </div>
+                <p className="text-4xl font-bold text-purple-600">{overview.new_patients || 0}</p>
+              </div>
+
+              <div className="p-6 border rounded-xl bg-gradient-to-br from-yellow-50 to-yellow-100 shadow-lg hover:shadow-xl transition-shadow">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-semibold text-gray-700">Total Revenue</h3>
+                  <span className="text-2xl">💰</span>
+                </div>
+                <p className="text-3xl font-bold text-yellow-600 break-words">₹{overview.total_revenue || 0}</p>
+              </div>
+
+              <div className="p-6 border rounded-xl bg-gradient-to-br from-red-50 to-red-100 shadow-lg hover:shadow-xl transition-shadow">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-semibold text-gray-700">Avg Wait Time</h3>
+                  <span className="text-2xl">⏱️</span>
+                </div>
+                <p className="text-4xl font-bold text-red-600">{overview.avg_waiting_time || 0}<span className="text-xl ml-1">min</span></p>
+              </div>
+
+              <div className="p-6 border rounded-xl bg-gradient-to-br from-indigo-50 to-indigo-100 shadow-lg hover:shadow-xl transition-shadow">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-semibold text-gray-700">Avg Visit Time</h3>
+                  <span className="text-2xl">🕐</span>
+                </div>
+                <p className="text-4xl font-bold text-indigo-600">{overview.avg_visit_duration || 0}<span className="text-xl ml-1">min</span></p>
+              </div>
             </div>
 
             {/* Charts Row */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <ChartCard title="Appointment Status" icon={<IconPie />}>
-                <ResponsiveContainer width="100%" height={260}>
+              {/* Appointment Status Pie Chart */}
+              <div className="p-6 border rounded-xl bg-white shadow-xl hover:shadow-2xl transition-shadow">
+                <h3 className="text-xl font-bold mb-4 text-gray-800 flex items-center gap-2">
+                  <span>📊</span> Appointment Status Distribution
+                </h3>
+                <ResponsiveContainer width="100%" height={320}>
                   <PieChart>
                     <Pie
                       data={statusData}
-                      cx="50%" cy="50%"
-                      labelLine={false}
-                      label={({ name, percent }) => percent > 0.05 ? `${(percent * 100).toFixed(0)}%` : ''}
+                      cx="50%"
+                      cy="50%"
+                      labelLine={true}
+                      label={({ name, percent }) => percent > 0.02 ? `${name}: ${(percent * 100).toFixed(0)}%` : ''}
                       outerRadius={95}
+                      fill="#8884d8"
                       dataKey="value"
                     >
-                      {statusData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                      {statusData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
                     </Pie>
                     <Tooltip />
                     <Legend />
                   </PieChart>
                 </ResponsiveContainer>
-                <div className="grid grid-cols-2 gap-2 mt-3">
-                  {[
-                    { label: 'Scheduled', val: overview.scheduled_appointments || 0, bg: 'bg-blue-50', text: 'text-blue-600' },
-                    { label: 'Completed', val: overview.completed_appointments  || 0, bg: 'bg-emerald-50', text: 'text-emerald-600', clickable: true },
-                    { label: 'Cancelled', val: overview.cancelled_appointments  || 0, bg: 'bg-red-50',     text: 'text-red-600'   },
-                    { label: 'No-Show',   val: overview.noshow_appointments     || 0, bg: 'bg-amber-50',   text: 'text-amber-600' },
-                  ].map(({ label, val, bg, text, clickable }) => (
-                    <div
-                      key={label}
-                      className={`text-center p-3 ${bg} rounded-xl ${clickable ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
-                      onClick={clickable ? () => { const next = selectedStatus === 'completed' ? null : 'completed'; setSelectedStatus(next); if (next) fetchSelectedAppointments(next); } : undefined}
-                    >
-                      <p className="text-xs text-gray-500 font-medium">{label}</p>
-                      <p className={`text-xl font-bold ${text}`}>{val}</p>
-                    </div>
-                  ))}
+                <div className="grid grid-cols-2 gap-3 mt-4">
+                  <div className="text-center p-3 bg-blue-50 rounded-lg border border-blue-200">
+                    <p className="text-xs font-medium text-gray-600 mb-1">Scheduled</p>
+                    <p className="text-2xl font-bold text-blue-600">{overview.scheduled_appointments || 0}</p>
+                  </div>
+                  <div className="text-center p-3 bg-green-50 rounded-lg border border-green-200 cursor-pointer hover:bg-green-100 transition-colors"
+                    onClick={() => {
+                      const next = selectedStatus === 'completed' ? null : 'completed';
+                      setSelectedStatus(next);
+                      if (next) fetchSelectedAppointments(next);
+                    }}
+                  >
+                    <p className="text-xs font-medium text-gray-600 mb-1">Completed</p>
+                    <p className="text-2xl font-bold text-green-600">{overview.completed_appointments || 0}</p>
+                  </div>
+                  <div className="text-center p-3 bg-red-50 rounded-lg border border-red-200">
+                    <p className="text-xs font-medium text-gray-600 mb-1">Cancelled</p>
+                    <p className="text-2xl font-bold text-red-600">{overview.cancelled_appointments || 0}</p>
+                  </div>
+                  <div className="text-center p-3 bg-orange-50 rounded-lg border border-orange-200">
+                    <p className="text-xs font-medium text-gray-600 mb-1">No-Show</p>
+                    <p className="text-2xl font-bold text-orange-600">{overview.noshow_appointments || 0}</p>
+                  </div>
                 </div>
-              </ChartCard>
+              </div>
 
-              <ChartCard title="Patient Arrival Type" icon={<IconDoor />}>
-                <ResponsiveContainer width="100%" height={260}>
+              {/* Arrival Type Bar Chart */}
+              <div className="p-6 border rounded-xl bg-white shadow-xl hover:shadow-2xl transition-shadow">
+                <h3 className="text-xl font-bold mb-4 text-gray-800 flex items-center gap-2">
+                  <span>🚪</span> Patient Arrival Type
+                </h3>
+                <ResponsiveContainer width="100%" height={320}>
                   <BarChart data={arrivalData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f5f5f5" />
-                    <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                    <YAxis tick={{ fontSize: 12 }} />
-                    <Tooltip cursor={{ fill: 'rgba(59,130,246,0.08)' }} />
-                    <Bar dataKey="count" radius={[8, 8, 0, 0]} name="Patients">
-                      {arrivalData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                    <XAxis dataKey="name" />
+                    <YAxis />
+                    <Tooltip cursor={{fill: 'rgba(59, 130, 246, 0.1)'}} />
+                    <Legend />
+                    <Bar dataKey="count" fill="#3B82F6" radius={[10, 10, 0, 0]} name="Patient Count">
+                      {arrivalData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
-                <div className="grid grid-cols-4 gap-2 mt-3">
-                  {[
-                    { label: 'Online', val: overview.online_arrivals || 0, text: 'text-blue-600' },
-                    { label: 'Walk-in', val: overview.walkin_arrivals || 0, text: 'text-emerald-600' },
-                    { label: 'Referral', val: overview.referral_arrivals || 0, text: 'text-amber-600' },
-                    { label: 'Emergency', val: overview.emergency_arrivals || 0, text: 'text-red-600' },
-                  ].map(({ label, val, text }) => (
-                    <div key={label} className="text-center p-2 bg-gray-50 rounded-xl">
-                      <p className="text-xs text-gray-400">{label}</p>
-                      <p className={`text-lg font-bold ${text}`}>{val}</p>
-                    </div>
-                  ))}
+                <div className="grid grid-cols-4 gap-2 mt-4">
+                  <div className="text-center p-2 bg-blue-50 rounded-lg">
+                    <p className="text-xs font-medium text-gray-600">Online</p>
+                    <p className="text-lg font-bold text-blue-600">{overview.online_arrivals || 0}</p>
+                  </div>
+                  <div className="text-center p-2 bg-green-50 rounded-lg">
+                    <p className="text-xs font-medium text-gray-600">Walk-in</p>
+                    <p className="text-lg font-bold text-green-600">{overview.walkin_arrivals || 0}</p>
+                  </div>
+                  <div className="text-center p-2 bg-yellow-50 rounded-lg">
+                    <p className="text-xs font-medium text-gray-600">Referral</p>
+                    <p className="text-lg font-bold text-yellow-600">{overview.referral_arrivals || 0}</p>
+                  </div>
+                  <div className="text-center p-2 bg-red-50 rounded-lg">
+                    <p className="text-xs font-medium text-gray-600">Emergency</p>
+                    <p className="text-lg font-bold text-red-600">{overview.emergency_arrivals || 0}</p>
+                  </div>
                 </div>
-              </ChartCard>
+              </div>
             </div>
 
-            {/* Completed Appointments Drill-down */}
             {selectedStatus && (
-              <ChartCard title={`${selectedStatus.charAt(0).toUpperCase() + selectedStatus.slice(1)} Appointments`} icon={<IconCalendar />}>
-                {selectedLoading ? <Spinner /> : selectedAppointments.length === 0 ? (
-                  <p className="text-center text-gray-400 py-8 text-sm">No appointments found.</p>
+              <div className="p-6 border rounded-xl bg-white shadow-xl">
+                <h3 className="text-xl font-bold mb-4 text-gray-800">{selectedStatus.charAt(0).toUpperCase() + selectedStatus.slice(1)} Appointments</h3>
+                {selectedLoading ? (
+                  <p className="text-center py-8">Loading...</p>
+                ) : selectedAppointments.length === 0 ? (
+                  <p className="text-sm text-slate-500 text-center py-8">No appointments found for this status.</p>
                 ) : (
-                  <div className="space-y-2 max-h-80 overflow-y-auto">
+                  <div className="space-y-2 max-h-96 overflow-y-auto">
                     {selectedAppointments.map((apt) => (
-                      <div key={apt.id} className="flex items-center justify-between p-3 rounded-xl bg-gray-50 hover:bg-blue-50 transition-colors">
+                      <div key={apt.id} className="p-4 border rounded-lg flex items-center justify-between hover:bg-gray-50 transition-colors">
                         <div>
-                          <p className="font-semibold text-gray-800 text-sm">{apt.patient_name || apt.uhid || 'Unknown'}</p>
-                          <p className="text-xs text-gray-400">{apt.appointment_date} · {apt.appointment_time} · {apt.doctor_name || ''}</p>
+                          <div className="font-semibold text-gray-800">{apt.patient_name || apt.uhid || 'Unknown'}</div>
+                          <div className="text-sm text-slate-500">{apt.appointment_date} • {apt.appointment_time} • {apt.doctor_name || ''}</div>
                         </div>
-                        <span className="text-xs font-medium text-gray-500 bg-white border border-gray-200 px-2.5 py-1 rounded-lg">{apt.payment_status || 'pending'}</span>
+                        <div className="text-sm font-medium text-slate-600 bg-gray-100 px-3 py-1 rounded">{apt.payment_status || 'pending'}</div>
                       </div>
                     ))}
                   </div>
                 )}
-              </ChartCard>
+              </div>
             )}
-          </>
+          </div>
         ) : (
-          <div className="text-center py-16 text-gray-400">No data available</div>
+          <p className="text-center text-gray-500 py-12 bg-white rounded-lg shadow">No data available</p>
         )}
       </div>
     );
   };
 
-  // ── VISITS ─────────────────────────────────────────────────────────────────
   const renderVisitAnalytics = () => (
-    <div className="space-y-6">
-      <FilterBar>
-        <DateInput label="Start Date" value={visitDateRange.start_date} onChange={(e) => setVisitDateRange({ ...visitDateRange, start_date: e.target.value })} />
-        <DateInput label="End Date"   value={visitDateRange.end_date}   onChange={(e) => setVisitDateRange({ ...visitDateRange, end_date:   e.target.value })} />
+    <div>
+      <div className="mb-6 flex flex-wrap items-center gap-4 bg-white p-4 rounded-lg shadow">
         <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">Group By</label>
+          <label className="block text-sm mb-1 font-medium text-gray-700">Start Date:</label>
+          <input
+            type="date"
+            value={visitDateRange.start_date}
+            onChange={(e) => setVisitDateRange({ ...visitDateRange, start_date: e.target.value })}
+            className="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+          />
+        </div>
+        <div>
+          <label className="block text-sm mb-1 font-medium text-gray-700">End Date:</label>
+          <input
+            type="date"
+            value={visitDateRange.end_date}
+            onChange={(e) => setVisitDateRange({ ...visitDateRange, end_date: e.target.value })}
+            className="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+          />
+        </div>
+        <div>
+          <label className="block text-sm mb-1 font-medium text-gray-700">Group By:</label>
           <select
             value={visitGroupBy}
             onChange={(e) => setVisitGroupBy(e.target.value)}
-            className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            className="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
           >
             <option value="day">Day</option>
             <option value="week">Week</option>
             <option value="month">Month</option>
+            <option value="year">Year</option>
           </select>
         </div>
-        {doctors.length > 0 && (
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Doctor</label>
-            <select
-              value={doctorId}
-              onChange={(e) => setDoctorId(e.target.value)}
-              className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-            >
-              <option value="">All Doctors</option>
-              {doctors.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-            </select>
-          </div>
-        )}
-        <ApplyBtn onClick={fetchVisitAnalytics} />
-      </FilterBar>
+        <button
+          onClick={fetchVisitAnalytics}
+          className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium shadow-md mt-5"
+        >
+          Apply Filters
+        </button>
+      </div>
 
-      {loading ? <Spinner /> : visitAnalytics ? (
-        <>
-          {/* Visit Trend */}
-          <ChartCard title="Visit Trends Over Time" icon={<IconTrend />}>
-            <ResponsiveContainer width="100%" height={300}>
-              <AreaChart data={visitAnalytics.visit_trends || []}>
+      {loading ? (
+        <div className="flex items-center justify-center h-96 bg-white rounded-lg shadow">
+          <div className="text-center">
+            <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent mb-4"></div>
+            <div className="text-lg font-medium text-gray-700">Loading visit analytics...</div>
+          </div>
+        </div>
+      ) : visitAnalytics ? (
+        <div className="space-y-6">
+          {/* Visit Trends Area Chart */}
+          <div className="p-6 border rounded-xl bg-white shadow-xl">
+            <h3 className="text-xl font-bold mb-4 text-gray-800 flex items-center gap-2">
+              <span>📈</span> Visit Trends Over Time <span className="text-sm text-gray-500 ml-2">(IST)</span>
+            </h3>
+            <ResponsiveContainer width="100%" height={450}>
+              <AreaChart data={visitAnalytics.trends || []}>
                 <defs>
-                  <linearGradient id="gTotal" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.2} />
-                    <stop offset="95%" stopColor="#3B82F6" stopOpacity={0} />
+                  <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.8}/>
+                    <stop offset="95%" stopColor="#3B82F6" stopOpacity={0.1}/>
                   </linearGradient>
-                  <linearGradient id="gCompleted" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#10B981" stopOpacity={0.2} />
-                    <stop offset="95%" stopColor="#10B981" stopOpacity={0} />
+                  <linearGradient id="colorCompleted" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#10B981" stopOpacity={0.8}/>
+                    <stop offset="95%" stopColor="#10B981" stopOpacity={0.1}/>
+                  </linearGradient>
+                  <linearGradient id="colorCancelled" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#EF4444" stopOpacity={0.8}/>
+                    <stop offset="95%" stopColor="#EF4444" stopOpacity={0.1}/>
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f5f5f5" />
-                <XAxis dataKey="period" tickFormatter={formatToIST} tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis dataKey="period" tickFormatter={formatToIST} />
+                <YAxis />
                 <Tooltip content={<CustomTooltip />} />
                 <Legend />
-                <Area type="monotone" dataKey="total_visits"     stroke="#3B82F6" fill="url(#gTotal)"     strokeWidth={2.5} name="Total Visits" />
-                <Area type="monotone" dataKey="completed_visits" stroke="#10B981" fill="url(#gCompleted)" strokeWidth={2.5} name="Completed" />
+                <Area type="monotone" dataKey="total_visits" stroke="#3B82F6" strokeWidth={2} fillOpacity={1} fill="url(#colorTotal)" name="Total Visits" />
+                <Area type="monotone" dataKey="completed" stroke="#10B981" strokeWidth={2} fillOpacity={1} fill="url(#colorCompleted)" name="Completed" />
+                <Area type="monotone" dataKey="cancelled" stroke="#EF4444" strokeWidth={2} fillOpacity={1} fill="url(#colorCancelled)" name="Cancelled" />
               </AreaChart>
             </ResponsiveContainer>
-          </ChartCard>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Peak Hours */}
-            <ChartCard title="Peak Hours" icon={<IconClock />}>
-              <ResponsiveContainer width="100%" height={260}>
-                <BarChart data={visitAnalytics.peak_hours || []}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f5f5f5" />
-                  <XAxis dataKey="hour" tick={{ fontSize: 11 }} tickFormatter={(h) => `${h}:00`} />
-                  <YAxis tick={{ fontSize: 11 }} />
-                  <Tooltip />
-                  <Bar dataKey="visit_count" radius={[6, 6, 0, 0]} name="Visits">
-                    {(visitAnalytics.peak_hours || []).map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </ChartCard>
-
-            {/* Top Doctors */}
-            <ChartCard title="Top Doctors by Visits" icon={<IconStethoscope />}>
-              <ResponsiveContainer width="100%" height={260}>
-                <BarChart data={(visitAnalytics.top_doctors || []).slice(0, 8)} layout="vertical">
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f5f5f5" />
-                  <XAxis type="number" tick={{ fontSize: 11 }} />
-                  <YAxis dataKey="doctor_name" type="category" width={120} tick={{ fontSize: 11 }} />
-                  <Tooltip />
-                  <Bar dataKey="visit_count" radius={[0, 6, 6, 0]} name="Visits">
-                    {(visitAnalytics.top_doctors || []).slice(0, 8).map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </ChartCard>
           </div>
 
-          {/* Visit Detail Table */}
-          {visitAnalytics.visit_trends && visitAnalytics.visit_trends.length > 0 && (
-            <ChartCard title="Visit Detail" icon={<IconBar />}>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-gray-100">
-                      {['Period','Total','Completed','Cancelled','No-Show','Walk-in','Online','Avg Wait'].map(h => (
-                        <th key={h} className="text-left py-2.5 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
+          {/* Peak Hours & Top Doctors */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Peak Hours Bar Chart */}
+            <div className="p-6 border rounded-xl bg-white shadow-xl">
+              <h3 className="text-xl font-bold mb-4 text-gray-800 flex items-center gap-2">
+                <span>⏰</span> Peak Hours
+              </h3>
+              {!visitAnalytics.peak_hours || visitAnalytics.peak_hours.length === 0 ? (
+                <div className="flex items-center justify-center h-80 bg-gray-50 rounded-lg">
+                  <p className="text-gray-500">No peak hour data available</p>
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={320}>
+                  <BarChart data={visitAnalytics.peak_hours || []}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                    <XAxis dataKey="hour" label={{ value: 'Hour', position: 'insideBottom', offset: -5 }} />
+                    <YAxis label={{ value: 'Visits', angle: -90, position: 'insideLeft' }} />
+                    <Tooltip />
+                    <Bar dataKey="visit_count" fill="#8B5CF6" radius={[10, 10, 0, 0]} name="Visit Count" />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+
+            {/* Top Doctors Bar Chart */}
+            <div className="p-6 border rounded-xl bg-white shadow-xl">
+              <h3 className="text-xl font-bold mb-4 text-gray-800 flex items-center gap-2">
+                <span>👨‍⚕️</span> Top Doctors by Visits
+              </h3>
+              {!visitAnalytics.top_doctors || visitAnalytics.top_doctors.length === 0 ? (
+                <div className="flex items-center justify-center h-80 bg-gray-50 rounded-lg">
+                  <p className="text-gray-500">No doctor visit data available</p>
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={320}>
+                  <BarChart data={visitAnalytics.top_doctors || []} layout="vertical">
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                    <XAxis type="number" />
+                    <YAxis dataKey="doctor_name" type="category" width={140} />
+                    <Tooltip />
+                    <Bar dataKey="visit_count" fill="#10B981" radius={[0, 10, 10, 0]} name="Visits">
+                      {(visitAnalytics.top_doctors || []).map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                       ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+          </div>
+
+          {/* Visit Details Table */}
+          <div className="p-6 border rounded-xl bg-white shadow-xl">
+            <h3 className="text-xl font-bold mb-4 text-gray-800 flex items-center gap-2">
+              <span>📋</span> Detailed Visit Statistics
+            </h3>
+            <div className="overflow-x-auto">
+              <table className="min-w-full">
+                <thead>
+                  <tr className="bg-gradient-to-r from-blue-50 to-blue-100">
+                    <th className="px-4 py-3 text-left font-semibold text-gray-700">Period</th>
+                    <th className="px-4 py-3 text-right font-semibold text-gray-700">Total Visits</th>
+                    <th className="px-4 py-3 text-right font-semibold text-gray-700">Completed</th>
+                    <th className="px-4 py-3 text-right font-semibold text-gray-700">Cancelled</th>
+                    <th className="px-4 py-3 text-right font-semibold text-gray-700">No-Show</th>
+                    <th className="px-4 py-3 text-right font-semibold text-gray-700">Avg Duration</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visitAnalytics.trends && visitAnalytics.trends.map((trend, idx) => (
+                    <tr key={idx} className="border-t hover:bg-blue-50 transition-colors">
+                      <td className="px-4 py-3 font-medium">{trend.period}</td>
+                      <td className="px-4 py-3 text-right font-bold text-blue-600">{trend.total_visits}</td>
+                      <td className="px-4 py-3 text-right text-green-600">{trend.completed}</td>
+                      <td className="px-4 py-3 text-right text-red-600">{trend.cancelled}</td>
+                      <td className="px-4 py-3 text-right text-orange-600">{trend.no_show}</td>
+                      <td className="px-4 py-3 text-right text-gray-600">{trend.avg_duration || 'N/A'} min</td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {visitAnalytics.visit_trends.map((row, i) => (
-                      <tr key={i} className="border-b border-gray-50 hover:bg-blue-50/40 transition-colors">
-                        <td className="py-2.5 px-3 font-medium text-gray-700">{formatToIST(row.period)}</td>
-                        <td className="py-2.5 px-3 font-bold text-blue-600">{row.total_visits}</td>
-                        <td className="py-2.5 px-3 text-emerald-600">{row.completed_visits}</td>
-                        <td className="py-2.5 px-3 text-red-500">{row.cancelled_visits}</td>
-                        <td className="py-2.5 px-3 text-amber-600">{row.noshow_visits}</td>
-                        <td className="py-2.5 px-3 text-gray-600">{row.walkin_visits}</td>
-                        <td className="py-2.5 px-3 text-gray-600">{row.online_visits}</td>
-                        <td className="py-2.5 px-3 text-gray-600">{row.avg_waiting_time ? `${Math.round(row.avg_waiting_time)}m` : '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </ChartCard>
-          )}
-        </>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
       ) : (
-        <div className="text-center py-16 text-gray-400">No data available</div>
+        <p className="text-center text-gray-500 py-12 bg-white rounded-lg shadow">No data available</p>
       )}
     </div>
   );
 
-  // ── MEDICATIONS ────────────────────────────────────────────────────────────
   const renderMedications = () => (
-    <div className="space-y-6">
-      <FilterBar>
-        <DateInput label="Start Date" value={medDateRange.start_date} onChange={(e) => setMedDateRange({ ...medDateRange, start_date: e.target.value })} />
-        <DateInput label="End Date"   value={medDateRange.end_date}   onChange={(e) => setMedDateRange({ ...medDateRange, end_date:   e.target.value })} />
-        {doctors.length > 0 && (
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Doctor</label>
-            <select
-              value={doctorId}
-              onChange={(e) => setDoctorId(e.target.value)}
-              className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-            >
-              <option value="">All Doctors</option>
-              {doctors.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-            </select>
+    <div>
+      <div className="mb-6 flex flex-wrap items-center gap-4 bg-white p-4 rounded-lg shadow">
+        <div>
+          <label className="block text-sm mb-1 font-medium text-gray-700">Start Date:</label>
+          <input
+            type="date"
+            value={medDateRange.start_date}
+            onChange={(e) => setMedDateRange({ ...medDateRange, start_date: e.target.value })}
+            className="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+          />
+        </div>
+        <div>
+          <label className="block text-sm mb-1 font-medium text-gray-700">End Date:</label>
+          <input
+            type="date"
+            value={medDateRange.end_date}
+            onChange={(e) => setMedDateRange({ ...medDateRange, end_date: e.target.value })}
+            className="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+          />
+        </div>
+        <button
+          onClick={() => {
+            fetchMedicationAnalytics();
+            fetchSymptomsAnalytics();
+          }}
+          className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium shadow-md mt-5"
+        >
+          Apply Filters
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center h-96 bg-white rounded-lg shadow">
+          <div className="text-center">
+            <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent mb-4"></div>
+            <div className="text-lg font-medium text-gray-700">Loading medication analytics...</div>
           </div>
-        )}
-        <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">Search Medication</label>
-          <SearchInput value={medSearch} onChange={(e) => setMedSearch(e.target.value)} placeholder="e.g. Paracetamol" />
         </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">Search Symptom</label>
-          <SearchInput value={symptomSearch} onChange={(e) => setSymptomSearch(e.target.value)} placeholder="e.g. Fever" />
-        </div>
-        <ApplyBtn onClick={() => { fetchMedicationAnalytics(); fetchSymptomsAnalytics(); }} />
-      </FilterBar>
+      ) : (
+        <div className="space-y-6">
+          {/* Top Medications Bar Chart */}
+          <div className="p-6 border rounded-xl bg-white shadow-xl">
+            <h3 className="text-xl font-bold mb-4 text-gray-800 flex items-center gap-2">
+              <span>💊</span> Top Prescribed Medications
+            </h3>
+            <ResponsiveContainer width="100%" height={450}>
+              <BarChart data={(medicationAnalytics?.top_medications || []).slice(0, 10)} layout="vertical">
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis type="number" />
+                <YAxis dataKey="medication_name" type="category" width={180} />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="prescription_count" fill="#3B82F6" radius={[0, 10, 10, 0]} name="Prescriptions">
+                  {(medicationAnalytics?.top_medications || []).slice(0, 10).map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
 
-      {loading ? <Spinner /> : (
-        <>
+          {/* Medication Categories & Symptoms/Diagnoses */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Top Medications */}
-            <ChartCard title="Top Prescribed Medications" icon={<IconPill />}>
-              {medicationAnalytics?.top_medications?.length ? (
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={medicationAnalytics.top_medications.slice(0, 10)} layout="vertical">
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f5f5f5" />
-                    <XAxis type="number" tick={{ fontSize: 11 }} />
-                    <YAxis dataKey="medicine_name" type="category" width={130} tick={{ fontSize: 11 }} />
-                    <Tooltip />
-                    <Bar dataKey="prescription_count" radius={[0, 6, 6, 0]} name="Prescriptions">
-                      {medicationAnalytics.top_medications.slice(0, 10).map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : <div className="flex items-center justify-center h-40 text-gray-400 text-sm">No data available</div>}
-            </ChartCard>
-
-            {/* Medication Categories */}
-            <ChartCard title="Medication Categories" icon={<IconPie />}>
-              {medicationAnalytics?.medication_categories?.length ? (
-                <ResponsiveContainer width="100%" height={300}>
+            {/* Medication Categories Pie Chart */}
+            <div className="p-6 border rounded-xl bg-white shadow-xl">
+              <h3 className="text-xl font-bold mb-4 text-gray-800 flex items-center gap-2">
+                <span>📂</span> Medication Categories
+              </h3>
+              {!medicationAnalytics?.categories || medicationAnalytics.categories.length === 0 ? (
+                <div className="flex items-center justify-center h-80 bg-gray-50 rounded-lg">
+                  <p className="text-gray-500">No medication category data available</p>
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={320}>
                   <PieChart>
                     <Pie
-                      data={medicationAnalytics.medication_categories}
-                      cx="50%" cy="50%"
+                      data={(medicationAnalytics?.categories || []).slice(0, 8)}
+                      cx="50%"
+                      cy="50%"
                       labelLine={false}
-                      label={({ name, percent }) => percent > 0.05 ? `${(percent * 100).toFixed(0)}%` : ''}
+                      label={({ category_name, percent }) => `${category_name || 'Other'}: ${(percent * 100).toFixed(0)}%`}
                       outerRadius={110}
-                      dataKey="count"
+                      fill="#8884d8"
+                      dataKey="usage_count"
                     >
-                      {medicationAnalytics.medication_categories.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                      {(medicationAnalytics?.categories || []).slice(0, 8).map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
                     </Pie>
                     <Tooltip />
-                    <Legend />
                   </PieChart>
                 </ResponsiveContainer>
-              ) : <div className="flex items-center justify-center h-40 text-gray-400 text-sm">No data available</div>}
-            </ChartCard>
+              )}
+            </div>
+
+            {/* Top Symptoms Bar Chart */}
+            <div className="p-6 border rounded-xl bg-white shadow-xl">
+              <h3 className="text-xl font-bold mb-4 text-gray-800 flex items-center gap-2">
+                <span>🤒</span> Common Symptoms
+              </h3>
+              <ResponsiveContainer width="100%" height={320}>
+                <BarChart data={(symptomsAnalytics?.top_symptoms || []).slice(0, 8)}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis dataKey="symptom" angle={-45} textAnchor="end" height={100} />
+                  <YAxis />
+                  <Tooltip />
+                  <Bar dataKey="frequency" fill="#EF4444" radius={[10, 10, 0, 0]} name="Frequency">
+                    {(symptomsAnalytics?.top_symptoms || []).slice(0, 8).map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Common Symptoms */}
-            <ChartCard title="Common Symptoms" icon={<IconHeart />}>
-              {symptomsAnalytics?.top_symptoms?.length ? (
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={symptomsAnalytics.top_symptoms.slice(0, 8)}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f5f5f5" />
-                    <XAxis dataKey="symptom" angle={-30} textAnchor="end" height={60} tick={{ fontSize: 11 }} />
-                    <YAxis tick={{ fontSize: 11 }} />
-                    <Tooltip />
-                    <Bar dataKey="frequency" radius={[6, 6, 0, 0]} name="Frequency">
-                      {symptomsAnalytics.top_symptoms.slice(0, 8).map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : <div className="flex items-center justify-center h-40 text-gray-400 text-sm">No data available</div>}
-            </ChartCard>
-
-            {/* Common Diagnoses */}
-            <ChartCard title="Common Diagnoses" icon={<IconStethoscope />}>
-              {symptomsAnalytics?.top_diagnoses?.length ? (
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={symptomsAnalytics.top_diagnoses.slice(0, 10)} layout="vertical">
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f5f5f5" />
-                    <XAxis type="number" tick={{ fontSize: 11 }} />
-                    <YAxis dataKey="diagnosis" type="category" width={160} tick={{ fontSize: 11 }} />
-                    <Tooltip />
-                    <Bar dataKey="frequency" radius={[0, 6, 6, 0]} name="Frequency">
-                      {symptomsAnalytics.top_diagnoses.slice(0, 10).map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : <div className="flex items-center justify-center h-40 text-gray-400 text-sm">No data available</div>}
-            </ChartCard>
+          {/* Top Diagnoses */}
+          <div className="p-6 border rounded-xl bg-white shadow-xl">
+            <h3 className="text-xl font-bold mb-4 text-gray-800 flex items-center gap-2">
+              <span>🩺</span> Common Diagnoses
+            </h3>
+            {!symptomsAnalytics?.top_diagnoses || symptomsAnalytics.top_diagnoses.length === 0 ? (
+              <div className="flex items-center justify-center h-96 bg-gray-50 rounded-lg">
+                <p className="text-gray-500">No diagnosis data available</p>
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={400}>
+                <BarChart data={(symptomsAnalytics?.top_diagnoses || []).slice(0, 10)} layout="vertical">
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis type="number" />
+                  <YAxis dataKey="diagnosis" type="category" width={200} />
+                  <Tooltip />
+                  <Bar dataKey="frequency" fill="#8B5CF6" radius={[0, 10, 10, 0]} name="Frequency">
+                    {(symptomsAnalytics?.top_diagnoses || []).slice(0, 10).map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </div>
-        </>
+        </div>
       )}
     </div>
   );
 
-  // ── PAYMENTS ───────────────────────────────────────────────────────────────
   const renderPayments = () => {
-    const paymentMethodsData = (paymentAnalytics?.payment_methods || []).map(m => ({
-      name: m.payment_method,
-      value: parseFloat(m.total_amount || 0)
-    }));
+    const paymentMethodsData = paymentAnalytics?.payment_methods?.map(method => ({
+      name: method.payment_method,
+      value: parseFloat(method.total_amount || 0)
+    })) || [];
 
     return (
-      <div className="space-y-6">
-        <FilterBar>
-          <DateInput label="Start Date" value={paymentDateRange.start_date} onChange={(e) => setPaymentDateRange({ ...paymentDateRange, start_date: e.target.value })} />
-          <DateInput label="End Date"   value={paymentDateRange.end_date}   onChange={(e) => setPaymentDateRange({ ...paymentDateRange, end_date:   e.target.value })} />
-          <ApplyBtn onClick={fetchPaymentAnalytics} />
-        </FilterBar>
+      <div>
+        <div className="mb-6 flex flex-wrap items-center gap-4 bg-white p-4 rounded-lg shadow">
+          <div>
+            <label className="block text-sm mb-1 font-medium text-gray-700">Start Date:</label>
+            <input
+              type="date"
+              value={paymentDateRange.start_date}
+              onChange={(e) => setPaymentDateRange({ ...paymentDateRange, start_date: e.target.value })}
+              className="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            />
+          </div>
+          <div>
+            <label className="block text-sm mb-1 font-medium text-gray-700">End Date:</label>
+            <input
+              type="date"
+              value={paymentDateRange.end_date}
+              onChange={(e) => setPaymentDateRange({ ...paymentDateRange, end_date: e.target.value })}
+              className="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            />
+          </div>
+          <button
+            onClick={fetchPaymentAnalytics}
+            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium shadow-md mt-5"
+          >
+            Apply Filters
+          </button>
+        </div>
 
-        {loading ? <Spinner /> : paymentAnalytics ? (
-          <>
+        {loading ? (
+          <div className="flex items-center justify-center h-96 bg-white rounded-lg shadow">
+            <div className="text-center">
+              <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent mb-4"></div>
+              <div className="text-lg font-medium text-gray-700">Loading payment analytics...</div>
+            </div>
+          </div>
+        ) : paymentAnalytics ? (
+          <div className="space-y-6">
             {/* Revenue Metrics */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <MetricCard label="Total Revenue"    value={`₹${paymentAnalytics.total_revenue || 0}`}    icon={<IconCurrency />} color="green" />
-              <MetricCard label="Total Bills"      value={paymentAnalytics.total_bills || 0}             icon={<IconReceipt />}  color="blue" />
-              <MetricCard label="Avg Bill Amount"  value={`₹${paymentAnalytics.avg_bill_amount || 0}`}  icon={<IconBar />}      color="purple" />
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="p-8 border rounded-xl bg-gradient-to-br from-green-50 to-green-100 shadow-xl hover:shadow-2xl transition-shadow">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-lg font-semibold text-gray-700">Total Revenue</h3>
+                  <span className="text-3xl">💵</span>
+                </div>
+                <p className="text-5xl font-bold text-green-600">₹{paymentAnalytics.total_revenue || 0}</p>
+              </div>
+
+              <div className="p-8 border rounded-xl bg-gradient-to-br from-blue-50 to-blue-100 shadow-xl hover:shadow-2xl transition-shadow">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-lg font-semibold text-gray-700">Total Bills</h3>
+                  <span className="text-3xl">🧾</span>
+                </div>
+                <p className="text-5xl font-bold text-blue-600">{paymentAnalytics.total_bills || 0}</p>
+              </div>
+
+              <div className="p-8 border rounded-xl bg-gradient-to-br from-purple-50 to-purple-100 shadow-xl hover:shadow-2xl transition-shadow">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-lg font-semibold text-gray-700">Avg Bill Amount</h3>
+                  <span className="text-3xl">📊</span>
+                </div>
+                <p className="text-5xl font-bold text-purple-600">₹{paymentAnalytics.avg_bill_amount || 0}</p>
+              </div>
             </div>
 
-            {/* Revenue Trend */}
-            <ChartCard title="Revenue Trend Over Time" icon={<IconTrend />}>
-              <ResponsiveContainer width="100%" height={300}>
+            {/* Revenue Trend Line Chart */}
+            <div className="p-6 border rounded-xl bg-white shadow-xl">
+              <h3 className="text-xl font-bold mb-4 text-gray-800 flex items-center gap-2">
+                <span>📈</span> Revenue Trend Over Time <span className="text-sm text-gray-500 ml-2">(IST)</span>
+              </h3>
+              <ResponsiveContainer width="100%" height={450}>
                 <LineChart data={paymentAnalytics.daily_revenue || []}>
-                  <defs>
-                    <filter id="shadow"><feDropShadow dx="0" dy="2" stdDeviation="3" floodOpacity="0.15"/></filter>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f5f5f5" />
-                  <XAxis dataKey="period" tickFormatter={formatToIST} tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 11 }} />
-                  <Tooltip content={<CustomTooltip />} formatter={(v) => `₹${v}`} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis dataKey="period" tickFormatter={formatToIST} />
+                  <YAxis />
+                  <Tooltip content={<CustomTooltip />} formatter={(value) => `₹${value}`} />
                   <Legend />
-                  <Line type="monotone" dataKey="revenue"      stroke="#10B981" strokeWidth={2.5} dot={{ r: 4 }} name="Total Revenue" />
-                  <Line type="monotone" dataKey="paid_revenue" stroke="#3B82F6" strokeWidth={2.5} dot={{ r: 4 }} name="Paid Revenue" />
+                  <Line type="monotone" dataKey="revenue" stroke="#10B981" strokeWidth={3} dot={{ r: 6, fill: '#10B981' }} name="Total Revenue" />
+                  <Line type="monotone" dataKey="paid_revenue" stroke="#3B82F6" strokeWidth={3} dot={{ r: 6, fill: '#3B82F6' }} name="Paid Revenue" />
                 </LineChart>
               </ResponsiveContainer>
-            </ChartCard>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Payment Methods */}
-              <ChartCard title="Payment Methods" icon={<IconPie />}>
-                {paymentMethodsData.length ? (
-                  <>
-                    <ResponsiveContainer width="100%" height={240}>
-                      <PieChart>
-                        <Pie data={paymentMethodsData} cx="50%" cy="50%" labelLine={false}
-                          label={({ name, percent }) => percent > 0.05 ? `${(percent*100).toFixed(0)}%` : ''}
-                          outerRadius={95} dataKey="value"
-                        >
-                          {paymentMethodsData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                        </Pie>
-                        <Tooltip formatter={(v) => `₹${v}`} />
-                        <Legend />
-                      </PieChart>
-                    </ResponsiveContainer>
-                    <div className="mt-3 space-y-2">
-                      {paymentAnalytics.payment_methods.map((m, i) => (
-                        <div key={i} className="flex items-center justify-between px-3 py-2.5 bg-gray-50 rounded-xl hover:bg-blue-50 transition-colors">
-                          <div className="flex items-center gap-2">
-                            <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: COLORS[i % COLORS.length] }} />
-                            <span className="text-sm font-medium capitalize text-gray-700">{m.payment_method}</span>
-                          </div>
-                          <div className="text-right">
-                            <p className="text-sm font-bold text-emerald-600">₹{m.total_amount}</p>
-                            <p className="text-xs text-gray-400">{m.count} bills</p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </>
-                ) : <div className="flex items-center justify-center h-40 text-gray-400 text-sm">No data available</div>}
-              </ChartCard>
-
-              {/* Top Patients */}
-              <ChartCard title="Top Patients by Revenue" icon={<IconStar />}>
-                {paymentAnalytics.top_patients?.length ? (
-                  <ResponsiveContainer width="100%" height={300}>
-                    <BarChart data={paymentAnalytics.top_patients.slice(0, 8)} layout="vertical">
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f5f5f5" />
-                      <XAxis type="number" tick={{ fontSize: 11 }} />
-                      <YAxis dataKey="patient_name" type="category" width={120} tick={{ fontSize: 11 }} />
-                      <Tooltip formatter={(v) => `₹${v}`} />
-                      <Bar dataKey="total_spent" radius={[0, 6, 6, 0]} name="Total Spent">
-                        {paymentAnalytics.top_patients.slice(0, 8).map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                ) : <div className="flex items-center justify-center h-40 text-gray-400 text-sm">No data available</div>}
-              </ChartCard>
             </div>
-          </>
+
+            {/* Payment Methods & Top Patients */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Payment Methods Pie Chart */}
+              <div className="p-6 border rounded-xl bg-white shadow-xl">
+                <h3 className="text-xl font-bold mb-4 text-gray-800 flex items-center gap-2">
+                  <span>💳</span> Payment Methods Distribution
+                </h3>
+                <ResponsiveContainer width="100%" height={320}>
+                  <PieChart>
+                    <Pie
+                      data={paymentMethodsData}
+                      cx="50%"
+                      cy="50%"
+                      labelLine={false}
+                      label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                      outerRadius={110}
+                      fill="#8884d8"
+                      dataKey="value"
+                    >
+                      {paymentMethodsData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip formatter={(value) => `₹${value}`} />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="mt-4 space-y-2">
+                  {paymentAnalytics.payment_methods && paymentAnalytics.payment_methods.map((method, idx) => (
+                    <div key={idx} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                      <span className="font-medium capitalize">{method.payment_method}</span>
+                      <div className="text-right">
+                        <p className="font-bold text-green-600">₹{method.total_amount}</p>
+                        <p className="text-sm text-gray-600">{method.count} bills</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Top Patients by Revenue Bar Chart */}
+              <div className="p-6 border rounded-xl bg-white shadow-xl">
+                <h3 className="text-xl font-bold mb-4 text-gray-800 flex items-center gap-2">
+                  <span>🏆</span> Top Patients by Revenue
+                </h3>
+                <ResponsiveContainer width="100%" height={320}>
+                  <BarChart data={(paymentAnalytics.top_patients || []).slice(0, 8)} layout="vertical">
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                    <XAxis type="number" />
+                    <YAxis dataKey="patient_name" type="category" width={130} />
+                    <Tooltip formatter={(value) => `₹${value}`} />
+                    <Bar dataKey="total_spent" fill="#F59E0B" radius={[0, 10, 10, 0]} name="Total Spent">
+                      {(paymentAnalytics.top_patients || []).slice(0, 8).map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
         ) : (
-          <div className="text-center py-16 text-gray-400">No data available</div>
+          <p className="text-center text-gray-500 py-12 bg-white rounded-lg shadow">No data available</p>
         )}
       </div>
     );
   };
 
-  // ── DEMOGRAPHICS ───────────────────────────────────────────────────────────
   const renderDemographics = () => (
-    <div className="space-y-6">
-      {loading ? <Spinner /> : demographics ? (
-        <>
+    <div>
+      {loading ? (
+        <div className="flex items-center justify-center h-96 bg-white rounded-lg shadow">
+          <div className="text-center">
+            <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent mb-4"></div>
+            <div className="text-lg font-medium text-gray-700">Loading demographics...</div>
+          </div>
+        </div>
+      ) : demographics ? (
+        <div className="space-y-6">
+          {/* Age & Gender Distribution */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Age Distribution */}
-            <ChartCard title="Age Distribution" icon={<IconUsers />}>
-              <ResponsiveContainer width="100%" height={280}>
+            {/* Age Distribution Bar Chart */}
+            <div className="p-6 border rounded-xl bg-white shadow-xl">
+              <h3 className="text-xl font-bold mb-4 text-gray-800 flex items-center gap-2">
+                <span>👶👨👴</span> Age Distribution
+              </h3>
+              <ResponsiveContainer width="100%" height={350}>
                 <BarChart data={demographics.age_distribution || []}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f5f5f5" />
-                  <XAxis dataKey="age_group" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 11 }} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis dataKey="age_group" />
+                  <YAxis />
                   <Tooltip />
-                  <Bar dataKey="patient_count" radius={[8, 8, 0, 0]} name="Patients">
-                    {(demographics.age_distribution || []).map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                  <Bar dataKey="patient_count" fill="#3B82F6" radius={[10, 10, 0, 0]} name="Patients">
+                    {(demographics.age_distribution || []).map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
-            </ChartCard>
+            </div>
 
-            {/* Gender Distribution */}
-            <ChartCard title="Gender Distribution" icon={<IconPie />}>
-              <ResponsiveContainer width="100%" height={280}>
+            {/* Gender Distribution Pie Chart */}
+            <div className="p-6 border rounded-xl bg-white shadow-xl">
+              <h3 className="text-xl font-bold mb-4 text-gray-800 flex items-center gap-2">
+                <span>👥</span> Gender Distribution
+              </h3>
+              <ResponsiveContainer width="100%" height={350}>
                 <PieChart>
                   <Pie
                     data={demographics.gender_distribution || []}
-                    cx="50%" cy="50%"
+                    cx="50%"
+                    cy="50%"
                     labelLine={false}
                     label={({ gender, percentage }) => `${gender}: ${percentage}%`}
-                    outerRadius={100}
+                    outerRadius={120}
+                    fill="#8884d8"
                     dataKey="patient_count"
                   >
-                    {(demographics.gender_distribution || []).map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                    {(demographics.gender_distribution || []).map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
                   </Pie>
                   <Tooltip />
                   <Legend />
                 </PieChart>
               </ResponsiveContainer>
-            </ChartCard>
+            </div>
           </div>
 
+          {/* Blood Group & Patient Source */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Blood Group */}
-            <ChartCard title="Blood Group Distribution" icon={<IconHeart />}>
-              <ResponsiveContainer width="100%" height={260}>
+            {/* Blood Group Distribution */}
+            <div className="p-6 border rounded-xl bg-white shadow-xl">
+              <h3 className="text-xl font-bold mb-4 text-gray-800 flex items-center gap-2">
+                <span>🩸</span> Blood Group Distribution
+              </h3>
+              <ResponsiveContainer width="100%" height={350}>
                 <BarChart data={demographics.blood_group_distribution || []}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f5f5f5" />
-                  <XAxis dataKey="blood_group" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 11 }} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis dataKey="blood_group" />
+                  <YAxis />
                   <Tooltip />
-                  <Bar dataKey="patient_count" radius={[8, 8, 0, 0]} name="Patients">
-                    {(demographics.blood_group_distribution || []).map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                  <Bar dataKey="patient_count" fill="#EF4444" radius={[10, 10, 0, 0]} name="Patients">
+                    {(demographics.blood_group_distribution || []).map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
-            </ChartCard>
+            </div>
 
-            {/* Patient Source */}
-            <ChartCard title="Patient Source" icon={<IconDoor />}>
-              {demographics.patient_source?.length ? (
-                <ResponsiveContainer width="100%" height={260}>
-                  <PieChart>
-                    <Pie
-                      data={demographics.patient_source}
-                      cx="50%" cy="50%"
-                      labelLine={false}
-                      label={({ source, patient_count }) => `${source || 'Direct'}: ${patient_count}`}
-                      outerRadius={100}
-                      dataKey="patient_count"
-                    >
-                      {demographics.patient_source.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
-              ) : <div className="flex items-center justify-center h-40 text-gray-400 text-sm">No data available</div>}
-            </ChartCard>
+            {/* Patient Source Pie Chart */}
+            <div className="p-6 border rounded-xl bg-white shadow-xl">
+              <h3 className="text-xl font-bold mb-4 text-gray-800 flex items-center gap-2">
+                <span>🚪</span> Patient Source
+              </h3>
+              <ResponsiveContainer width="100%" height={350}>
+                <PieChart>
+                  <Pie
+                    data={demographics.patient_source || []}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    label={({ source, patient_count }) => `${source || 'Direct'}: ${patient_count}`}
+                    outerRadius={120}
+                    fill="#8884d8"
+                    dataKey="patient_count"
+                  >
+                    {(demographics.patient_source || []).map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
           </div>
 
-          {/* Top Cities */}
-          <ChartCard title="Top Cities" icon={<IconMapPin />}>
-            <ResponsiveContainer width="100%" height={360}>
+          {/* Location Distribution */}
+          <div className="p-6 border rounded-xl bg-white shadow-xl">
+            <h3 className="text-xl font-bold mb-4 text-gray-800 flex items-center gap-2">
+              <span>🌍</span> Top Cities
+            </h3>
+            <ResponsiveContainer width="100%" height={400}>
               <BarChart data={(demographics.location_distribution || []).slice(0, 15)} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" stroke="#f5f5f5" />
-                <XAxis type="number" tick={{ fontSize: 11 }} />
-                <YAxis dataKey="city" type="category" width={130} tick={{ fontSize: 11 }} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis type="number" />
+                <YAxis dataKey="city" type="category" width={140} />
                 <Tooltip />
-                <Bar dataKey="patient_count" radius={[0, 6, 6, 0]} name="Patients">
-                  {(demographics.location_distribution || []).slice(0, 15).map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                <Bar dataKey="patient_count" fill="#14B8A6" radius={[0, 10, 10, 0]} name="Patients">
+                  {(demographics.location_distribution || []).slice(0, 15).map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  ))}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
-          </ChartCard>
-        </>
+          </div>
+        </div>
       ) : (
-        <div className="text-center py-16 text-gray-400">No data available</div>
+        <p className="text-center text-gray-500 py-12 bg-white rounded-lg shadow">No data available</p>
       )}
     </div>
   );
 
-  // ── RENDER ─────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Hero Banner */}
-      <div className="bg-gradient-to-r from-blue-700 via-blue-600 to-indigo-700 px-6 pt-8 pb-6">
-        <button
-          onClick={() => navigate(-1)}
-          className="flex items-center gap-2 text-blue-200 hover:text-white text-sm mb-4 transition-colors"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
-            <polyline points="15 18 9 12 15 6"/>
-          </svg>
-          Back
-        </button>
-        <div className="flex items-start justify-between">
-          <div>
-            <h1 className="text-white text-2xl font-bold tracking-tight">Analytics Dashboard</h1>
-            <p className="text-blue-200 text-sm mt-1">Comprehensive insights into your clinic's performance</p>
-          </div>
-          <div className="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center text-white">
-            <IconPie />
-          </div>
-        </div>
-
-        {/* Tab Bar inside banner */}
-        <div className="flex gap-1 mt-6 overflow-x-auto pb-1 scrollbar-hide">
-          {tabs.map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold whitespace-nowrap transition-all ${
-                activeTab === tab.id
-                  ? 'bg-white text-blue-700 shadow-md'
-                  : 'text-blue-100 hover:bg-white/15'
-              }`}
-            >
-              <span className="w-4 h-4">{tab.icon}</span>
-              {tab.label}
-            </button>
-          ))}
-        </div>
+    <div className="p-6 bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen">
+      <div className="mb-8">
+        <h1 className="text-5xl font-bold text-gray-800 mb-3 flex items-center gap-3">
+          <span>📊</span> Analytics Dashboard
+        </h1>
+        <p className="text-lg text-gray-600">Comprehensive insights into your clinic's performance with interactive charts and graphs</p>
       </div>
 
-      {/* Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
-        {activeTab === 'overview'     && renderOverview()}
-        {activeTab === 'visits'       && renderVisitAnalytics()}
-        {activeTab === 'medications'  && renderMedications()}
-        {activeTab === 'payments'     && renderPayments()}
+      {/* Tab Navigation */}
+      <div className="flex flex-wrap gap-3 mb-8 bg-white border rounded-xl p-3 shadow-lg">
+        <button
+          onClick={() => setActiveTab('overview')}
+          className={`px-6 py-3 font-semibold rounded-lg transition-all ${
+            activeTab === 'overview'
+              ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg scale-105'
+              : 'text-gray-600 hover:bg-gray-100 hover:scale-105'
+          }`}
+        >
+          📊 Overview
+        </button>
+        <button
+          onClick={() => setActiveTab('visits')}
+          className={`px-6 py-3 font-semibold rounded-lg transition-all ${
+            activeTab === 'visits'
+              ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg scale-105'
+              : 'text-gray-600 hover:bg-gray-100 hover:scale-105'
+          }`}
+        >
+          📈 Visit Analytics
+        </button>
+        <button
+          onClick={() => setActiveTab('medications')}
+          className={`px-6 py-3 font-semibold rounded-lg transition-all ${
+            activeTab === 'medications'
+              ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg scale-105'
+              : 'text-gray-600 hover:bg-gray-100 hover:scale-105'
+          }`}
+        >
+          💊 Medications & Symptoms
+        </button>
+        <button
+          onClick={() => setActiveTab('payments')}
+          className={`px-6 py-3 font-semibold rounded-lg transition-all ${
+            activeTab === 'payments'
+              ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg scale-105'
+              : 'text-gray-600 hover:bg-gray-100 hover:scale-105'
+          }`}
+        >
+          💰 Payment Reports
+        </button>
+        <button
+          onClick={() => setActiveTab('demographics')}
+          className={`px-6 py-3 font-semibold rounded-lg transition-all ${
+            activeTab === 'demographics'
+              ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg scale-105'
+              : 'text-gray-600 hover:bg-gray-100 hover:scale-105'
+          }`}
+        >
+          👥 Demographics
+        </button>
+      </div>
+
+      {/* Tab Content */}
+      <div>
+        {activeTab === 'overview' && renderOverview()}
+        {activeTab === 'visits' && renderVisitAnalytics()}
+        {activeTab === 'medications' && renderMedications()}
+        {activeTab === 'payments' && renderPayments()}
         {activeTab === 'demographics' && renderDemographics()}
       </div>
     </div>

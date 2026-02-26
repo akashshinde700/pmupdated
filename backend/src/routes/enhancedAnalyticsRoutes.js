@@ -7,9 +7,7 @@ const {
   getPrescriptionAnalytics,
   getPaymentAnalytics,
   getPatientDemographics,
-  getDoctorPerformance,
-  searchPatients,
-  getDoctorsList
+  getDoctorPerformance
 } = require('../controllers/enhancedAnalyticsController');
 const { authenticateToken } = require('../middleware/auth');
 
@@ -38,9 +36,5 @@ router.get('/demographics', authenticateToken, getPatientDemographics);
 
 // Doctor performance metrics
 router.get('/doctor-performance', authenticateToken, getDoctorPerformance);
-
-// Search endpoints
-router.get('/search/patients', authenticateToken, searchPatients);
-router.get('/doctors', authenticateToken, getDoctorsList);
 
 module.exports = router;

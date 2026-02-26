@@ -117,150 +117,249 @@ const DoctorSettings = () => {
     );
   }
 
-  const tabs = [
-    { id: 'availability', label: 'Availability', icon: '📅' },
-    { id: 'timeslots', label: 'Time Slots', icon: '⏰' },
-    { id: 'staff', label: 'Staff', icon: '👥' },
-    { id: 'symptoms', label: 'Symptoms', icon: '🤒' },
-    { id: 'diagnosis', label: 'Diagnosis', icon: '🔬' },
-    { id: 'medications', label: 'Medications', icon: '💊' },
-    { id: 'rx-templates', label: 'Rx Templates', icon: '📋' },
-    { id: 'landing-page', label: 'Landing Page', icon: '🌐' },
-    { id: 'referrals', label: 'Referrals', icon: '🔗' },
-  ];
-
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-blue-700 to-blue-500 px-6 py-5 shadow">
-        <div className="max-w-6xl mx-auto flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center text-2xl">⚙️</div>
-          <div>
-            <h1 className="text-2xl font-bold text-white">Doctor Settings</h1>
-            <p className="text-blue-100 text-sm mt-0.5">Dr. {user?.name || 'Doctor'} · Configure availability, templates & referrals</p>
-          </div>
+    <div className="p-6 max-w-6xl mx-auto">
+      <div className="mb-6">
+        <h1 className="text-3xl font-bold text-gray-900">Doctor Settings</h1>
+        <p className="text-gray-600 mt-1">Configure your availability, time slots, staff, and templates</p>
+      </div>
+
+      {/* Tabs */}
+      <div className="bg-white rounded-lg shadow mb-6">
+        <div className="border-b border-gray-200">
+          <nav className="flex -mb-px overflow-x-auto">
+            <button
+              onClick={() => setActiveTab('availability')}
+              className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                activeTab === 'availability'
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Availability
+            </button>
+            <button
+              onClick={() => setActiveTab('timeslots')}
+              className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                activeTab === 'timeslots'
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Time Slots
+            </button>
+            <button
+              onClick={() => setActiveTab('staff')}
+              className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                activeTab === 'staff'
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Staff Management
+            </button>
+            <button
+              onClick={() => setActiveTab('symptoms')}
+              className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                activeTab === 'symptoms'
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Symptoms Templates
+            </button>
+            <button
+              onClick={() => setActiveTab('diagnosis')}
+              className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                activeTab === 'diagnosis'
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Diagnosis Templates
+            </button>
+            <button
+              onClick={() => setActiveTab('medications')}
+              className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                activeTab === 'medications'
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Medications Templates
+            </button>
+            <button
+              onClick={() => setActiveTab('rx-templates')}
+              className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                activeTab === 'rx-templates'
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Prescription Templates
+            </button>
+            <button
+              onClick={() => setActiveTab('landing-page')}
+              className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                activeTab === 'landing-page'
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Landing Page
+            </button>
+            <button
+              onClick={() => setActiveTab('referrals')}
+              className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                activeTab === 'referrals'
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Referrals
+            </button>
+          </nav>
         </div>
       </div>
 
-      <div className="max-w-6xl mx-auto px-6 py-6">
-        {/* Tab Bar */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 mb-6 overflow-x-auto">
-          <nav className="flex min-w-max">
-            {tabs.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-1.5 px-4 py-3.5 text-sm font-medium border-b-2 transition-all whitespace-nowrap ${
-                  activeTab === tab.id
-                    ? 'border-blue-600 text-blue-600 bg-blue-50/50'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-                }`}
-              >
-                <span className="text-base">{tab.icon}</span>
-                <span>{tab.label}</span>
-              </button>
-            ))}
-          </nav>
-        </div>
-
       {/* Availability Tab Content */}
       {activeTab === 'availability' && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center text-xl">📅</div>
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">Working Days</h2>
-              <p className="text-sm text-gray-500">Select days when you are available for appointments</p>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
-            {availability.map(day => (
-              <button
-                key={day.day_of_week}
-                onClick={() => handleToggleDay(day.day_of_week)}
-                className={`relative py-4 px-2 rounded-xl font-medium transition-all text-center border-2 ${
-                  day.is_available
-                    ? 'bg-blue-600 border-blue-600 text-white shadow-md shadow-blue-100'
-                    : 'bg-white border-gray-200 text-gray-400 hover:border-blue-200 hover:text-blue-400'
-                }`}
-              >
-                <div className="text-sm font-semibold">{day.day_name?.slice(0, 3)}</div>
-                <div className={`text-xs mt-1 ${day.is_available ? 'text-blue-100' : 'text-gray-300'}`}>
-                  {day.is_available ? '✓ Open' : 'Closed'}
-                </div>
-              </button>
-            ))}
-          </div>
+        <>
+          {/* Working Days Section */}
+          <div className="bg-white rounded-lg shadow p-6">
+        <h2 className="text-xl font-semibold mb-4">Working Days</h2>
+        <p className="text-sm text-gray-600 mb-4">
+          Select the days when you are available for appointments
+        </p>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+          {availability.map(day => (
+            <button
+              key={day.day_of_week}
+              onClick={() => handleToggleDay(day.day_of_week)}
+              className={`
+                px-4 py-3 rounded-lg font-medium transition-all
+                ${day.is_available
+                  ? 'bg-blue-600 text-white shadow-md'
+                  : 'bg-gray-100 text-gray-400 hover:bg-gray-200'
+                }
+              `}
+            >
+              <div className="text-sm">{day.day_name}</div>
+              <div className="text-xs mt-1">
+                {day.is_available ? 'Available' : 'Closed'}
+              </div>
+            </button>
+          ))}
+        </div>
+
+          {/* Save Button */}
           <div className="mt-6 flex justify-end">
             <button
               onClick={handleSaveSettings}
               disabled={saving}
-              className="px-6 py-2.5 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-50 transition shadow-sm flex items-center gap-2"
+              className="px-8 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition shadow-md"
             >
-              {saving ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>Saving...</> : '✓ Save Changes'}
+              {saving ? 'Saving...' : 'Save Changes'}
             </button>
           </div>
-        </div>
+      </div>
+        </>
       )}
 
       {/* Time Slots Tab Content */}
       {activeTab === 'timeslots' && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-          <div className="flex justify-between items-center mb-6">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-purple-50 flex items-center justify-center text-xl">⏰</div>
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900">Time Slots</h2>
-                <p className="text-sm text-gray-500">{timeSlots.length} slot{timeSlots.length !== 1 ? 's' : ''} configured</p>
-              </div>
-            </div>
-            <button
-              onClick={() => setShowAddSlot(!showAddSlot)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition ${showAddSlot ? 'bg-gray-100 text-gray-600' : 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm'}`}
-            >
-              {showAddSlot ? '✕ Cancel' : '+ Add Slot'}
-            </button>
+      <div className="bg-white rounded-lg shadow p-6">
+        <div className="flex justify-between items-center mb-4">
+          <div>
+            <h2 className="text-xl font-semibold">Time Slots</h2>
+            <p className="text-sm text-gray-600 mt-1">
+              These time slots will be available on the booking page
+            </p>
           </div>
+          <button
+            onClick={() => setShowAddSlot(!showAddSlot)}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+          >
+            {showAddSlot ? 'Cancel' : '+ Add Slot'}
+          </button>
+        </div>
 
-          {showAddSlot && (
-            <div className="mb-5 p-4 bg-blue-50 rounded-xl border border-blue-100 flex gap-3 items-end">
-              <div className="flex-1">
-                <label className="block text-xs font-semibold text-blue-700 mb-1.5">New Time Slot</label>
-                <input type="time" value={newSlotTime} onChange={e => setNewSlotTime(e.target.value)}
-                  className="w-full px-4 py-2.5 border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-400 outline-none bg-white text-sm" />
-              </div>
-              <button onClick={handleAddTimeSlot}
-                className="px-5 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition text-sm font-medium shadow-sm">
-                + Add
+        {/* Add Slot Form */}
+        {showAddSlot && (
+          <div className="mb-4 p-4 bg-gray-50 rounded-lg border">
+            <label className="block text-sm font-medium mb-2">New Time Slot</label>
+            <div className="flex gap-2">
+              <input
+                type="time"
+                value={newSlotTime}
+                onChange={e => setNewSlotTime(e.target.value)}
+                className="flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+              />
+              <button
+                onClick={handleAddTimeSlot}
+                className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition"
+              >
+                Add
               </button>
             </div>
-          )}
-
-          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2.5">
-            {timeSlots.length === 0 ? (
-              <div className="col-span-full text-center py-12 text-gray-400">
-                <div className="text-4xl mb-2">⏰</div>
-                <p className="text-sm">No time slots yet. Click "+ Add Slot" to create one.</p>
-              </div>
-            ) : (
-              timeSlots.map(slot => (
-                <div key={slot.id} className="group relative bg-gray-50 border border-gray-200 rounded-xl p-3 text-center hover:border-blue-300 hover:bg-blue-50 transition">
-                  <div className="text-sm font-semibold text-gray-800">{slot.display_time}</div>
-                  <div className={`text-xs mt-0.5 ${slot.is_active ? 'text-green-500' : 'text-gray-300'}`}>
-                    {slot.is_active ? '● Active' : '○ Off'}
-                  </div>
-                  <button onClick={() => handleDeleteTimeSlot(slot.id)}
-                    className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full text-xs opacity-0 group-hover:opacity-100 transition flex items-center justify-center shadow">✕</button>
-                </div>
-              ))
-            )}
           </div>
+        )}
 
-          <div className="mt-5 p-3 bg-amber-50 border border-amber-100 rounded-lg text-xs text-amber-700 flex gap-2 items-start">
-            <span className="text-base">ℹ️</span>
-            <span>Time slot changes reflect on the booking page immediately. Deleting a slot does not affect existing appointments.</span>
+        {/* Time Slots Grid */}
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3">
+          {timeSlots.length === 0 ? (
+            <div className="col-span-full text-center py-8 text-gray-500">
+              No time slots configured. Click "Add Slot" to create one.
+            </div>
+          ) : (
+            timeSlots.map(slot => (
+              <div
+                key={slot.id}
+                className="group relative bg-gray-50 border rounded-lg p-3 hover:border-blue-400 transition"
+              >
+                <div className="text-sm font-medium text-gray-900 text-center">
+                  {slot.display_time}
+                </div>
+                <button
+                  onClick={() => handleDeleteTimeSlot(slot.id)}
+                  className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity text-red-500 hover:text-red-700"
+                  title="Delete slot"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+                {slot.is_active ? (
+                  <div className="text-xs text-green-600 text-center mt-1">Active</div>
+                ) : (
+                  <div className="text-xs text-gray-400 text-center mt-1">Inactive</div>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+
+        <div className="mt-4 text-xs text-gray-500">
+          Total slots: {timeSlots.length}
+        </div>
+
+        {/* Info Box */}
+        <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="flex gap-2">
+            <svg className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+            </svg>
+            <div className="text-sm text-blue-900">
+              <p className="font-medium mb-1">Important Information:</p>
+              <ul className="list-disc list-inside space-y-1 text-blue-800">
+                <li>Changes to time slots will be reflected on the landing page immediately</li>
+                <li>Deleting a time slot will not affect existing appointments</li>
+              </ul>
+            </div>
           </div>
         </div>
+      </div>
       )}
 
       {/* Staff Management Tab Content */}
@@ -306,7 +405,6 @@ const DoctorSettings = () => {
       {activeTab === 'referrals' && (
         <ReferralsSettings api={api} addToast={addToast} user={user} />
       )}
-      </div>
     </div>
   );
 };
@@ -464,44 +562,32 @@ const ReferralsSettings = ({ api, addToast, user }) => {
   };
 
   const shareOnWhatsApp = async (ref) => {
-    const baseUrl = 'https://drjaju.com';
-
-    // --- Fetch last prescription ID for PDF link ---
-    let prescriptionLink = '';
+    // Fetch latest prescription for this patient
+    let prescriptionText = '';
     try {
-      const rxRes = await api.get(`/api/prescriptions/${ref.patient_id}?limit=1`);
-      const prescriptions = rxRes.data?.data?.prescriptions || rxRes.data?.prescriptions || [];
+      const rxRes = await api.get(`/api/prescriptions?patient_id=${ref.patient_id}&limit=1`);
+      const prescriptions = rxRes.data?.prescriptions || rxRes.data?.data?.prescriptions || rxRes.data?.data || [];
       if (prescriptions.length > 0) {
-        prescriptionLink = `${baseUrl}/api/pdf/prescription/${prescriptions[0].id}`;
+        const rx = prescriptions[0];
+        const meds = rx.medications || [];
+        if (meds.length > 0) {
+          prescriptionText = '\n💊 *Latest Prescription:*\n';
+          meds.forEach((m, i) => {
+            prescriptionText += `${i + 1}. ${m.medicine_name || m.name || ''}`;
+            if (m.dosage) prescriptionText += ` - ${m.dosage}`;
+            if (m.timing) prescriptionText += ` (${m.timing})`;
+            if (m.duration) prescriptionText += ` x ${m.duration}`;
+            prescriptionText += '\n';
+          });
+        }
+        if (rx.diagnosis) prescriptionText += `\n🔬 *Diagnosis:* ${rx.diagnosis}`;
+        if (rx.symptoms) prescriptionText += `\n🤒 *Symptoms:* ${rx.symptoms}`;
       }
     } catch (e) { console.error('Prescription fetch:', e); }
 
-    // --- Check if lab results exist for PDF link ---
-    let labLink = '';
-    try {
-      const labRes = await api.get(`/api/labs/${ref.patient_id}`);
-      const labs = labRes.data?.labs || labRes.data?.data || [];
-      if (labs.length > 0) {
-        labLink = `${baseUrl}/api/pdf/lab-report/${ref.patient_id}`;
-      }
-    } catch (e) { console.error('Lab results fetch:', e); }
-
     const doctorName = user?.name || 'Doctor';
     const doctorPhone = user?.phone || '';
-    const referralDate = ref.referral_date ? new Date(ref.referral_date).toLocaleDateString('en-IN') : 'N/A';
-
-    const msg =
-      `🏥 *PATIENT REFERRAL*\n━━━━━━━━━━━━━━━━━━\n\n` +
-      `👨‍⚕️ *From:* Dr. ${doctorName}${doctorPhone ? `\n📞 ${doctorPhone}` : ''}\n\n` +
-      `👤 *Patient:* ${ref.patient_name || 'N/A'}\n` +
-      `📱 ${ref.patient_phone || ''}${ref.patient_age ? ` | ${ref.patient_age}Y` : ''}${ref.patient_gender ? ` / ${ref.patient_gender}` : ''}\n\n` +
-      `🩺 *Reason:* ${ref.reason || 'Consultation'}\n` +
-      `⚡ *Priority:* ${(ref.priority || 'routine').toUpperCase()}` +
-      `${ref.notes ? `\n📝 *Notes:* ${ref.notes}` : ''}` +
-      (prescriptionLink ? `\n\n📄 *Last Prescription:*\n${prescriptionLink}` : '') +
-      (labLink ? `\n\n🔬 *Lab Report:*\n${labLink}` : '') +
-      `\n\n━━━━━━━━━━━━━━━━━━\n_Referred on ${referralDate}_`;
-
+    const msg = `🏥 *PATIENT REFERRAL*\n━━━━━━━━━━━━━━━━━━\n\n👨‍⚕️ *From:* Dr. ${doctorName}${doctorPhone ? `\n📞 ${doctorPhone}` : ''}\n\n👤 *Patient:* ${ref.patient_name || 'N/A'}\n📱 ${ref.patient_phone || ''}${ref.patient_age ? `\n🎂 ${ref.patient_age}Y` : ''}${ref.patient_gender ? ` / ${ref.patient_gender}` : ''}\n\n🩺 *Reason:* ${ref.reason || 'Consultation'}\n⚡ *Priority:* ${(ref.priority || 'routine').toUpperCase()}${ref.notes ? `\n📝 *Notes:* ${ref.notes}` : ''}${prescriptionText}\n\n━━━━━━━━━━━━━━━━━━\n_Referred on ${ref.referral_date ? new Date(ref.referral_date).toLocaleDateString('en-IN') : 'N/A'}_`;
     const phone = (ref.referred_doctor_phone || '').replace(/[^0-9]/g, '');
     const formattedPhone = phone.length === 10 ? '91' + phone : phone;
     if (formattedPhone) {
@@ -594,142 +680,120 @@ const ReferralsSettings = ({ api, addToast, user }) => {
 
   if (loading) return <div className="text-center py-8 text-gray-500">Loading referrals...</div>;
 
-  const WaIcon = () => (
-    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
-      <path d="M12 0C5.373 0 0 5.373 0 12c0 2.625.846 5.059 2.284 7.034L.789 23.492a.5.5 0 00.611.611l4.458-1.495A11.952 11.952 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-2.339 0-4.527-.677-6.38-1.84l-.244-.152-3.158 1.058 1.058-3.158-.152-.244A9.956 9.956 0 012 12C2 6.477 6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z"/>
-    </svg>
-  );
-
-  const statusColors = {
-    completed: 'bg-green-100 text-green-700 border-green-200',
-    accepted: 'bg-blue-100 text-blue-700 border-blue-200',
-    declined: 'bg-red-100 text-red-700 border-red-200',
-    pending: 'bg-amber-100 text-amber-700 border-amber-200',
-  };
-
   return (
     <div className="space-y-4">
       {/* Sub-tabs */}
-      <div className="flex gap-2 bg-white p-1 rounded-xl shadow-sm border border-gray-100 w-fit">
+      <div className="flex gap-2">
         <button onClick={() => setSubTab('referrals')}
-          className={`px-5 py-2 rounded-lg text-sm font-medium transition-all ${subTab === 'referrals' ? 'bg-purple-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
-          🔗 My Referrals <span className="ml-1 bg-white/20 text-xs px-1.5 py-0.5 rounded-full">{referrals.length}</span>
+          className={`px-4 py-2 rounded-lg text-sm font-medium ${subTab === 'referrals' ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+          My Referrals ({referrals.length})
         </button>
         <button onClick={() => setSubTab('network')}
-          className={`px-5 py-2 rounded-lg text-sm font-medium transition-all ${subTab === 'network' ? 'bg-purple-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
-          👨‍⚕️ Doctor Network <span className="ml-1 bg-white/20 text-xs px-1.5 py-0.5 rounded-full">{network.length}</span>
+          className={`px-4 py-2 rounded-lg text-sm font-medium ${subTab === 'network' ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+          Doctor Network ({network.length})
         </button>
       </div>
 
       {/* Referrals List */}
       {subTab === 'referrals' && (
-        <div className="space-y-3">
+        <div className="bg-white rounded-lg shadow">
           {referrals.length === 0 ? (
-            <div className="bg-white rounded-xl p-12 text-center border border-dashed border-gray-200">
-              <div className="text-5xl mb-3">🔗</div>
-              <p className="text-gray-500 font-medium">No referrals yet</p>
-              <p className="text-gray-400 text-sm mt-1">Use "Refer to Doctor" from Patient Overview to create one.</p>
-            </div>
+            <div className="p-8 text-center text-gray-400">No referrals yet. Use "Refer to Doctor" from Patient Overview.</div>
           ) : (
-            referrals.map((ref) => {
-              const initials = (ref.patient_name || 'U').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
-              return (
-                <div key={ref.id} className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="divide-y">
+              {referrals.map((ref) => (
+                <div key={ref.id} className="p-4 hover:bg-gray-50">
                   {editingRef?.id === ref.id ? (
-                    <div className="p-5 space-y-3">
-                      <div className="flex items-center gap-2 pb-2 border-b border-gray-100">
-                        <span className="text-sm font-semibold text-gray-700">✏️ Editing — {ref.patient_name}</span>
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="font-semibold text-gray-900">{ref.patient_name || 'Unknown Patient'}</span>
+                        <span className="text-xs text-gray-400">- Editing</span>
                       </div>
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                        <input className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-purple-200 outline-none" placeholder="Doctor Name" value={editingRef.referred_doctor_name || ''}
+                        <input className="px-3 py-2 border rounded text-sm" placeholder="Doctor Name" value={editingRef.referred_doctor_name || ''}
                           onChange={e => setEditingRef(p => ({ ...p, referred_doctor_name: e.target.value }))} />
-                        <input className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-purple-200 outline-none" placeholder="Phone" value={editingRef.referred_doctor_phone || ''}
+                        <input className="px-3 py-2 border rounded text-sm" placeholder="Phone" value={editingRef.referred_doctor_phone || ''}
                           onChange={e => setEditingRef(p => ({ ...p, referred_doctor_phone: e.target.value }))} />
-                        <input className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-purple-200 outline-none" placeholder="Specialization" value={editingRef.referred_doctor_specialization || ''}
+                        <input className="px-3 py-2 border rounded text-sm" placeholder="Specialization" value={editingRef.referred_doctor_specialization || ''}
                           onChange={e => setEditingRef(p => ({ ...p, referred_doctor_specialization: e.target.value }))} />
-                        <input className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-purple-200 outline-none" placeholder="Hospital" value={editingRef.hospital_name || ''}
+                        <input className="px-3 py-2 border rounded text-sm" placeholder="Hospital" value={editingRef.hospital_name || ''}
                           onChange={e => setEditingRef(p => ({ ...p, hospital_name: e.target.value }))} />
                       </div>
                       <div className="grid grid-cols-2 gap-3">
-                        <input className="px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none" placeholder="Reason" value={editingRef.reason || ''}
+                        <input className="px-3 py-2 border rounded text-sm" placeholder="Reason" value={editingRef.reason || ''}
                           onChange={e => setEditingRef(p => ({ ...p, reason: e.target.value }))} />
-                        <select className="px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none" value={editingRef.priority || 'routine'}
+                        <select className="px-3 py-2 border rounded text-sm" value={editingRef.priority || 'routine'}
                           onChange={e => setEditingRef(p => ({ ...p, priority: e.target.value }))}>
                           <option value="routine">Routine</option>
                           <option value="urgent">Urgent</option>
                         </select>
                       </div>
-                      <textarea className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none resize-none" rows={2} placeholder="Notes" value={editingRef.notes || ''}
+                      <textarea className="w-full px-3 py-2 border rounded text-sm" rows={2} placeholder="Notes" value={editingRef.notes || ''}
                         onChange={e => setEditingRef(p => ({ ...p, notes: e.target.value }))} />
                       <div className="flex gap-2">
-                        <button onClick={saveEditRef} className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 shadow-sm">✓ Save</button>
-                        <button onClick={() => setEditingRef(null)} className="px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50">Cancel</button>
+                        <button onClick={saveEditRef} className="px-3 py-1.5 bg-purple-600 text-white rounded text-xs hover:bg-purple-700">Save</button>
+                        <button onClick={() => setEditingRef(null)} className="px-3 py-1.5 border rounded text-xs hover:bg-gray-50">Cancel</button>
                       </div>
                     </div>
                   ) : (
-                    <div className="flex">
-                      {/* Left color accent */}
-                      <div className={`w-1 flex-shrink-0 rounded-l-xl ${ref.priority === 'urgent' ? 'bg-red-500' : 'bg-blue-400'}`} />
-                      <div className="flex-1 p-4">
-                        <div className="flex items-start gap-3">
-                          {/* Avatar */}
-                          <div className={`w-10 h-10 rounded-full flex-shrink-0 flex items-center justify-center text-sm font-bold text-white ${ref.priority === 'urgent' ? 'bg-red-400' : 'bg-blue-500'}`}>
-                            {initials}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            {/* Top row */}
-                            <div className="flex flex-wrap items-center gap-2 mb-1">
-                              <span className="font-semibold text-gray-900 text-sm">{ref.patient_name || 'Unknown Patient'}</span>
-                              {ref.patient_phone && <span className="text-xs text-gray-400">📱 {ref.patient_phone}</span>}
-                              <span className={`text-xs px-2 py-0.5 rounded-full font-semibold border ${ref.priority === 'urgent' ? 'bg-red-50 text-red-600 border-red-200' : 'bg-blue-50 text-blue-600 border-blue-200'}`}>
-                                {(ref.priority || 'ROUTINE').toUpperCase()}
-                              </span>
-                              <select value={ref.status || 'pending'} onChange={(e) => updateStatus(ref.id, e.target.value)}
-                                className={`text-xs px-2 py-0.5 rounded-lg border font-medium cursor-pointer outline-none ${statusColors[ref.status] || statusColors.pending}`}>
-                                <option value="pending">⏳ Pending</option>
-                                <option value="accepted">✓ Accepted</option>
-                                <option value="completed">✅ Completed</option>
-                                <option value="declined">✗ Declined</option>
-                              </select>
-                            </div>
-                            {/* Doctor info */}
-                            <div className="text-sm text-gray-700 font-medium">
-                              → {ref.referred_doctor_name || 'N/A'}
-                              {ref.referred_doctor_specialization && <span className="text-gray-400 font-normal"> ({ref.referred_doctor_specialization})</span>}
-                              {ref.hospital_name && <span className="text-gray-400 font-normal"> · {ref.hospital_name}</span>}
-                            </div>
-                            {/* Reason & notes */}
-                            <div className="text-xs text-gray-500 mt-0.5">
-                              <span className="font-medium text-gray-600">Reason:</span> {ref.reason || '-'}
-                              {ref.notes && <span className="ml-2 text-gray-400">· {ref.notes}</span>}
-                            </div>
-                            <div className="text-xs text-gray-400 mt-0.5">
-                              {ref.referral_date ? new Date(ref.referral_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}
-                            </div>
-                          </div>
-                          {/* Actions */}
-                          <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
-                            <button onClick={() => shareOnWhatsApp(ref)}
-                              className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700 shadow-sm transition">
-                              <WaIcon /> Share
-                            </button>
-                            <button onClick={() => setEditingRef({ ...ref })}
-                              className="px-3 py-1.5 text-blue-600 border border-blue-200 rounded-lg text-xs font-medium hover:bg-blue-50 transition">
-                              ✏️ Edit
-                            </button>
-                            <button onClick={() => deleteReferral(ref.id)}
-                              className="px-2 py-1.5 text-red-500 border border-red-100 rounded-lg text-xs hover:bg-red-50 transition">
-                              🗑
-                            </button>
-                          </div>
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="font-semibold text-gray-900">{ref.patient_name || 'Unknown Patient'}</span>
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ref.priority === 'urgent' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
+                            {(ref.priority || 'routine').toUpperCase()}
+                          </span>
+                          <select
+                            value={ref.status || 'pending'}
+                            onChange={(e) => updateStatus(ref.id, e.target.value)}
+                            className={`text-xs px-2 py-0.5 rounded border ${
+                              ref.status === 'completed' ? 'bg-green-50 text-green-700 border-green-200' :
+                              ref.status === 'accepted' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                              ref.status === 'declined' ? 'bg-red-50 text-red-700 border-red-200' :
+                              'bg-yellow-50 text-yellow-700 border-yellow-200'
+                            }`}
+                          >
+                            <option value="pending">Pending</option>
+                            <option value="accepted">Accepted</option>
+                            <option value="completed">Completed</option>
+                            <option value="declined">Declined</option>
+                          </select>
                         </div>
+                        <div className="text-sm text-gray-600">
+                          <span className="font-medium">To:</span> {ref.referred_doctor_name || 'N/A'}
+                          {ref.referred_doctor_specialization && <span className="text-gray-400"> ({ref.referred_doctor_specialization})</span>}
+                          {ref.hospital_name && <span className="text-gray-400"> - {ref.hospital_name}</span>}
+                        </div>
+                        <div className="text-sm text-gray-600 mt-1">
+                          <span className="font-medium">Reason:</span> {ref.reason || '-'}
+                        </div>
+                        {ref.notes && <div className="text-xs text-gray-400 mt-1">Notes: {ref.notes}</div>}
+                        <div className="text-xs text-gray-400 mt-1">
+                          {ref.referral_date ? new Date(ref.referral_date).toLocaleDateString('en-IN') : ''}
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-2 ml-4">
+                        <button
+                          onClick={() => shareOnWhatsApp(ref)}
+                          className="px-3 py-1.5 bg-green-600 text-white rounded text-xs hover:bg-green-700 flex items-center gap-1"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.625.846 5.059 2.284 7.034L.789 23.492a.5.5 0 00.611.611l4.458-1.495A11.952 11.952 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-2.339 0-4.527-.677-6.38-1.84l-.244-.152-3.158 1.058 1.058-3.158-.152-.244A9.956 9.956 0 012 12C2 6.477 6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z"/></svg>
+                          WhatsApp
+                        </button>
+                        <button onClick={() => setEditingRef({ ...ref })}
+                          className="px-3 py-1.5 text-blue-600 border border-blue-200 rounded text-xs hover:bg-blue-50">
+                          Edit
+                        </button>
+                        <button onClick={() => deleteReferral(ref.id)}
+                          className="px-3 py-1.5 text-red-600 border border-red-200 rounded text-xs hover:bg-red-50">
+                          Delete
+                        </button>
                       </div>
                     </div>
                   )}
                 </div>
-              );
-            })
+              ))}
+            </div>
           )}
         </div>
       )}

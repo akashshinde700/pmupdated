@@ -707,7 +707,6 @@ export default function PrescriptionPad() {
   const [activeTab, setActiveTab] = useState('prescription');
   const [showVitalsConfig, setShowVitalsConfig] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const savingInProgress = useRef(false); // prevent concurrent saves on rapid clicks
   
   // Pad configuration state
   const [padFields, setPadFields] = useState([
@@ -2236,8 +2235,8 @@ export default function PrescriptionPad() {
           })));
           setAdvice(draftData.advice || '');
           const draftFollowUp = draftData.followUp || { days: '', date: '', autoFill: false };
-          // Sanitize days: reset if object or not a valid number string
-          if (draftFollowUp.days && (typeof draftFollowUp.days === 'object' || isNaN(parseInt(draftFollowUp.days, 10)))) draftFollowUp.days = '';
+          // Sanitize days: if it's an object (corrupted draft), reset to ''
+          if (typeof draftFollowUp.days === 'object') draftFollowUp.days = '';
           setFollowUp(draftFollowUp);
           setPatientNotes(draftData.patientNotes || '');
           setPrivateNotes(draftData.privateNotes || '');
@@ -2712,7 +2711,7 @@ export default function PrescriptionPad() {
           setAdvice(rxData.advice);
         }
         if (rxData.follow_up_days) {
-          setFollowUp(prev => ({ ...prev, days: String(typeof rxData.follow_up_days === 'object' ? (rxData.follow_up_days?.days || '') : rxData.follow_up_days || '') }));
+          setFollowUp(prev => ({ ...prev, days: rxData.follow_up_days }));
         }
         if (rxData.patient_notes) {
           setPatientNotes(rxData.patient_notes);
@@ -3570,14 +3569,9 @@ export default function PrescriptionPad() {
         setAdvice(prev => (prev ? `${prev}\n${suggestion.advice}` : suggestion.advice));
       }
 
-      // Patient / private notes — if note starts with "Investigations:", route to lab advice
+      // Patient / private notes
       if (suggestion.note && typeof suggestion.note === 'string') {
-        if (/^investigations?:/i.test(suggestion.note.trim())) {
-          const labContent = suggestion.note.replace(/^investigations?:\s*/i, '').trim();
-          setLabAdvice(prev => (prev ? `${prev}\n${labContent}` : labContent));
-        } else {
-          setPatientNotes(prev => (prev ? `${prev}\n${suggestion.note}` : suggestion.note));
-        }
+        setPatientNotes(prev => (prev ? `${prev}\n${suggestion.note}` : suggestion.note));
       }
 
       addToast('Applied MyGenie suggestion to the prescription', 'success');
@@ -4320,13 +4314,8 @@ export default function PrescriptionPad() {
   // Save Prescription
   // ========================================
   const handleSave = async () => {
-    // Prevent concurrent saves from rapid button clicks
-    if (savingInProgress.current) return;
-    savingInProgress.current = true;
-
     // Validation
     if (!meta.patient_id) {
-      savingInProgress.current = false;
       addToast('Patient ID is required', 'error');
       return;
     }
@@ -4363,8 +4352,8 @@ export default function PrescriptionPad() {
 
       // Prepare medications data
       const medicationsData = meds.map(m => ({
-        medication_name: m.name || m.medication_name || m.medicine_name || m.brand || '',
-        brand_name: m.brand || m.name || '',
+        medication_name: m.name || m.brand,
+        brand_name: m.brand || m.name,
         dosage: m.dosage || '',
         frequency: m.is_tapering ? 'Tapering' : (m.frequency || ''),
         duration: m.duration || '',
@@ -4376,7 +4365,7 @@ export default function PrescriptionPad() {
           step_number: i + 1,
           dose: s.dose || '',
           frequency: s.frequency || '',
-          duration_days: parseInt(s.duration_days, 10) || 1
+          duration_days: s.duration_days || 1
         })) : []
       }));
 
@@ -4502,7 +4491,6 @@ export default function PrescriptionPad() {
       throw error;
     } finally {
       setIsLoading(false);
-      savingInProgress.current = false;
     }
   };
 
@@ -6273,7 +6261,7 @@ export default function PrescriptionPad() {
                                   setMeds(copiedMeds);
                                 }
                                 if (visit.advice) setAdvice(visit.advice);
-                                if (visit.follow_up_days) setFollowUp(prev => ({ ...prev, days: String(typeof visit.follow_up_days === 'object' ? (visit.follow_up_days?.days || '') : visit.follow_up_days || '') }));
+                                if (visit.follow_up_days) setFollowUp(prev => ({ ...prev, days: visit.follow_up_days }));
                                 if (visit.patient_notes) setPatientNotes(visit.patient_notes);
                                 addToast('Prescription copied! Review and modify as needed.', 'success');
                               }}
@@ -6490,63 +6478,21 @@ export default function PrescriptionPad() {
                     </thead>
                     <tbody>
                       {meds.map((m, idx) => (
-                        <React.Fragment key={`print-med-${idx}`}>
-                          <tr>
-                            <td style={{ border: '1px solid #ddd', padding: '6px 4px', textAlign: 'center' }}>{idx + 1}</td>
-                            <td style={{ border: '1px solid #ddd', padding: '6px 4px' }}>
-                              <div style={{ fontWeight: 600 }}>{m.brand || m.name}</div>
-                              {m.composition && <div style={{ color: '#666', fontSize: 11 }}>{m.composition}</div>}
-                            </td>
-                            <td style={{ border: '1px solid #ddd', padding: '6px 4px', textAlign: 'center' }}>{m.is_tapering ? 'Tapering' : m.frequency}</td>
-                            <td style={{ border: '1px solid #ddd', padding: '6px 4px' }}>{translateTiming(m.timing, language)}</td>
-                            <td style={{ border: '1px solid #ddd', padding: '6px 4px', textAlign: 'center' }}>{m.duration}</td>
-                            <td style={{ border: '1px solid #ddd', padding: '6px 4px', textAlign: 'center' }}>{m.qty}</td>
-                            <td style={{ border: '1px solid #ddd', padding: '6px 4px' }}>{translateInstruction(m.instructions, language)}</td>
-                          </tr>
-                          {m.is_tapering && m.tapering_schedule && m.tapering_schedule.length > 0 && (
-                            <tr>
-                              <td></td>
-                              <td colSpan={6} style={{ border: '1px solid #ddd', padding: '4px 6px', backgroundColor: '#f5f0ff', fontSize: 11, color: '#5b21b6' }}>
-                                <strong>Tapering: </strong>
-                                {m.tapering_schedule.map((s, si) => (
-                                  <span key={si}>{si > 0 && ' → '}{s.dose} {s.frequency} for {s.duration_days} day{s.duration_days !== 1 ? 's' : ''}</span>
-                                ))}
-                              </td>
-                            </tr>
-                          )}
-                        </React.Fragment>
+                        <tr key={`print-med-${idx}`}>
+                          <td style={{ border: '1px solid #ddd', padding: '6px 4px', textAlign: 'center' }}>{idx + 1}</td>
+                          <td style={{ border: '1px solid #ddd', padding: '6px 4px' }}>
+                            <div style={{ fontWeight: 600 }}>{m.brand || m.name}</div>
+                            {m.composition && <div style={{ color: '#666', fontSize: 11 }}>{m.composition}</div>}
+                          </td>
+                          <td style={{ border: '1px solid #ddd', padding: '6px 4px', textAlign: 'center' }}>{m.frequency}</td>
+                          <td style={{ border: '1px solid #ddd', padding: '6px 4px' }}>{translateTiming(m.timing, language)}</td>
+                          <td style={{ border: '1px solid #ddd', padding: '6px 4px', textAlign: 'center' }}>{m.duration}</td>
+                          <td style={{ border: '1px solid #ddd', padding: '6px 4px', textAlign: 'center' }}>{m.qty}</td>
+                          <td style={{ border: '1px solid #ddd', padding: '6px 4px' }}>{translateInstruction(m.instructions, language)}</td>
+                        </tr>
                       ))}
                     </tbody>
                   </table>
-                </div>
-              )}
-
-              {/* Investigations: labAdvice + patient_notes if it starts with "Investigations:" */}
-              {(() => {
-                const notesIsInvestigation = patientNotes && /^investigations?:/i.test(patientNotes.trim());
-                const investigationExtra = notesIsInvestigation ? patientNotes.replace(/^investigations?:\s*/i, '').trim() : '';
-                if (!labAdvice && !investigationExtra) return null;
-                return (
-                  <div style={{ marginTop: 16 }}>
-                    <div style={{ fontWeight: 600, marginBottom: 6 }}>Investigations</div>
-                    {labAdvice && <div style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{labAdvice}</div>}
-                    {investigationExtra && <div style={{ fontSize: 13, whiteSpace: 'pre-wrap', marginTop: labAdvice ? 4 : 0 }}>{investigationExtra}</div>}
-                  </div>
-                );
-              })()}
-
-              {/* Notes: only show patient_notes when it doesn't start with "Investigations:" */}
-              {patientNotes && !/^investigations?:/i.test(patientNotes.trim()) && (
-                <div style={{ marginTop: 16 }}>
-                  <div style={{ fontWeight: 600, marginBottom: 6 }}>Notes</div>
-                  <div style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{patientNotes}</div>
-                </div>
-              )}
-
-              {labRemarks && (
-                <div style={{ marginTop: 16 }}>
-                  <div style={{ fontWeight: 600, marginBottom: 6 }}>Lab Remarks</div>
-                  <div style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{labRemarks}</div>
                 </div>
               )}
 
@@ -6568,7 +6514,7 @@ export default function PrescriptionPad() {
                 <div style={{ marginTop: 16 }}>
                   <div style={{ fontWeight: 600, marginBottom: 6 }}>Follow Up</div>
                   <div style={{ fontSize: 13 }}>
-                    {(() => { const d = parseInt(followUp.days, 10); return d > 0 ? <>In {d} day(s){followUp.date ? ', ' : ''}</> : null; })()}
+                    {followUp.days && <>In {followUp.days} day(s){followUp.date ? ', ' : ''}</>}
                     {followUp.date && <>on {new Date(followUp.date).toLocaleDateString()}</>}
                   </div>
                 </div>
