@@ -1,6 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import HeaderBar from '../components/HeaderBar';
 import { useApiClient } from '../api/client';
 import { useToast } from '../hooks/useToast';
 import { useAuth } from '../context/AuthContext';
@@ -9,11 +8,44 @@ import ConfigurePatientModal from '../components/ConfigurePatientModal';
 import AddPatientModal from '../components/AddPatientModal';
 import { useDebouncedSearch } from '../hooks/useDebouncedSearch';
 
-const tabs = [
-  'All Patients',
-  'Patients with ABHA',
-  'Patients with linked records'
+const tabs = ['All Patients', 'Patients with ABHA', 'Patients with linked records'];
+
+const GENDER_COLORS = {
+  Male:   'bg-blue-100 text-blue-700',
+  Female: 'bg-pink-100 text-pink-700',
+  Other:  'bg-purple-100 text-purple-700',
+};
+
+const BLOOD_COLORS = {
+  'A+': 'bg-red-50 text-red-700 border border-red-200',
+  'A-': 'bg-red-50 text-red-700 border border-red-200',
+  'B+': 'bg-orange-50 text-orange-700 border border-orange-200',
+  'B-': 'bg-orange-50 text-orange-700 border border-orange-200',
+  'O+': 'bg-amber-50 text-amber-700 border border-amber-200',
+  'O-': 'bg-amber-50 text-amber-700 border border-amber-200',
+  'AB+': 'bg-purple-50 text-purple-700 border border-purple-200',
+  'AB-': 'bg-purple-50 text-purple-700 border border-purple-200',
+};
+
+const AVATAR_GRADIENTS = [
+  'from-blue-500 to-indigo-600',
+  'from-emerald-500 to-teal-600',
+  'from-violet-500 to-purple-600',
+  'from-rose-500 to-pink-600',
+  'from-amber-500 to-orange-600',
+  'from-cyan-500 to-blue-600',
 ];
+
+function Avatar({ name, size = 'md' }) {
+  const initials = name ? name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase() : '?';
+  const grad = AVATAR_GRADIENTS[(initials.charCodeAt(0) || 0) % AVATAR_GRADIENTS.length];
+  const sz = size === 'sm' ? 'w-8 h-8 text-xs' : size === 'lg' ? 'w-12 h-12 text-base' : 'w-10 h-10 text-sm';
+  return (
+    <div className={`flex-shrink-0 ${sz} rounded-full bg-gradient-to-br ${grad} flex items-center justify-center text-white font-bold shadow-sm select-none`}>
+      {initials}
+    </div>
+  );
+}
 
 export default function Patients() {
   const api = useApiClient();
@@ -27,33 +59,10 @@ export default function Patients() {
   const [pagination, setPagination] = useState({ total: 0, pages: 1 });
   const [activeTab, setActiveTab] = useState(0);
 
-  // Debounced search with cancellation
-  const { query: search, setQuery, isSearching: searchLoading, error: searchError } = useDebouncedSearch(
-    useCallback(async () => {
-      // Trigger fetchPatients via effect below
-    }, []),
+  const { query: search, setQuery } = useDebouncedSearch(
+    useCallback(async () => {}, []),
     300
   );
-
-  const [form, setForm] = useState({
-    mobile: '',
-    salutation: 'Mr.',
-    name: '',
-    email: '',
-    dob: '',
-    gender: 'Female',
-    blood_group: '',
-    address: '',
-    city: '',
-    state: '',
-    pincode: '',
-    emergency_contact_name: '',
-    emergency_contact_phone: '',
-    medical_conditions: '',
-    allergies: '',
-    current_medications: '',
-    uhid: ''
-  });
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -64,485 +73,435 @@ export default function Patients() {
   const [filterCity, setFilterCity] = useState('');
   const [filterState, setFilterState] = useState('');
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
-  const [medicalHistoryConfig, setMedicalHistoryConfig] = useState({
-    alcohol: false,
-    tobacco: false,
-    allergies: false,
-    asthma: false,
-    cancer: false,
-    diabetes: false,
-    hypertension: false
-  });
-  const [profilePicture, setProfilePicture] = useState(null);
   const [selectedPatients, setSelectedPatients] = useState([]);
   const [showMergeModal, setShowMergeModal] = useState(false);
   const [tabCounts, setTabCounts] = useState({ 0: 0, 1: 0, 2: 0 });
-
-  const [patientConfig, setPatientConfig] = useState({
-    patientFields: {
-      'Mail ID': true,
-      'Blood Group': true,
-      'Referred By': false,
-      "Referred Doctor's Number": false,
-      'Marital Status': false,
-      'Name of Informant': false,
-      'Channel': false,
-      "Patient's Occupation": false,
-      'Tag': false,
-      'Patient Address': true,
-      'City': true,
-      'Pincode': true
-    },
-    historyFields: {
-      'Alcohol': false,
-      'Tobacco': false,
-      'Allergies': false,
-      'Asthma': false,
-      'Cancer': false,
-      'Diabetes': false,
-      'Hypertension': false
-    }
-  });
-
   const [showConfigure, setShowConfigure] = useState(false);
-  const [isVIPPatient, setIsVIPPatient] = useState(false);
-  const [vipPreferences, setVipPreferences] = useState({
-    preferred_doctor: '',
-    room_preference: '',
-    special_notes: '',
-    communication_preference: 'WhatsApp',
-    dedicated_contact_person: '',
-    dedicated_contact_phone: ''
-  });
 
-  // Reset page when search changes
-  useEffect(() => {
-    setPage(1);
-  }, [search]);
+  const hasActiveFilters = filterGender || filterBloodGroup || filterCity || filterState;
 
-  // Helper function to fetch patients - memoized with useCallback
+  useEffect(() => { setPage(1); }, [search]);
+
   const fetchPatients = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
       const params = {
-        search,
-        page,
-        limit,
+        search, page, limit,
         gender: filterGender || undefined,
         blood_group: filterBloodGroup || undefined,
         city: filterCity || undefined,
         state: filterState || undefined,
-        tab: activeTab
+        tab: activeTab,
       };
-
-      // Filter by doctor:
-      // - If admin user and has selected a doctor, use selected doctor's ID
-      // - If doctor user (non-admin), automatically use their own doctor ID
       if (isAdmin(user)) {
         const selectedDoctorId = getSelectedDoctorId();
-        if (selectedDoctorId) {
-          params.doctor_id = selectedDoctorId;
-        }
-      } else if (user && user.role === 'doctor' && user.doctor_id) {
-        // Automatically filter by logged-in doctor's patients
+        if (selectedDoctorId) params.doctor_id = selectedDoctorId;
+      } else if (user?.role === 'doctor' && user?.doctor_id) {
         params.doctor_id = user.doctor_id;
       }
-
-      Object.keys(params).forEach(key => params[key] === undefined && delete params[key]);
-
+      Object.keys(params).forEach(k => params[k] === undefined && delete params[k]);
       const res = await api.get('/api/patients', { params });
       setPatients(res.data.data?.patients || []);
-      if (res.data.data?.pagination) {
-        setPagination(res.data.data.pagination);
-      }
-      if (res.data.tabCounts) {
-        setTabCounts(res.data.tabCounts);
-      }
-    } catch (error) {
-      setError(error.response?.data?.error || 'Unable to load patients');
+      if (res.data.data?.pagination) setPagination(res.data.data.pagination);
+      if (res.data.tabCounts) setTabCounts(res.data.tabCounts);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Unable to load patients');
     } finally {
       setLoading(false);
     }
   }, [api, search, page, limit, filterGender, filterBloodGroup, filterCity, filterState, activeTab, user]);
 
-  const handlePatientAdded = useCallback(() => {
-    setPage(1);
-    fetchPatients();
-  }, [fetchPatients]);
+  useEffect(() => { fetchPatients(); }, [fetchPatients]);
 
-  // Fetch patients when any relevant dependency changes
-  useEffect(() => {
-    fetchPatients();
-  }, [fetchPatients]);
+  const handlePatientAdded = useCallback(() => { setPage(1); fetchPatients(); }, [fetchPatients]);
 
-  // Scroll to add-patient form if URL has #add-patient hash
-  useEffect(() => {
-    if (window.location.hash === '#add-patient') {
-      setTimeout(() => {
-        const addPatientForm = document.getElementById('add-patient-form');
-        if (addPatientForm) {
-          addPatientForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          window.history.replaceState(null, '', window.location.pathname);
-        }
-      }, 300);
+  const handlePatientSelect = id =>
+    setSelectedPatients(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+
+  const handleAbhaClick = (p) => {
+    try { localStorage.setItem('abha_selected_patient', JSON.stringify(p)); } catch {}
+    navigate('/abha');
+  };
+
+  const handleMerge = async () => {
+    if (selectedPatients.length < 2) { addToast('Select at least 2 patients', 'warning'); return; }
+    try {
+      await api.post('/api/patients/merge', {
+        primaryPatientId: selectedPatients[0],
+        patientIdsToMerge: selectedPatients.slice(1),
+      });
+      addToast('Merged successfully', 'success');
+      setShowMergeModal(false);
+      setSelectedPatients([]);
+      fetchPatients();
+    } catch { addToast('Merge failed', 'error'); }
+  };
+
+  const handleDelete = async (p) => {
+    setDropdownOpen(null);
+    if (!window.confirm(`Delete patient "${p.name}"?\n\nAll records (appointments, bills, prescriptions) will also be deleted.`)) return;
+    try {
+      const res = await api.delete(`/api/patients/${p.id}`);
+      addToast(res.data.message || 'Patient deleted', 'success');
+      setPatients(prev => prev.filter(x => x.id !== p.id));
+      await fetchPatients();
+    } catch (err) {
+      addToast(err.response?.data?.error || 'Delete failed', 'error');
+      await fetchPatients();
     }
-  }, []);
+  };
 
-  // Full-screen error view for initial load failure
+  const clearFilters = () => {
+    setFilterGender(''); setFilterBloodGroup(''); setFilterCity(''); setFilterState('');
+    setPage(1); fetchPatients();
+  };
+
+  const totalPatients = pagination.total || patients.length;
+  const totalPages = pagination.pages || 1;
+  const allChecked = patients.length > 0 && patients.every(p => selectedPatients.includes(p.id));
+
+  // Page number range
+  const pageNums = [];
+  for (let i = Math.max(1, page - 2); i <= Math.min(totalPages, page + 2); i++) pageNums.push(i);
+
   if (error && patients.length === 0) {
     return (
-      <div className="p-8 text-center text-red-600 text-lg">
-        <p>Error: {error}</p>
-        <button
-          onClick={() => {
-            setError('');
-            fetchPatients();
-          }}
-          className="mt-4 px-4 py-2 bg-primary text-white rounded"
-        >
+      <div className="flex flex-col items-center justify-center min-h-[50vh] gap-4 p-8">
+        <div className="w-14 h-14 rounded-full bg-red-100 flex items-center justify-center">
+          <svg className="w-7 h-7 text-red-500" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+          </svg>
+        </div>
+        <p className="text-gray-600 font-medium text-center">{error}</p>
+        <button onClick={() => { setError(''); fetchPatients(); }} className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700">
           Retry
         </button>
       </div>
     );
   }
 
-  const prevPage = () => setPage((p) => Math.max(1, p - 1));
-
-  const nextPage = () => {
-    if (page < pagination.pages) setPage(page + 1);
-  };
-
-  const generateUHID = () => {
-    const timestamp = Date.now().toString().slice(-6);
-    const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-    const uhid = `P${timestamp}${random}`;
-    setForm({ ...form, uhid });
-  };
-
-  const handleAddPatient = async (e) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
-    try {
-      await api.post('/api/patients', {
-        patient_id: form.uhid,
-        name: `${form.salutation} ${form.name}`.trim(),
-        email: form.email,
-        phone: form.mobile,
-        dob: form.dob,
-        gender: form.gender,
-        blood_group: form.blood_group,
-        address: form.address,
-        city: form.city,
-        state: form.state,
-        pincode: form.pincode,
-        emergency_contact_name: form.emergency_contact_name,
-        emergency_contact_phone: form.emergency_contact_phone,
-        medical_conditions: form.medical_conditions,
-        allergies: form.allergies,
-        current_medications: form.current_medications
-      });
-
-      setForm({
-        mobile: '',
-        salutation: 'Mr.',
-        name: '',
-        email: '',
-        dob: '',
-        gender: 'Female',
-        blood_group: '',
-        address: '',
-        city: '',
-        state: '',
-        pincode: '',
-        emergency_contact_name: '',
-        emergency_contact_phone: '',
-        medical_conditions: '',
-        allergies: '',
-        current_medications: '',
-        uhid: ''
-      });
-
-      setPage(1);
-      await fetchPatients();
-      addToast('Patient added successfully!', 'success');
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    } catch (error) {
-      const errorMsg = error.response?.data?.error || 'Unable to add patient';
-      setError(errorMsg);
-      addToast(errorMsg, 'error');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleMergeProfiles = async () => {
-    if (selectedPatients.length < 2) {
-      addToast('Please select at least 2 patients to merge', 'warning');
-      return;
-    }
-
-    const primaryPatientId = selectedPatients[0];
-    const patientsToMerge = selectedPatients.slice(1);
-
-    try {
-      await api.post('/api/patients/merge', {
-        primaryPatientId,
-        patientIdsToMerge: patientsToMerge
-      });
-
-      addToast('Patients merged successfully', 'success');
-      setShowMergeModal(false);
-      setSelectedPatients([]);
-      fetchPatients();
-    } catch (error) {
-      console.error('Error merging patients:', error);
-      addToast('Failed to merge patients', 'error');
-    }
-  };
-
-  const handleProfilePictureUpload = (event) => {
-    const file = event.target.files[0];
-    if (file) {
-      setProfilePicture(URL.createObjectURL(file));
-    }
-  };
-
-  const handlePatientSelect = (patientId) => {
-    setSelectedPatients(prev =>
-      prev.includes(patientId)
-        ? prev.filter(id => id !== patientId)
-        : [...prev, patientId]
-    );
-  };
-
-  const handleAbhaStatusClick = (patient) => {
-    // Store patient data in localStorage for the ABHA page to pick up
-    try {
-      localStorage.setItem('abha_selected_patient', JSON.stringify(patient));
-    } catch (e) {
-      console.error('Failed to store patient data:', e);
-    }
-    // Navigate to ABHA page
-    navigate('/abha');
-  };
-
   return (
-    <div className="space-y-4">
-      <HeaderBar title="Patients" />
+    <div className="space-y-0 pb-20">
 
-      {/* Rest of your JSX remains exactly the same */}
-      {/* (All tabs, search, filters, table, form, modals – unchanged) */}
+      {/* ── Hero Banner (negative margin to reach edges inside MainLayout) ── */}
+      <div className="bg-gradient-to-r from-blue-700 via-blue-600 to-indigo-700 -mx-4 -mt-4 lg:-mx-6 lg:-mt-6 px-4 lg:px-8 py-5 shadow-lg mb-5">
+        <div className="max-w-7xl mx-auto">
+          {/* Top row: title + primary actions */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h1 className="text-lg sm:text-xl font-bold text-white tracking-tight">Patient Registry</h1>
+              <p className="text-blue-200 text-xs mt-0.5">
+                {totalPatients.toLocaleString()} patients
+                {search && ` · "${search}"`}
+                {hasActiveFilters && ` · Filtered`}
+              </p>
+            </div>
+            <div className="flex items-center flex-wrap gap-2">
+              {selectedPatients.length > 0 && (
+                <button
+                  onClick={() => selectedPatients.length < 2 ? addToast('Select at least 2 patients', 'warning') : setShowMergeModal(true)}
+                  className="flex items-center gap-1.5 bg-amber-400 hover:bg-amber-300 text-amber-900 text-xs sm:text-sm font-semibold px-3 py-2 rounded-xl transition-colors"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                    <path d="M18 2l4 4-4 4M6 22l-4-4 4-4M14 6H2M22 18H10"/>
+                  </svg>
+                  Merge ({selectedPatients.length})
+                </button>
+              )}
+              <button
+                onClick={() => setShowConfigure(true)}
+                className="flex items-center gap-1.5 bg-white/15 hover:bg-white/25 text-white text-xs sm:text-sm font-medium px-3 py-2 rounded-xl transition-colors"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
+                </svg>
+                <span className="hidden sm:inline">Configure</span>
+              </button>
+              <button
+                onClick={() => setShowAddPatientModal(true)}
+                className="flex items-center gap-1.5 bg-white text-blue-700 text-xs sm:text-sm font-bold px-3 sm:px-4 py-2 rounded-xl hover:bg-blue-50 transition-colors shadow-sm"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                  <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                </svg>
+                Add Patient
+              </button>
+            </div>
+          </div>
 
-      <div className="bg-white rounded shadow-sm border p-4 space-y-3">
-        {/* Tabs */}
-        <div className="flex flex-wrap gap-2">
-          {tabs.map((tab, i) => (
-            <button
-              key={tab}
-              onClick={() => {
-                setActiveTab(i);
-                setPage(1);
-              }}
-              className={`px-3 py-2 text-sm rounded border transition flex items-center gap-2 ${
-                activeTab === i ? 'bg-primary text-white border-primary' : 'bg-white hover:bg-slate-50'
-              }`}
-            >
-              <span>{tab}</span>
-              <span className={`px-2 py-0.5 text-xs rounded-full ${
-                activeTab === i ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
-              }`}>
-                {tabCounts[i] || 0}
-              </span>
-            </button>
-          ))}
+          {/* Stats row */}
+          <div className="flex items-center gap-4 mt-3 flex-wrap">
+            {[
+              { label: 'Total', value: tabCounts[0] || totalPatients, color: 'text-white' },
+              { label: 'With ABHA', value: tabCounts[1] || 0, color: 'text-green-300' },
+              { label: 'Linked Records', value: tabCounts[2] || 0, color: 'text-blue-200' },
+            ].map(s => (
+              <div key={s.label} className="flex items-center gap-1.5">
+                <span className={`text-lg font-bold ${s.color}`}>{s.value.toLocaleString()}</span>
+                <span className="text-blue-300 text-xs">{s.label}</span>
+              </div>
+            ))}
+          </div>
         </div>
+      </div>
 
-        {/* Search & Actions */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-          <input
-            className="flex-1 px-3 py-2 border rounded"
-            placeholder="Search patients by name, UHID, phone, email..."
-            value={search}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-          <div className="flex gap-2">
-            <button
-              className="px-3 py-2 text-sm border rounded hover:bg-slate-50"
-              onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
-            >
-              {showAdvancedFilters ? 'Hide' : 'Show'} Filters
-            </button>
-            <button
-              className="px-3 py-2 text-sm border rounded"
-              onClick={() => { setPage(1); fetchPatients(); }}
-            >
-              Search
-            </button>
-            <button
-              onClick={() => {
-                if (selectedPatients.length < 2) {
-                  addToast('Please select at least 2 patients to merge', 'warning');
-                } else {
-                  setShowMergeModal(true);
-                }
-              }}
-              className="px-3 py-2 text-sm border rounded hover:bg-slate-50"
-            >
-              Merge Profiles
-            </button>
-            <button
-              className="px-3 py-2 text-sm border rounded"
-              onClick={() => setShowConfigure(true)}
-            >
-              Configure fields
-            </button>
+      <div className="space-y-4">
+
+        {/* ── Tabs (scrollable on mobile) ── */}
+        <div className="overflow-x-auto pb-1 -mx-4 px-4 lg:mx-0 lg:px-0">
+          <div className="flex gap-2 min-w-max lg:min-w-0 lg:flex-wrap">
+            {tabs.map((tab, i) => (
+              <button
+                key={tab}
+                onClick={() => { setActiveTab(i); setPage(1); }}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${
+                  activeTab === i
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'bg-white text-gray-600 border border-gray-200 hover:border-blue-300 hover:text-blue-600'
+                }`}
+              >
+                {tab}
+                <span className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${
+                  activeTab === i ? 'bg-white/25 text-white' : 'bg-gray-100 text-gray-500'
+                }`}>
+                  {(tabCounts[i] || 0).toLocaleString()}
+                </span>
+              </button>
+            ))}
           </div>
         </div>
 
-        {/* Advanced Filters */}
-        {showAdvancedFilters && (
-          <div className="bg-slate-50 p-4 rounded-lg border">
-            <h3 className="text-sm font-medium text-slate-700 mb-3">Advanced Filters</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-              <select className="px-3 py-2 border rounded" value={filterGender} onChange={(e) => setFilterGender(e.target.value)}>
-                <option value="">All Genders</option>
-                <option value="Male">Male</option>
-                <option value="Female">Female</option>
-                <option value="Other">Other</option>
-              </select>
-              <select className="px-3 py-2 border rounded" value={filterBloodGroup} onChange={(e) => setFilterBloodGroup(e.target.value)}>
-                <option value="">All Blood Groups</option>
-                <option value="A+">A+</option>
-                <option value="A-">A-</option>
-                <option value="B+">B+</option>
-                <option value="B-">B-</option>
-                <option value="AB+">AB+</option>
-                <option value="AB-">AB-</option>
-                <option value="O+">O+</option>
-                <option value="O-">O-</option>
-              </select>
-              <input className="px-3 py-2 border rounded" placeholder="Filter by City" value={filterCity} onChange={(e) => setFilterCity(e.target.value)} />
-              <input className="px-3 py-2 border rounded" placeholder="Filter by State" value={filterState} onChange={(e) => setFilterState(e.target.value)} />
+        {/* ── Search & Filter ── */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 space-y-3">
+          {/* Search row */}
+          <div className="flex flex-col sm:flex-row gap-2">
+            <div className="relative flex-1">
+              <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
+              <input
+                className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-colors"
+                placeholder="Search by name, UHID, phone, email…"
+                value={search}
+                onChange={e => setQuery(e.target.value)}
+              />
             </div>
-            <div className="flex gap-2 mt-3">
+            <div className="flex gap-2">
               <button
-                className="px-4 py-2 text-sm border rounded hover:bg-slate-50"
-                onClick={() => {
-                  setFilterGender('');
-                  setFilterBloodGroup('');
-                  setFilterCity('');
-                  setFilterState('');
-                  setPage(1);
-                  fetchPatients();
-                }}
+                onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+                className={`flex items-center gap-1.5 px-3 py-2.5 text-sm rounded-xl border transition-colors flex-1 sm:flex-none justify-center ${
+                  showAdvancedFilters || hasActiveFilters
+                    ? 'bg-blue-50 text-blue-700 border-blue-300'
+                    : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300'
+                }`}
               >
-                Clear Filters
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+                </svg>
+                Filters
+                {hasActiveFilters && <span className="w-1.5 h-1.5 rounded-full bg-blue-600 flex-shrink-0"/>}
               </button>
               <button
-                className="px-4 py-2 text-sm bg-primary text-white rounded hover:bg-primary/90"
                 onClick={() => { setPage(1); fetchPatients(); }}
+                className="flex items-center gap-1.5 px-3 py-2.5 text-sm bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium flex-1 sm:flex-none justify-center"
               >
-                Apply Filters
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/>
+                </svg>
+                Refresh
               </button>
             </div>
           </div>
-        )}
 
-        {/* Desktop Table */}
-        <div className="hidden md:block border rounded overflow-x-auto">
-          <div className="grid grid-cols-10 min-w-[900px] bg-slate-50 text-xs font-semibold text-slate-600 px-3 py-2">
-            <span><input type="checkbox" onChange={(e) => e.target.checked ? setSelectedPatients(patients.map(p => p.id)) : setSelectedPatients([])} /></span>
-            <span>Sr. No.</span>
-            <span className="col-span-2">Patient Details</span>
-            <span>UHID</span>
-            <span>Contact</span>
-            <span>Follow Up</span>
-            <span>ABHA Status</span>
-            <span>Start Visit</span>
-            <span>Actions</span>
+          {/* Advanced Filters */}
+          {showAdvancedFilters && (
+            <div className="border-t border-gray-100 pt-3 space-y-3">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Filter Options</p>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                <select className="px-3 py-2 border border-gray-200 rounded-xl text-sm bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-colors" value={filterGender} onChange={e => setFilterGender(e.target.value)}>
+                  <option value="">All Genders</option>
+                  <option value="Male">Male</option>
+                  <option value="Female">Female</option>
+                  <option value="Other">Other</option>
+                </select>
+                <select className="px-3 py-2 border border-gray-200 rounded-xl text-sm bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-colors" value={filterBloodGroup} onChange={e => setFilterBloodGroup(e.target.value)}>
+                  <option value="">All Blood Groups</option>
+                  {['A+','A-','B+','B-','AB+','AB-','O+','O-'].map(g => <option key={g}>{g}</option>)}
+                </select>
+                <input className="px-3 py-2 border border-gray-200 rounded-xl text-sm bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-colors" placeholder="City" value={filterCity} onChange={e => setFilterCity(e.target.value)} />
+                <input className="px-3 py-2 border border-gray-200 rounded-xl text-sm bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-colors" placeholder="State" value={filterState} onChange={e => setFilterState(e.target.value)} />
+              </div>
+              <div className="flex gap-2">
+                <button onClick={clearFilters} className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors">
+                  Clear All
+                </button>
+                <button onClick={() => { setPage(1); fetchPatients(); setShowAdvancedFilters(false); }} className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium">
+                  Apply Filters
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── Patient Table ── */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+
+          {/* ── Desktop Table Header ── */}
+          <div className="hidden md:block bg-gradient-to-r from-slate-50 to-slate-100 border-b border-slate-200">
+            <div className="grid items-center text-xs font-semibold text-slate-500 uppercase tracking-wider px-5 py-3"
+              style={{ gridTemplateColumns: '2.5rem 1fr 10rem 5rem 8rem 6rem 11rem' }}>
+              <span>
+                <input type="checkbox" checked={allChecked}
+                  onChange={e => e.target.checked ? setSelectedPatients(patients.map(p => p.id)) : setSelectedPatients([])}
+                  className="w-4 h-4 rounded accent-blue-600 cursor-pointer" />
+              </span>
+              <span>Patient</span>
+              <span>UHID / Phone</span>
+              <span>Blood</span>
+              <span>ABHA</span>
+              <span>Follow Up</span>
+              <span className="text-right">Actions</span>
+            </div>
           </div>
 
-          {loading && <div className="p-4 text-sm text-slate-500">Loading...</div>}
-          {error && <div className="p-4 text-sm text-red-600">{error}</div>}
+          {/* Loading */}
+          {loading && (
+            <div className="flex flex-col items-center justify-center py-16 gap-3">
+              <div className="w-10 h-10 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin"/>
+              <p className="text-sm text-gray-400 font-medium">Loading patients…</p>
+            </div>
+          )}
 
-          {!loading && !error && (
-            <div className="divide-y">
-              {patients.length === 0 ? (
-                <div className="p-6 text-center text-slate-400 text-sm">No patients found.</div>
-              ) : (
-                patients.map((p, idx) => (
-                  <div key={p.id || idx} className="grid grid-cols-10 min-w-[900px] items-center px-3 py-2 text-sm">
-                    <span><input type="checkbox" checked={selectedPatients.includes(p.id)} onChange={() => handlePatientSelect(p.id)} /></span>
-                    <span>{(page - 1) * limit + idx + 1}</span>
-                    <div className="col-span-2">
-                      <p className="font-medium">{p.name}</p>
-                      <p className="text-xs text-slate-500">{p.gender} • {p.dob || ''} • {p.patient_id}</p>
+          {/* Error inline */}
+          {!loading && error && (
+            <div className="flex items-center gap-3 p-5 bg-red-50 border-b border-red-100 text-red-600">
+              <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              <span className="text-sm">{error}</span>
+              <button onClick={fetchPatients} className="ml-auto text-xs underline">Retry</button>
+            </div>
+          )}
+
+          {/* Empty state */}
+          {!loading && !error && patients.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-16 gap-3">
+              <div className="w-16 h-16 rounded-2xl bg-blue-50 flex items-center justify-center">
+                <svg className="w-8 h-8 text-blue-300" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
+                  <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/>
+                  <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/>
+                </svg>
+              </div>
+              <p className="text-gray-500 font-medium">No patients found</p>
+              <p className="text-gray-400 text-sm">Try adjusting your search or filters</p>
+              <button onClick={() => setShowAddPatientModal(true)} className="mt-1 flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition-colors">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Add First Patient
+              </button>
+            </div>
+          )}
+
+          {/* ── DESKTOP ROWS ── */}
+          {!loading && !error && patients.length > 0 && (
+            <div className="hidden md:block divide-y divide-gray-50">
+              {patients.map((p, idx) => {
+                const isSelected = selectedPatients.includes(p.id);
+                const genderLabel = p.gender === 'M' ? 'Male' : p.gender === 'F' ? 'Female' : p.gender || '';
+                const genderCls = GENDER_COLORS[genderLabel] || 'bg-gray-100 text-gray-600';
+                const bloodCls = BLOOD_COLORS[p.blood_group] || 'bg-gray-50 text-gray-500';
+                const age = p.dob
+                  ? Math.floor((Date.now() - new Date(p.dob).getTime()) / (365.25 * 86400000))
+                  : (p.age_years || null);
+
+                return (
+                  <div
+                    key={p.id || idx}
+                    onClick={() => navigate(`/patient-overview/${p.id}`)}
+                    className={`grid items-center px-5 py-3.5 text-sm transition-colors cursor-pointer group border-l-4 ${
+                      isSelected
+                        ? 'border-l-blue-500 bg-blue-50/60'
+                        : 'border-l-transparent hover:bg-slate-50/80'
+                    }`}
+                    style={{ gridTemplateColumns: '2.5rem 1fr 10rem 5rem 8rem 6rem 11rem' }}
+                  >
+                    {/* Checkbox */}
+                    <div onClick={e => e.stopPropagation()}>
+                      <input type="checkbox" checked={isSelected} onChange={() => handlePatientSelect(p.id)}
+                        className="w-4 h-4 rounded accent-blue-600 cursor-pointer" />
                     </div>
-                    <span className="truncate pr-2" title={p.patient_id}>{p.patient_id}</span>
-                    <span className="truncate pr-2" title={p.phone}>{p.phone || '-'}</span>
-                    <span>{p.follow_up || '-'}</span>
-                    <span>
+
+                    {/* Patient */}
+                    <div className="flex items-center gap-3 min-w-0 pr-3">
+                      <Avatar name={p.name} />
+                      <div className="min-w-0">
+                        <p className="font-semibold text-gray-900 truncate group-hover:text-blue-700 transition-colors text-sm">{p.name}</p>
+                        <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                          {genderLabel && <span className={`text-xs px-1.5 py-0.5 rounded-md font-medium ${genderCls}`}>{genderLabel}</span>}
+                          {age && <span className="text-xs text-gray-400">{age}y</span>}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* UHID / Phone */}
+                    <div className="min-w-0 pr-2">
+                      <p className="text-xs font-mono font-semibold text-gray-600 truncate">{p.patient_id || '—'}</p>
+                      <p className="text-xs text-gray-400 mt-0.5 truncate">{p.phone || '—'}</p>
+                    </div>
+
+                    {/* Blood group */}
+                    <div>
+                      {p.blood_group
+                        ? <span className={`text-xs font-bold px-2 py-0.5 rounded-lg ${bloodCls}`}>{p.blood_group}</span>
+                        : <span className="text-gray-300 text-xs">—</span>}
+                    </div>
+
+                    {/* ABHA */}
+                    <div onClick={e => e.stopPropagation()}>
                       {p.abha_id ? (
-                        <button 
-                          onClick={() => handleAbhaStatusClick(p)}
-                          className="inline-flex items-center gap-1 text-green-700 text-xs hover:text-green-800 hover:underline cursor-pointer"
-                        >
-                          ✓ ABHA Linked
+                        <button onClick={() => handleAbhaClick(p)}
+                          className="flex items-center gap-1 px-2 py-1 bg-emerald-50 text-emerald-700 text-xs font-semibold rounded-lg hover:bg-emerald-100 transition-colors border border-emerald-200">
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+                          Linked
                         </button>
                       ) : (
-                        <button 
-                          onClick={() => handleAbhaStatusClick(p)}
-                          className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-pink-100 text-pink-800 rounded hover:bg-pink-200 cursor-pointer"
-                        >
-                          ✗ No ABHA
+                        <button onClick={() => handleAbhaClick(p)}
+                          className="flex items-center gap-1 px-2 py-1 bg-rose-50 text-rose-600 text-xs font-medium rounded-lg hover:bg-rose-100 transition-colors border border-rose-200">
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                          Link ABHA
                         </button>
                       )}
-                    </span>
-                    <span>
-                      <a href={`/orders/${p.id}`} className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700">
-                        Start Visit
+                    </div>
+
+                    {/* Follow Up */}
+                    <div>
+                      {p.follow_up
+                        ? <span className="text-xs font-medium text-amber-700 bg-amber-50 px-2 py-0.5 rounded-lg border border-amber-200">{p.follow_up}</span>
+                        : <span className="text-gray-300 text-xs">—</span>}
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex items-center justify-end gap-1.5" onClick={e => e.stopPropagation()}>
+                      <a href={`/orders/${p.id}`}
+                        onClick={e => e.stopPropagation()}
+                        className="flex items-center gap-1 px-2.5 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-lg hover:bg-blue-700 transition-colors">
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+                        Visit
                       </a>
-                    </span>
-                    <div className="flex gap-2">
-                      <a href={`/patient-overview/${p.id}`} className="px-2 py-1 text-xs border rounded text-primary hover:bg-primary hover:text-white transition">
+                      <a href={`/patient-overview/${p.id}`}
+                        onClick={e => e.stopPropagation()}
+                        className="flex items-center gap-1 px-2.5 py-1.5 border border-gray-200 text-gray-600 text-xs font-medium rounded-lg hover:bg-gray-50 hover:border-blue-300 hover:text-blue-700 transition-colors">
                         Overview
                       </a>
                       <div className="relative">
-                        <button onClick={() => setDropdownOpen(dropdownOpen === p.id ? null : p.id)} className="px-2 py-1 text-xs border rounded hover:bg-slate-100">
-                          ⋮
+                        <button
+                          onClick={() => setDropdownOpen(dropdownOpen === p.id ? null : p.id)}
+                          className="w-7 h-7 flex items-center justify-center border border-gray-200 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors">
+                          <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
                         </button>
                         {dropdownOpen === p.id && (
-                          <div className="absolute right-0 mt-1 w-48 bg-white border rounded shadow-lg z-10">
-                            <button
-                              onClick={async () => {
-                                // Close dropdown immediately
-                                setDropdownOpen(null);
-
-                                if (window.confirm(`Delete patient ${p.name}?\n\nWarning: This will also delete all related appointments, bills, and medical records.`)) {
-                                  try {
-                                    const response = await api.delete(`/api/patients/${p.id}`);
-                                    // console.log('Delete response:', response.data);
-                                    addToast(response.data.message || 'Patient deleted successfully', 'success');
-
-                                    // Immediately remove from local state for instant UI update
-                                    setPatients(prevPatients => prevPatients.filter(patient => patient.id !== p.id));
-
-                                    // Refresh from server to ensure consistency and update counts
-                                    await fetchPatients();
-                                  } catch (error) {
-                                    console.error('Delete patient error:', error);
-                                    console.error('Error response:', error.response);
-                                    const errorMsg = error.response?.data?.error || 'Failed to delete patient';
-                                    addToast(errorMsg, 'error');
-                                    // If deletion failed, refresh to get current state
-                                    await fetchPatients();
-                                  }
-                                }
-                              }}
-                              className="block w-full text-left px-3 py-2 text-xs text-red-600 hover:bg-red-50"
-                            >
+                          <div className="absolute right-0 mt-1 w-44 bg-white border border-gray-200 rounded-xl shadow-xl z-20 overflow-hidden">
+                            <button onClick={() => handleDelete(p)}
+                              className="flex items-center gap-2 w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6m3 0V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
                               Delete Patient
                             </button>
                           </div>
@@ -550,78 +509,160 @@ export default function Patients() {
                       </div>
                     </div>
                   </div>
-                ))
-              )}
+                );
+              })}
+            </div>
+          )}
+
+          {/* ── MOBILE CARDS ── */}
+          {!loading && !error && patients.length > 0 && (
+            <div className="md:hidden divide-y divide-gray-100">
+              {patients.map((p, idx) => {
+                const genderLabel = p.gender === 'M' ? 'Male' : p.gender === 'F' ? 'Female' : p.gender || '';
+                const genderCls = GENDER_COLORS[genderLabel] || 'bg-gray-100 text-gray-600';
+                const age = p.dob
+                  ? Math.floor((Date.now() - new Date(p.dob).getTime()) / (365.25 * 86400000))
+                  : (p.age_years || null);
+                const isSelected = selectedPatients.includes(p.id);
+
+                return (
+                  <div key={p.id || idx} className={`p-4 transition-colors ${isSelected ? 'bg-blue-50/50' : ''}`}>
+                    <div className="flex items-start gap-3">
+                      {/* Checkbox (mobile) */}
+                      <input type="checkbox" checked={isSelected} onChange={() => handlePatientSelect(p.id)}
+                        className="mt-1 w-4 h-4 rounded accent-blue-600 cursor-pointer flex-shrink-0" />
+                      <Avatar name={p.name} size="sm" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="font-semibold text-gray-900 truncate">{p.name}</p>
+                            <p className="text-xs text-gray-500 mt-0.5 font-mono">{p.patient_id}</p>
+                          </div>
+                          {p.blood_group && (
+                            <span className={`text-xs font-bold px-1.5 py-0.5 rounded-md flex-shrink-0 ${BLOOD_COLORS[p.blood_group] || 'bg-gray-50 text-gray-500'}`}>
+                              {p.blood_group}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                          {genderLabel && <span className={`text-xs px-1.5 py-0.5 rounded-md font-medium ${genderCls}`}>{genderLabel}</span>}
+                          {age && <span className="text-xs text-gray-400">{age}y</span>}
+                          {p.phone && <span className="text-xs text-gray-500">{p.phone}</span>}
+                        </div>
+                        {/* ABHA on mobile */}
+                        <div className="mt-2">
+                          {p.abha_id ? (
+                            <button onClick={() => handleAbhaClick(p)} className="text-xs text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200 font-medium">
+                              ✓ ABHA Linked
+                            </button>
+                          ) : (
+                            <button onClick={() => handleAbhaClick(p)} className="text-xs text-rose-600 bg-rose-50 px-2 py-0.5 rounded-lg border border-rose-200">
+                              Link ABHA
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    {/* Action buttons (mobile) */}
+                    <div className="grid grid-cols-2 gap-2 mt-3">
+                      <a href={`/patient-overview/${p.id}`}
+                        className="text-center py-2 border border-gray-200 text-sm text-gray-700 rounded-xl hover:bg-gray-50 font-medium transition-colors">
+                        Overview
+                      </a>
+                      <a href={`/orders/${p.id}`}
+                        className="text-center py-2 bg-blue-600 text-white text-sm font-semibold rounded-xl hover:bg-blue-700 transition-colors">
+                        Start Visit
+                      </a>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* ── Pagination ── */}
+          {patients.length > 0 && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 sm:px-5 py-3 border-t border-gray-100 bg-gray-50/50">
+              <p className="text-xs text-gray-500 text-center sm:text-left">
+                {(page - 1) * limit + 1}–{Math.min(page * limit, totalPatients)} of {totalPatients.toLocaleString()} patients
+              </p>
+              <div className="flex items-center gap-1">
+                <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
+                  className="w-8 h-8 flex items-center justify-center rounded-lg border border-gray-200 text-gray-600 hover:bg-white hover:border-blue-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+                </button>
+                {pageNums.map(n => (
+                  <button key={n} onClick={() => setPage(n)}
+                    className={`w-8 h-8 flex items-center justify-center rounded-lg text-xs font-semibold transition-colors ${
+                      n === page ? 'bg-blue-600 text-white shadow-sm' : 'border border-gray-200 text-gray-600 hover:bg-white hover:border-blue-300'
+                    }`}>
+                    {n}
+                  </button>
+                ))}
+                <button onClick={() => { if (page < totalPages) setPage(page + 1); }} disabled={page >= totalPages}
+                  className="w-8 h-8 flex items-center justify-center rounded-lg border border-gray-200 text-gray-600 hover:bg-white hover:border-blue-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+                </button>
+              </div>
             </div>
           )}
         </div>
 
-        {/* Pagination */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-2 text-sm text-slate-600">
-          <button className="px-3 py-2 border rounded disabled:opacity-50 w-full sm:w-auto" onClick={prevPage} disabled={page === 1}>Prev</button>
-          <span className="text-center">
-            Page {pagination.page || page} of {pagination.pages || 1} • Total {pagination.total || patients.length}
-          </span>
-          <button className="px-3 py-2 border rounded disabled:opacity-50 w-full sm:w-auto" onClick={nextPage} disabled={page >= (pagination.pages || 1)}>Next</button>
-        </div>
-      </div>
+      </div>{/* end space-y-4 */}
 
-      {/* Add Patient Button */}
-      <div className="bg-white rounded shadow-sm border p-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900">Add New Patient</h2>
-            <p className="text-sm text-gray-600 mt-1">Quickly add a new patient to the system</p>
-          </div>
-          <button
-            onClick={() => {
-              // console.log('Add New Patient clicked');
-              setShowAddPatientModal(true);
-            }}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            Add Patient
-          </button>
-        </div>
-      </div>
-
-      {/* Configure Modal */}
-      <ConfigurePatientModal open={showConfigure} onClose={() => setShowConfigure(false)} onSave={(config) => { setPatientConfig(config); addToast('Patient form configuration saved', 'success'); }} />
-
-      {/* Add Patient Modal */}
-      <AddPatientModal 
-        isOpen={showAddPatientModal} 
-        onClose={() => setShowAddPatientModal(false)} 
-        onSuccess={handlePatientAdded}
-      />
-
-      {/* Floating Action Button */}
+      {/* FAB (mobile) */}
       <button
         onClick={() => setShowAddPatientModal(true)}
-        className="fixed bottom-6 right-6 w-14 h-14 bg-blue-600 text-white rounded-full shadow-lg hover:bg-blue-700 transition-all hover:scale-110 flex items-center justify-center z-40"
+        className="fixed bottom-6 right-6 w-14 h-14 bg-blue-600 text-white rounded-full shadow-xl hover:bg-blue-700 hover:scale-110 flex items-center justify-center z-40 transition-all md:hidden"
         title="Add New Patient"
       >
-        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+        <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+          <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
         </svg>
       </button>
 
+      {/* Modals */}
+      <ConfigurePatientModal
+        open={showConfigure}
+        onClose={() => setShowConfigure(false)}
+        onSave={() => { addToast('Configuration saved', 'success'); }}
+      />
+      <AddPatientModal
+        isOpen={showAddPatientModal}
+        onClose={() => setShowAddPatientModal(false)}
+        onSuccess={handlePatientAdded}
+      />
+
       {/* Merge Modal */}
       {showMergeModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-            <h3 className="text-lg font-semibold mb-4">Merge Patient Profiles</h3>
-            <p className="text-sm text-slate-600 mb-4">You have selected {selectedPatients.length} patient(s) to merge.</p>
+        <div className="fixed inset-0 bg-black/60 flex items-end sm:items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center flex-shrink-0">
+                <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path d="M18 2l4 4-4 4M6 22l-4-4 4-4M14 6H2M22 18H10"/>
+                </svg>
+              </div>
+              <div>
+                <h3 className="font-bold text-gray-900">Merge Patient Profiles</h3>
+                <p className="text-xs text-gray-500">{selectedPatients.length} patients selected</p>
+              </div>
+            </div>
+            <p className="text-sm text-gray-600 mb-5">The first selected patient becomes the primary profile. All records from others will be merged into it. This cannot be undone.</p>
             <div className="flex gap-3">
-              <button onClick={() => setShowMergeModal(false)} className="flex-1 px-4 py-2 text-sm border rounded hover:bg-slate-50">Cancel</button>
-              <button onClick={handleMergeProfiles} className="flex-1 px-4 py-2 text-sm bg-primary text-white rounded hover:bg-primary/90">Merge Profiles</button>
+              <button onClick={() => setShowMergeModal(false)} className="flex-1 py-2.5 text-sm border border-gray-200 rounded-xl text-gray-700 hover:bg-gray-50 transition-colors font-medium">
+                Cancel
+              </button>
+              <button onClick={handleMerge} className="flex-1 py-2.5 text-sm bg-amber-500 text-white rounded-xl hover:bg-amber-600 transition-colors font-bold">
+                Merge Profiles
+              </button>
             </div>
           </div>
         </div>
       )}
+
+      {/* Click-outside to close dropdown */}
+      {dropdownOpen && <div className="fixed inset-0 z-10" onClick={() => setDropdownOpen(null)} />}
     </div>
   );
 }

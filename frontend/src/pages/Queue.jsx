@@ -170,11 +170,24 @@ export default function Queue() {
         }
       });
       
-      // Sort: incomplete / not-completed first, completed last; within groups sort by check-in/appointment time
+      // Sort: upcoming/scheduled first, then active/waiting, then completed last
+      const now = new Date();
+      const getStatusPriority = (apt) => {
+        if (apt.status === 'completed' || apt.status === 'cancelled') return 2;
+        if (apt.status === 'scheduled') return 0; // scheduled = upcoming, show at top
+        // If appointment time is in the future and not checked in yet, treat as upcoming
+        const aptTimeStr = (apt.appointment_time || '00:00').substring(0, 5);
+        const aptTime = apt.check_in_time
+          ? null // already checked in, not upcoming
+          : new Date(`${apt.appointment_date || today}T${aptTimeStr}:00`);
+        if (aptTime && aptTime > now) return 0; // future appointment = upcoming
+        return 1; // active / waiting
+      };
+
       combinedData.sort((a, b) => {
-        const aCompleted = (a.status === 'completed');
-        const bCompleted = (b.status === 'completed');
-        if (aCompleted !== bCompleted) return aCompleted ? 1 : -1; // completed go after
+        const aPriority = getStatusPriority(a);
+        const bPriority = getStatusPriority(b);
+        if (aPriority !== bPriority) return aPriority - bPriority;
 
         const timeA = a.check_in_time || `${a.appointment_date || today} ${a.appointment_time || ''}`;
         const timeB = b.check_in_time || `${b.appointment_date || today} ${b.appointment_time || ''}`;
@@ -780,17 +793,30 @@ Thank you!`;
       filtered = filtered.filter(apt => apt.is_follow_up || apt.reason_for_visit?.toLowerCase().includes('follow'));
     }
 
-    // Sort by VIP status first, then date and time
+    // Sort: VIP first, then upcoming/scheduled at top, active in middle, completed at bottom
+    const nowTime = new Date();
+    const getQueuePriority = (apt) => {
+      const status = (apt.status || '').toLowerCase();
+      if (status === 'completed' || status === 'cancelled') return 2;
+      if (status === 'scheduled') return 0; // upcoming scheduled = top
+      // Future appointment time (not yet checked in) = upcoming
+      const aptTimeStr = (apt.appointment_time || '00:00').substring(0, 5);
+      const aptDate = (apt.appointment_date || today).toString().split('T')[0].split(' ')[0];
+      const aptDt = new Date(`${aptDate}T${aptTimeStr}:00`);
+      if (!apt.check_in_time && aptDt > nowTime) return 0;
+      return 1; // active / waiting
+    };
+
     filtered.sort((a, b) => {
-      // VIP patients first (is_vip = 1 comes before 0)
+      // VIP patients first
       const vipCompare = (b.is_vip ? 1 : 0) - (a.is_vip ? 1 : 0);
       if (vipCompare !== 0) return vipCompare;
-      
-      // Then by appointment date (same day)
-      const dateCompare = new Date(b.appointment_date) - new Date(a.appointment_date);
-      if (dateCompare !== 0) return dateCompare;
-      
-      // If same date, sort by time (earlier time first)
+
+      // Then by queue status priority: upcoming(0) → active(1) → completed(2)
+      const priorityCompare = getQueuePriority(a) - getQueuePriority(b);
+      if (priorityCompare !== 0) return priorityCompare;
+
+      // Within same priority: sort by time ascending (earliest first)
       if (a.appointment_time && b.appointment_time) {
         return a.appointment_time.localeCompare(b.appointment_time);
       }
@@ -1117,12 +1143,16 @@ Thank you!`;
       {/* Summary Cards */}
       <section className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
         {stats.map((card) => (
-          <div 
-            key={card.key} 
+          <div
+            key={card.key}
             data-completed-card={card.key === 'completed' ? '1' : undefined}
-            className={`p-3 bg-white rounded shadow-sm border relative group cursor-pointer hover:shadow-md transition ${
-              filters.status === card.key ? 'ring-2 ring-primary' : ''
-            }`}
+            className={`p-4 bg-white rounded-xl shadow-sm border-t-4 relative group cursor-pointer hover:shadow-md transition ${
+              card.key === 'today' ? 'border-t-blue-500' :
+              card.key === 'followups' ? 'border-t-orange-500' :
+              card.key === 'completed' ? 'border-t-emerald-500' :
+              card.key === 'upcoming' ? 'border-t-purple-500' :
+              'border-t-slate-400'
+            } ${filters.status === card.key ? 'ring-2 ring-primary' : ''}`}
             onClick={() => {
               if (card.key === 'today') {
                 handleQuickDateFilter('today');
@@ -1218,7 +1248,7 @@ Thank you!`;
                 </button>
               </div>
             )}
-            <p className="text-2xl font-semibold mt-1">{card.count}</p>
+            <p className="text-3xl font-bold mt-2 tabular-nums">{card.count}</p>
           </div>
         ))}
       </section>
@@ -1226,65 +1256,72 @@ Thank you!`;
       {/* Main Content */}
       <section className="grid grid-cols-1 lg:grid-cols-4 gap-4">
         {/* Queue Table */}
-        <div className="lg:col-span-3 bg-white rounded shadow-sm border p-4">
-          {/* Header */}
-          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-            <h2 className="text-lg font-semibold">Active Queue</h2>
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => setShowFilters(!showFilters)}
-                className={`px-3 py-2 text-sm border rounded hover:bg-slate-50 flex items-center gap-1 transition active:scale-[0.98] ${
-                  showFilters ? 'bg-slate-100' : ''
-                }`}
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-                </svg>
-                Filters
-                {Object.values(filters).some(f => f) && (
-                  <span className="w-2 h-2 bg-primary rounded-full"></span>
-                )}
-              </button>
-              
-              <button
-                type="button"
-                onClick={fetchAppointments}
-                disabled={loading}
-                className="px-3 py-2 text-sm border rounded hover:bg-slate-50 flex items-center gap-1 disabled:opacity-50 transition active:scale-[0.98]"
-              >
-                <svg className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-                Refresh
-              </button>
-              
-              <button
-                type="button"
-                onClick={() => setShowAddPatientModal(true)}
-                className="px-3 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-1 transition active:scale-[0.98]"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                Add Patient
-              </button>
+        <div className="lg:col-span-3 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+          {/* Gradient Header */}
+          <div className="bg-gradient-to-r from-blue-700 via-blue-600 to-indigo-700 px-5 py-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-bold text-white tracking-tight">Active Queue</h2>
+                <p className="text-blue-200 text-xs mt-0.5">
+                  {pagination.total > 0 ? `${pagination.total} appointments` : `${filteredAppointments.length} appointments`}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowFilters(!showFilters)}
+                  className={`px-3 py-2 text-sm rounded-lg flex items-center gap-1.5 transition active:scale-[0.98] ${
+                    showFilters ? 'bg-white/25 text-white' : 'bg-white/15 hover:bg-white/25 text-white'
+                  }`}
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                  </svg>
+                  Filters
+                  {Object.values(filters).some(f => f) && (
+                    <span className="w-2 h-2 bg-yellow-400 rounded-full"></span>
+                  )}
+                </button>
 
-              {/* Payment Pending button removed */}
-              
-              <button
-                type="button"
-                onClick={() => {
-                  const newMode = viewMode === 'default' ? 'compact' : 'default';
-                  setViewMode(newMode);
-                  addToast(`Switched to ${newMode} view`, 'info');
-                }}
-                className="px-3 py-2 text-sm border rounded hover:bg-slate-50 flex items-center gap-1 transition active:scale-[0.98]"
-              >
-                {viewMode === 'default' ? ' Compact' : ' Table'}
-              </button>
+                <button
+                  type="button"
+                  onClick={fetchAppointments}
+                  disabled={loading}
+                  className="px-3 py-2 text-sm bg-white/15 hover:bg-white/25 text-white rounded-lg flex items-center gap-1.5 disabled:opacity-50 transition active:scale-[0.98]"
+                >
+                  <svg className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Refresh
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowAddPatientModal(true)}
+                  className="px-3 py-2 text-sm bg-white text-blue-700 font-semibold rounded-lg hover:bg-blue-50 flex items-center gap-1.5 transition active:scale-[0.98] shadow-sm"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  Add Patient
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const newMode = viewMode === 'default' ? 'compact' : 'default';
+                    setViewMode(newMode);
+                    addToast(`Switched to ${newMode} view`, 'info');
+                  }}
+                  className="px-3 py-2 text-sm bg-white/15 hover:bg-white/25 text-white rounded-lg flex items-center gap-1.5 transition active:scale-[0.98]"
+                >
+                  {viewMode === 'default' ? 'Compact' : 'Table'}
+                </button>
+              </div>
             </div>
           </div>
+
+          <div className="p-4">
 
           {/* Filters Panel */}
           {showFilters && (
@@ -1668,11 +1705,15 @@ Thank you!`;
                         </div>
                       ) : (
                         filteredAppointments.map((apt) => (
-                          <div 
-                            key={`${apt.source}-${apt.id}-${apt.patient_id}`} 
-                            className={`grid grid-cols-12 min-w-[1200px] items-center px-4 py-3 text-sm hover:bg-slate-50 transition ${
-                              apt.status === 'completed' ? 'bg-green-50/50' : ''
-                            } ${apt.status === 'cancelled' ? 'bg-red-50/50 opacity-75' : ''}`}
+                          <div
+                            key={`${apt.source}-${apt.id}-${apt.patient_id}`}
+                            className={`grid grid-cols-12 min-w-[1200px] items-center px-4 py-3.5 text-sm transition-colors border-l-4 ${
+                              apt.status === 'completed'    ? 'border-l-emerald-500 bg-emerald-50/40 hover:bg-emerald-50/70' :
+                              apt.status === 'in-progress' ? 'border-l-amber-500  bg-amber-50/40  hover:bg-amber-50/70'  :
+                              apt.status === 'cancelled'   ? 'border-l-red-400    bg-red-50/30    hover:bg-red-50/50 opacity-75' :
+                              apt.status === 'no-show'     ? 'border-l-slate-400  bg-slate-50/60  hover:bg-slate-100/60' :
+                                                             'border-l-blue-500   hover:bg-slate-50/80'
+                            }`}
                           >
                             {/* Checkbox */}
                             <div className="col-span-1 flex items-center">
@@ -1701,8 +1742,8 @@ Thank you!`;
                             
                             {/* Patient Info */}
                             <div className="col-span-3 flex items-center gap-3">
-                              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center text-white text-sm font-medium flex-shrink-0">
-                                {apt.patient_name?.charAt(0)?.toUpperCase() || '?'}
+                              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0 shadow-sm">
+                                {apt.patient_name ? apt.patient_name.split(' ').map(w => w[0]).slice(0,2).join('').toUpperCase() : '?'}
                               </div>
                               <div className="min-w-0">
                                 <div className="flex items-center gap-1">
@@ -2064,23 +2105,51 @@ Thank you!`;
                                     </button>
                                     {/* Send Bill on WhatsApp */}
                                     <button
-                                      onClick={() => {
+                                      onClick={async () => {
                                         setOpenMenuId(null);
-                                        const billId = apt.bill_id;
                                         const phone = apt.contact || apt.patient_phone || apt.phone || '';
                                         const cleanPhone = phone.replace(/\D/g, '');
-                                        if (!billId) {
+                                        const patientId = apt.patient_id;
+                                        if (!apt.bill_id && !patientId) {
                                           addToast('No bill found to send', 'info');
                                           return;
                                         }
-                                        const pdfUrl = window.location.origin + '/api/pdf/bill/' + billId;
-                                        const msg = encodeURIComponent(
-                                          'Hello ' + (apt.patient_name || '') + ',\n\n' +
-                                          'Your bill from ' + (apt.clinic_name || 'our clinic') + ':\n' +
-                                          'Amount: Rs.' + (parseFloat(apt.bill_total) || 0).toFixed(2) + '\n\n' +
-                                          'View/Download Receipt:\n' + pdfUrl
-                                        );
-                                        window.open('https://wa.me/' + (cleanPhone.startsWith('91') ? cleanPhone : '91' + cleanPhone) + '?text=' + msg, '_blank');
+                                        try {
+                                          // Fetch all today's bills for this patient
+                                          const today = new Date().toISOString().split('T')[0];
+                                          const res = await api.get(`/api/bills`, { params: { patient_id: patientId, date: today, limit: 10 } });
+                                          const bills = res.data?.data?.bills || res.data?.bills || [];
+                                          const patientName = apt.patient_name || apt.name || '';
+                                          let msg = '';
+                                          if (bills.length > 1) {
+                                            // Multiple bills today - send grouped summary
+                                            const totalBilled = bills.reduce((s, b) => s + parseFloat(b.total_amount || 0), 0);
+                                            const totalPaid = bills.reduce((s, b) => s + parseFloat(b.amount_paid || 0), 0);
+                                            const totalDue = bills.reduce((s, b) => s + parseFloat(b.balance_due || Math.max(0, (b.total_amount || 0) - (b.amount_paid || 0))), 0);
+                                            const billLines = bills.map((b, i) =>
+                                              `  ${i + 1}. Bill #${b.id} - ₹${parseFloat(b.total_amount || 0).toFixed(2)} (${b.payment_status || 'pending'})`
+                                            ).join('\n');
+                                            msg = `Hello ${patientName},\n\nYour bills summary for today from Dr. Jaju Clinic:\n\n${billLines}\n\n💰 Total Billed: ₹${totalBilled.toFixed(2)}\n✅ Total Paid: ₹${totalPaid.toFixed(2)}${totalDue > 0 ? `\n⚠️ Balance Due: ₹${totalDue.toFixed(2)}` : '\n✅ Fully Paid'}\n\nThank you for visiting us!`;
+                                          } else {
+                                            // Single bill - show full breakdown
+                                            const bill = bills[0] || {};
+                                            const billId = bill.id || apt.bill_id;
+                                            const total = parseFloat(bill.total_amount || apt.bill_total || 0);
+                                            const paid = parseFloat(bill.amount_paid || apt.amount_paid || 0);
+                                            const due = parseFloat(bill.balance_due || Math.max(0, total - paid));
+                                            const status = bill.payment_status || apt.payment_status || 'pending';
+                                            const pdfUrl = window.location.origin + '/api/pdf/bill/' + billId;
+                                            msg = `Hello ${patientName},\n\nYour bill from Dr. Jaju Clinic:\n\n💳 Bill No: #${billId}\n💰 Total Amount: ₹${total.toFixed(2)}\n✅ Amount Paid: ₹${paid.toFixed(2)}${due > 0 ? `\n⚠️ Balance Due: ₹${due.toFixed(2)}` : '\n✅ Fully Paid'}${due > 0 ? '\n\nPlease clear the remaining balance at your earliest convenience.' : ''}\n\n📄 Download Receipt:\n${pdfUrl}\n\nThank you for visiting us!`;
+                                          }
+                                          window.open('https://wa.me/' + (cleanPhone.startsWith('91') ? cleanPhone : '91' + cleanPhone) + '?text=' + encodeURIComponent(msg), '_blank');
+                                        } catch {
+                                          // Fallback to basic message
+                                          const billId = apt.bill_id;
+                                          if (!billId) { addToast('No bill found to send', 'info'); return; }
+                                          const pdfUrl = window.location.origin + '/api/pdf/bill/' + billId;
+                                          const msg = `Hello ${apt.patient_name || ''},\n\nYour bill from Dr. Jaju Clinic:\nAmount: ₹${(parseFloat(apt.bill_total) || 0).toFixed(2)}\n\nDownload Receipt:\n${pdfUrl}`;
+                                          window.open('https://wa.me/' + (cleanPhone.startsWith('91') ? cleanPhone : '91' + cleanPhone) + '?text=' + encodeURIComponent(msg), '_blank');
+                                        }
                                       }}
                                       className="w-full px-4 py-2.5 text-left text-sm hover:bg-green-50 hover:text-green-700 flex items-center gap-3 rounded-b-lg transition-colors"
                                     >
@@ -2422,26 +2491,31 @@ Thank you!`;
               )}
             </div>
           )}
+          </div>{/* end p-4 wrapper */}
         </div>
 
         {/* Sidebar */}
-        <aside className="bg-white rounded shadow-sm border p-4 space-y-4 h-fit">
-          {/* Doctor Info */}
-          <div className="flex items-center gap-3">
-            <div className="w-14 h-14 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-2xl">
-              👨‍⚕️
-            </div>
-            <div>
-              <span className="inline-flex items-center px-2 py-0.5 text-xs bg-green-100 text-green-800 rounded-full mb-1">
-                🟢 Online
-              </span>
-              <p className="font-semibold">Dr. {user?.name || 'Doctor'}</p>
-              <p className="text-sm text-slate-500">{user?.role === 'doctor' ? (user?.specialization || 'General Physician') : user?.role}</p>
-              {user?.clinic_name && (
-                <p className="text-xs text-slate-400 mt-0.5 font-medium">📍 {user.clinic_name}</p>
-              )}
+        <aside className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden h-fit">
+          {/* Sidebar gradient header */}
+          <div className="bg-gradient-to-br from-indigo-600 to-blue-700 px-4 py-5">
+            <div className="flex items-center gap-3">
+              <div className="w-14 h-14 rounded-full bg-white/20 border-2 border-white/40 flex items-center justify-center text-2xl shadow-inner">
+                👨‍⚕️
+              </div>
+              <div>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-green-400/30 text-green-100 rounded-full mb-1 font-medium">
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block"></span>
+                  Online
+                </span>
+                <p className="font-bold text-white">Dr. {user?.name || 'Doctor'}</p>
+                <p className="text-blue-200 text-xs">{user?.role === 'doctor' ? (user?.specialization || 'General Physician') : user?.role}</p>
+                {user?.clinic_name && (
+                  <p className="text-blue-300 text-xs mt-0.5">📍 {user.clinic_name}</p>
+                )}
+              </div>
             </div>
           </div>
+          <div className="p-4 space-y-4">
           
           <hr />
 
@@ -2659,7 +2733,7 @@ Thank you!`;
               View All Patients →
             </button>
           </div>
-          
+          </div>{/* end sidebar p-4 */}
         </aside>
       </section>
 

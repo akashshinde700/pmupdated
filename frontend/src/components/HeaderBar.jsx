@@ -4,7 +4,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useApiClient } from '../api/client';
 import { useToast } from '../hooks/useToast';
 import { useTranslation } from '../context/LanguageContext';
-import { FiUser, FiStar, FiClock, FiFileText, FiCalendar, FiDollarSign, FiInfo, FiSettings, FiCloud, FiLogOut, FiCopy, FiShare2, FiCheck, FiGlobe, FiBell, FiChevronDown } from 'react-icons/fi';
+import { FiUser, FiStar, FiClock, FiFileText, FiCalendar, FiDollarSign, FiInfo, FiSettings, FiCloud, FiLogOut, FiCopy, FiShare2, FiCheck, FiBell } from 'react-icons/fi';
 import { useNotifications } from '../hooks/useNotifications';
 import GlobalSearch from './GlobalSearch';
 import DarkModeToggle from './DarkModeToggle';
@@ -15,7 +15,7 @@ export default function HeaderBar({ title = '', clinic: clinicProp, onAddPatient
   const { user } = useAuth();
   const api = useApiClient();
   const { addToast } = useToast();
-  const { language, changeLanguage, t } = useTranslation();
+  const { t } = useTranslation();
   const [showDropdown, setShowDropdown] = useState(false);
   const dropdownRef = useRef(null);
   const [viewMode, setViewMode] = useState(() => {
@@ -32,8 +32,6 @@ export default function HeaderBar({ title = '', clinic: clinicProp, onAddPatient
   const [copied, setCopied] = useState(false);
   const [showNotificationDropdown, setShowNotificationDropdown] = useState(false);
   const notificationDropdownRef = useRef(null);
-  const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
-  const languageDropdownRef = useRef(null);
   const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications();
   const [currentClinic, setCurrentClinic] = useState(clinicProp || 'Loading...');
   const [clinics, setClinics] = useState([]);
@@ -47,9 +45,6 @@ export default function HeaderBar({ title = '', clinic: clinicProp, onAddPatient
       }
       if (notificationDropdownRef.current && !notificationDropdownRef.current.contains(event.target)) {
         setShowNotificationDropdown(false);
-      }
-      if (languageDropdownRef.current && !languageDropdownRef.current.contains(event.target)) {
-        setShowLanguageDropdown(false);
       }
     }
 
@@ -175,40 +170,6 @@ export default function HeaderBar({ title = '', clinic: clinicProp, onAddPatient
           <h1 className="text-xl lg:text-2xl font-semibold">{title}</h1>
         </div>
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
-          {/* Language Selector */}
-          <div className="relative" ref={languageDropdownRef}>
-            <button
-              onClick={() => setShowLanguageDropdown(!showLanguageDropdown)}
-              className="flex items-center gap-2 px-3 py-2 bg-white border rounded shadow hover:bg-slate-50 transition"
-              title="Language"
-            >
-              <FiGlobe className="w-4 h-4 text-slate-700" />
-              <span className="text-sm font-medium">{language === 'hi' ? 'हिं' : 'EN'}</span>
-              <FiChevronDown className="w-3 h-3 text-slate-500" />
-            </button>
-            {showLanguageDropdown && (
-              <div className="absolute right-0 mt-2 bg-white rounded-md shadow-lg border z-50 min-w-[120px]">
-                <button
-                  onClick={() => {
-                    changeLanguage('en');
-                    setShowLanguageDropdown(false);
-                  }}
-                  className={`flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-slate-50 transition ${language === 'en' ? 'bg-slate-100 text-blue-600' : ''}`}
-                >
-                  <span>English</span>
-                </button>
-                <button
-                  onClick={() => {
-                    changeLanguage('hi');
-                    setShowLanguageDropdown(false);
-                  }}
-                  className={`flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-slate-50 transition ${language === 'hi' ? 'bg-slate-100 text-blue-600' : ''}`}
-                >
-                  <span>हिंदी</span>
-                </button>
-              </div>
-            )}
-          </div>
           <DarkModeToggle />
           {/* Notification Bell */}
           <div className="relative" ref={notificationDropdownRef}>
@@ -378,59 +339,6 @@ export default function HeaderBar({ title = '', clinic: clinicProp, onAddPatient
                     </div>
                   </div>
                   
-                  {/* Invite Code and Link */}
-                  <div className="bg-white rounded-lg p-3 border border-slate-200 space-y-2">
-                    <div>
-                      <label className="text-[10px] text-slate-500 block mb-1">Invite Code:</label>
-                      <div className="flex items-center gap-1">
-                        <input
-                          type="text"
-                          readOnly
-                          value={inviteCode}
-                          className="flex-1 px-2 py-1 text-xs border rounded bg-slate-50 font-mono"
-                        />
-                        <button
-                          onClick={handleCopyInviteCode}
-                          className="p-1.5 text-slate-600 hover:bg-slate-100 rounded transition"
-                          title="Copy Invite Code"
-                        >
-                          {copied ? <FiCheck className="w-3 h-3 text-green-600" /> : <FiCopy className="w-3 h-3" />}
-                        </button>
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-[10px] text-slate-500 block mb-1">Invite Link:</label>
-                      <div className="flex items-center gap-1">
-                        <input
-                          type="text"
-                          readOnly
-                          value={inviteLink}
-                          className="flex-1 px-2 py-1 text-xs border rounded bg-slate-50 font-mono truncate"
-                        />
-                        <button
-                          onClick={handleCopyInviteLink}
-                          className="p-1.5 text-slate-600 hover:bg-slate-100 rounded transition"
-                          title="Copy Invite Link"
-                        >
-                          {copied ? <FiCheck className="w-3 h-3 text-green-600" /> : <FiCopy className="w-3 h-3" />}
-                        </button>
-                      </div>
-                    </div>
-                    <div className="flex gap-2 pt-1">
-                      <button
-                        onClick={handleCopyInviteCode}
-                        className="flex-1 px-2 py-1.5 text-xs bg-slate-100 hover:bg-slate-200 rounded transition text-center"
-                      >
-                        Copy
-                      </button>
-                      <button
-                        onClick={handleShare}
-                        className="flex-1 px-2 py-1.5 text-xs bg-primary text-white hover:bg-primary/90 rounded transition text-center"
-                      >
-                        Share
-                      </button>
-                    </div>
-                  </div>
                 </div>
 
                 {/* Menu Items */}
@@ -443,93 +351,7 @@ export default function HeaderBar({ title = '', clinic: clinicProp, onAddPatient
                     <FiUser className="w-4 h-4 text-slate-600" />
                     <span>My Profile</span>
                   </a>
-                  <a 
-                    href="/genie" 
-                    onClick={(e) => { e.preventDefault(); addToast('My Genie - Coming soon', 'info'); setShowDropdown(false); }}
-                    className="flex items-center gap-3 px-4 py-2 text-sm hover:bg-slate-50 transition"
-                  >
-                    <FiStar className="w-4 h-4 text-slate-600" />
-                    <span>My Genie</span>
-                  </a>
-                  <a 
-                    href="/referrals" 
-                    onClick={(e) => { e.preventDefault(); addToast('My Patient Referrals - Coming soon', 'info'); setShowDropdown(false); }}
-                    className="flex items-center gap-3 px-4 py-2 text-sm hover:bg-slate-50 transition"
-                  >
-                    <FiClock className="w-4 h-4 text-slate-600" />
-                    <span>My Patient Referrals</span>
-                  </a>
-                  <a 
-                    href="/rx-template" 
-                    onClick={(e) => { e.preventDefault(); navigate('/rx-template'); setShowDropdown(false); }}
-                    className="flex items-center gap-3 px-4 py-2 text-sm hover:bg-slate-50 transition"
-                  >
-                    <FiFileText className="w-4 h-4 text-slate-600" />
-                    <span>My RX Template</span>
-                  </a>
-                  <a 
-                    href="/availability" 
-                    onClick={(e) => { e.preventDefault(); addToast('My Availability - Coming soon', 'info'); setShowDropdown(false); }}
-                    className="flex items-center gap-3 px-4 py-2 text-sm hover:bg-slate-50 transition"
-                  >
-                    <FiCalendar className="w-4 h-4 text-slate-600" />
-                    <span>My Availability</span>
-                  </a>
-                  <a
-                    href="/credits"
-                    onClick={(e) => { e.preventDefault(); addToast(`You have ${ekaCredits} Credits`, 'info'); setShowDropdown(false); }}
-                    className="flex items-center gap-3 px-4 py-2 text-sm hover:bg-slate-50 transition"
-                  >
-                    <FiDollarSign className="w-4 h-4 text-slate-600" />
-                    <span>My Credits</span>
-                    {ekaCredits > 0 && (
-                      <span className="ml-auto text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
-                        {ekaCredits}
-                      </span>
-                    )}
-                  </a>
-                  <a 
-                    href="/training" 
-                    onClick={(e) => { e.preventDefault(); addToast('Request Training - Coming soon', 'info'); setShowDropdown(false); }}
-                    className="flex items-center gap-3 px-4 py-2 text-sm hover:bg-slate-50 transition"
-                  >
-                    <FiInfo className="w-4 h-4 text-slate-600" />
-                    <span>Request Training</span>
-                  </a>
-                  <a 
-                    href="/settings" 
-                    onClick={(e) => { e.preventDefault(); addToast('Settings & Preferences - Coming soon', 'info'); setShowDropdown(false); }}
-                    className="flex items-center gap-3 px-4 py-2 text-sm hover:bg-slate-50 transition"
-                  >
-                    <FiSettings className="w-4 h-4 text-slate-600" />
-                    <span>Settings & Preferences</span>
-                  </a>
-                  <div className="px-4 py-2 text-sm border-t border-slate-200">
-                    <div className="flex items-center gap-3">
-                      <FiGlobe className="w-4 h-4 text-slate-600" />
-                      <div className="flex-1">
-                        <span className="text-slate-700">{t('language')}:</span>
-                        <select
-                          value={language}
-                          onChange={(e) => changeLanguage(e.target.value)}
-                          className="ml-2 px-2 py-1 text-xs border rounded bg-white"
-                        >
-                          <option value="en">English</option>
-                          <option value="hi">हिंदी (Hindi)</option>
-                        </select>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="px-4 py-2 text-sm border-t border-slate-200">
-                    <div className="flex items-center gap-3">
-                      <FiCloud className="w-4 h-4 text-slate-600" />
-                      <div className="flex-1">
-                        <span className="text-slate-700">Storage:</span>
-                        <span className="ml-2 text-slate-600">{storageSize.toFixed(1)} MB of patient data stored</span>
-                      </div>
-                    </div>
-                  </div>
-                  <button 
+                  <button
                     onClick={handleLogout}
                     className="w-full flex items-center gap-3 px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition"
                   >
