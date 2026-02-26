@@ -1492,6 +1492,25 @@ export default function Receipts() {
                       <span>Grand Total:</span>
                       <span>₹{formatCurrency(selectedReceipt.total_amount)}</span>
                     </div>
+                    {/* Partial payment breakdown - prominently in totals */}
+                    {selectedReceipt.payment_status === 'partial' && (
+                      <>
+                        <div className="flex justify-between text-sm text-green-700 font-medium border-t pt-1">
+                          <span>✓ Amount Paid:</span>
+                          <span>₹{formatCurrency(selectedReceipt.amount_paid)}</span>
+                        </div>
+                        <div className="flex justify-between text-sm font-bold text-orange-600 bg-orange-50 px-2 py-1 rounded">
+                          <span>⚠ Balance Due:</span>
+                          <span>₹{formatCurrency(selectedReceipt.balance_due || (parseFloat(selectedReceipt.total_amount) - parseFloat(selectedReceipt.amount_paid)))}</span>
+                        </div>
+                      </>
+                    )}
+                    {['paid','completed'].includes(selectedReceipt.payment_status) && parseFloat(selectedReceipt.amount_paid) > 0 && (
+                      <div className="flex justify-between text-sm text-green-700 font-medium border-t pt-1">
+                        <span>✓ Amount Paid:</span>
+                        <span>₹{formatCurrency(selectedReceipt.amount_paid)}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -1506,20 +1525,11 @@ export default function Receipts() {
                       <span className="font-medium">Status:</span>
                       <span className={`ml-2 font-medium ${
                         ['paid','completed'].includes(selectedReceipt.payment_status) ? 'text-green-600' :
-                        selectedReceipt.payment_status === 'partial' ? 'text-blue-600' :
+                        selectedReceipt.payment_status === 'partial' ? 'text-yellow-600' :
                         ['cancelled','failed'].includes(selectedReceipt.payment_status) ? 'text-red-600' : 'text-orange-600'
                       }`}>{getPaymentStatusBadge(selectedReceipt.payment_status).label}</span>
                     </div>
                   </div>
-                  {selectedReceipt.amount_paid > 0 && (
-                    <div className="text-sm mb-2">
-                      <span className="font-medium">Amount Paid:</span>
-                      <span className="ml-2 text-green-700 font-medium">₹{formatCurrency(selectedReceipt.amount_paid)}</span>
-                      {parseFloat(selectedReceipt.balance_due) > 0 && (
-                        <span className="ml-3 text-orange-600 font-medium">Balance Due: ₹{formatCurrency(selectedReceipt.balance_due)}</span>
-                      )}
-                    </div>
-                  )}
                   {selectedReceipt.payment_id && (
                     <div className="text-sm mb-2">
                       <span className="font-medium">Payment ID:</span>

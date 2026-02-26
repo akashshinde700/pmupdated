@@ -173,18 +173,18 @@ async function medicationList(req, res) {
   try {
     const { search = '', limit = 20 } = req.query;
     const db = getDb();
-    let query = `SELECT DISTINCT m.medication_name as medication, COUNT(*) as count
-                 FROM prescriptions p
-                 JOIN medications m ON p.id = m.prescription_id
-                 WHERE m.medication_name IS NOT NULL AND m.medication_name != ''`;
+    // Use prescription_items which has medicine_name, not the medications table
+    let query = `SELECT DISTINCT pi.medicine_name as medication, COUNT(*) as count
+                 FROM prescription_items pi
+                 WHERE pi.medicine_name IS NOT NULL AND pi.medicine_name != ''`;
     const params = [];
 
     if (search) {
-      query += ' AND m.medication_name LIKE ?';
+      query += ' AND pi.medicine_name LIKE ?';
       params.push(`%${search}%`);
     }
 
-    query += ' GROUP BY m.medication_name ORDER BY count DESC LIMIT ?';
+    query += ' GROUP BY pi.medicine_name ORDER BY count DESC LIMIT ?';
     params.push(parseInt(limit));
 
     const [rows] = await db.execute(query, params);
@@ -199,34 +199,35 @@ async function medicationPatients(req, res) {
   try {
     const { medication, startDate, endDate, limit = 50 } = req.query;
     const db = getDb();
+    // Use prescription_items joined to prescriptions + patients
     let query = `SELECT
                   pt.name as patient_name,
                   pt.patient_id,
                   pt.phone,
-                  p.prescription_date,
-                  m.medication_name,
-                  m.dosage,
-                  m.frequency
-                 FROM prescriptions p
-                 JOIN medications m ON p.id = m.prescription_id
+                  p.prescribed_date as prescription_date,
+                  pi.medicine_name as medication_name,
+                  pi.dosage,
+                  pi.frequency
+                 FROM prescription_items pi
+                 JOIN prescriptions p ON pi.prescription_id = p.id
                  JOIN patients pt ON p.patient_id = pt.id
                  WHERE 1=1`;
     const params = [];
 
     if (medication) {
-      query += ' AND m.medication_name LIKE ?';
+      query += ' AND pi.medicine_name LIKE ?';
       params.push(`%${medication}%`);
     }
     if (startDate) {
-      query += ' AND p.prescription_date >= ?';
+      query += ' AND p.prescribed_date >= ?';
       params.push(startDate);
     }
     if (endDate) {
-      query += ' AND p.prescription_date <= ?';
+      query += ' AND p.prescribed_date <= ?';
       params.push(endDate);
     }
 
-    query += ' ORDER BY p.prescription_date DESC LIMIT ?';
+    query += ' ORDER BY p.prescribed_date DESC LIMIT ?';
     params.push(parseInt(limit));
 
     const [rows] = await db.execute(query, params);
@@ -300,14 +301,15 @@ async function topMedications(req, res) {
   try {
     const { limit = 10 } = req.query;
     const db = getDb();
+    // prescriptions table has no medication_name; use prescription_items instead
     const [rows] = await db.execute(
-      `SELECT medication_name as medication, COUNT(*) as count
-       FROM prescriptions
-       WHERE medication_name IS NOT NULL AND medication_name != ''
-       GROUP BY medication_name
+      `SELECT medicine_name as medication, COUNT(*) as count
+       FROM prescription_items
+       WHERE medicine_name IS NOT NULL AND medicine_name != ''
+       GROUP BY medicine_name
        ORDER BY count DESC
        LIMIT ?`,
-      [limit]
+      [parseInt(limit)]
     );
     res.json({ data: rows });
   } catch (error) {
@@ -500,13 +502,12 @@ const summary = async (req, res) => {
     `, params);
     const topSymptom = symptomResult[0]?.symptom || 'N/A';
 
-    // Top medication
+    // Top medication from prescription_items
     const [medicationResult] = await db.execute(`
-      SELECT m.medication_name as medication, COUNT(*) as count
-      FROM prescriptions p
-      JOIN medications m ON p.id = m.prescription_id
-      WHERE m.medication_name IS NOT NULL AND m.medication_name != ''
-      GROUP BY m.medication_name ORDER BY count DESC LIMIT 1
+      SELECT pi.medicine_name as medication, COUNT(*) as count
+      FROM prescription_items pi
+      WHERE pi.medicine_name IS NOT NULL AND pi.medicine_name != ''
+      GROUP BY pi.medicine_name ORDER BY count DESC LIMIT 1
     `);
     const topMedication = medicationResult[0]?.medication || 'N/A';
 

@@ -13,7 +13,7 @@ let loaded = false;
 for (const p of dotenvCandidates) {
   try {
     if (fs.existsSync(p)) {
-      dotenv.config({ path: p });
+      dotenv.config({ path: p, override: true });
       loaded = true;
       break;
     }
@@ -22,7 +22,7 @@ for (const p of dotenvCandidates) {
 }
 
 if (!loaded) {
-  dotenv.config();
+  dotenv.config({ override: true });
 }
 
 const env = {
